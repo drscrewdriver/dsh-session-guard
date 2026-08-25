@@ -1,16 +1,16 @@
 // @ts-check
 import js from '@eslint/js'
+import tseslint from 'typescript-eslint'
 
-/** 精简 flat 配置（纯 JS 插件；typescript-eslint 仅对 TS 需要）。 */
-export default [
+/** flat 配置：host 纯 JS + 客户端 TS/TSX（mirror thinking-levels）。 */
+export default tseslint.config(
   {
     ignores: ['node_modules/', 'lib/', 'dist/', 'scripts/'],
   },
   js.configs.recommended,
+  ...tseslint.configs.recommended,
   {
     languageOptions: {
-      ecmaVersion: 2022,
-      sourceType: 'module',
       globals: {
         // 浏览器/Node 全局，host 端 fail-open 记录日志时用到。
         console: 'readonly',
@@ -31,4 +31,4 @@ export default [
       'no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
     },
   },
-]
+)

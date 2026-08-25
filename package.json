@@ -17,19 +17,28 @@
   "main": "src/index.js",
   "exports": {
     ".": "./src/index.js",
+    "./client": "./lib/client.js",
     "./package.json": "./package.json"
   },
   "files": [
     "src/",
+    "lib/",
     "cordis.patch.yml",
     "README.md"
   ],
   "dsh": {
+    "client": {
+      "inject": [
+        "slots"
+      ],
+      "platform": "web"
+    },
     "bundle": {
       "patch": "./cordis.patch.yml"
     }
   },
   "scripts": {
+    "build": "tsdown",
     "lint": "eslint src tests",
     "test": "node --test \"tests/*.test.mjs\""
   },
@@ -38,7 +47,12 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "eslint": "^10.8.1"
+    "@types/react": "~18.3.1",
+    "eslint": "^10.8.1",
+    "react": "^18.2.0",
+    "tsdown": "^0.22.2",
+    "typescript": "^5.6.0",
+    "typescript-eslint": "^8.67.0"
   },
   "peerDependencies": {
     "@deepseek-ai/dsh-settings": "^0.1.0-rc.0",

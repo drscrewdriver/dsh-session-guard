@@ -12,6 +12,7 @@
  *   动态 import + fail-open（src/settings.js），设置栈缺失时静默用默认配置照常运行。
  */
 import { computeState, transition } from './scheduler.js'
+import { isWeekend, isInPeak } from './time.js'
 import { createStore } from './store.js'
 import { createGate } from './gate.js'
 import { createBridge } from './bridge.js'
@@ -137,6 +138,26 @@ export function apply(ctx) {
           if (method === 'GET' && url.pathname === '/session-guard/settings') {
             const cfg = readCfg()
             return json(200, { ok: true, settings: cfg, taskControlAvailable: detectTaskControl(ctx) })
+          }
+          // GET /session-guard/status —— 全局当前阶段（状态徽标轮询用）
+          if (method === 'GET' && url.pathname === '/session-guard/status') {
+            const cfg = readCfg()
+            const now = new Date()
+            const weekend = isWeekend(cfg.timezone, now)
+            const peak = cfg.enabled && !weekend && isInPeak(cfg.peakWindows, cfg.timezone, now)
+            return json(200, {
+              ok: true,
+              status: {
+                phase: weekend ? 'weekend' : peak ? 'peak' : 'off-peak',
+                weekend,
+                peak,
+                state: lastState,
+                enabled: cfg.enabled,
+                weekendMode: cfg.weekendMode,
+                timezone: cfg.timezone,
+                now: now.toISOString(),
+              },
+            })
           }
           // POST /session-guard/rpc { action, sessionId, ... }
           if (method === 'POST' && url.pathname === '/session-guard/rpc') {

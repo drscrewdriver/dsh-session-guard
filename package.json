@@ -17,33 +17,23 @@
   "main": "src/index.js",
   "exports": {
     ".": "./src/index.js",
-    "./client": "./lib/client.js",
     "./package.json": "./package.json"
   },
   "files": [
     "src/",
-    "lib/",
     "cordis.patch.yml",
     "README.md"
   ],
   "dsh": {
-    "client": {
-      "inject": [],
-      "platform": "web"
-    },
     "bundle": {
       "patch": "./cordis.patch.yml"
     }
   },
   "scripts": {
-    "build": "node scripts/build-client.mjs",
     "test": "node --test \"tests/*.test.mjs\""
   },
   "engines": {
     "node": ">=20"
-  },
-  "devDependencies": {
-    "esbuild": "^0.25.0"
   },
   "peerDependencies": {
     "@deepseek-ai/dsh-settings": "^0.1.0-rc.0",

@@ -17,7 +17,7 @@ import { idleState } from './store.js'
  * @param {ReturnType<import('./gate.js').createGate>} gate
  * @param {ReturnType<import('./store.js').createStore>} store
  */
-export function createBridge(ctx, gate, store) {
+export function createBridge(ctx, gate, store, pauseGate) {
   function taskControlState(sessionId) {
     let tcState = null
     try {
@@ -59,10 +59,14 @@ export function createBridge(ctx, gate, store) {
     state(sessionId) {
       const cur = store.get(sessionId)
       const base = cur || idleState(sessionId)
+      const pausedState = pauseGate ? (pauseGate.state(sessionId) || {}) : {}
       return {
         sessionId: String(sessionId),
         queueLocked: base.queueLocked === true,
         lockReason: base.lockReason ?? null,
+        // 自研会话门真暂停状态（脱离 task-control）。
+        paused: pausedState.paused === true,
+        pausedForced: pausedState.forced === true,
         taskControlAvailable: gate.taskControlAvailable(),
         taskControl: taskControlState(sessionId),
         updatedAt: base.updatedAt ?? null,

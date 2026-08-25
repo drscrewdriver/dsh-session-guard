@@ -139,3 +139,26 @@ pauseReason: "wait"   // 透传 taskControl.pause reason
 | git clone schannel/连接失败 | 禁用 SSL / 换分支 | 网络间歇，改用 codeload tarball + GitHub API |
 | tarball 截断 | 换大超时重下 | 完整 3.5MB 解出 |
 | task-control src 不在 tarball | 用 GitHub API tree 定位 lib/*.js | raw 单独下载成功 |
+
+## Phase 5（新增）—— 自实现真实锁定（脱离 dsh-task-control）
+
+用户定案：**不装/不依赖 dsh-task-control，session-guard 自行实现"真暂停/锁定推进"**。
+蓝本 = `.peakref/task-control/lib/index.js`（837 行，已通读，见 findings.md §7）。
+runtime 原语（agent.cancel / goals.pause / session/event 边界 / followup /
+createUserMessage）皆来自 dsh runtime 本身，非 task-control 私有，可直接自研复用。
+
+| Phase | 内容 | 状态 |
+|---|---|---|
+| P5.0 研读 | 通读 task-control lib/index.js，摸清 runtime 原语与安全边界 | complete |
+| P5.1 设计 | 自研会话门模块（真暂停）：状态模型 + pause/resume + session/event 边界 + 持久化；接到 gate.stopNextTurn | complete |
+| P5.2 实现 | 复用 runtime 原语实现真暂停；gate 改为「自研真暂停」路径，queueFallback 仅作 agent 不可用降级 | complete |
+| P5.3 验证 | 新增自研会话门单测 + 现有 31 用例回归，全绿 | complete |
+
+### 自研会话门设计要点（待用户确认范围后再定稿）
+- **暂停粒度选择**：A) 全量移植（force/safe+stop/safe+wait + resume 确认/跳过复杂流程 + 命令 UI）
+  vs B) 轻量高峰门（只做 **safe+wait** 安全边界暂停 + 退峰/周末自动恢复，无命令 UI）。
+  session-guard 是「高峰自动门」，B 更贴合、侵入小；A 接近 task-control 全能力。
+- **接点**：现有 `gate.stopNextTurn` = 自研 pause（真暂停）；`gate.resume` = 自研 resume。
+  `queueFallback`（lockQueue 标记）保留，仅当 agent 不可用 / 无法安全落地时降级。
+- **风险**：依赖 dsh runtime 内部 API（agent.cancel/goals/session/event/followup），
+  需实测 API 形状；改动 core 暂停语义，须回归现有 31+ 用例并做强隔离（失败 fail-open 回退 lockQueue）。

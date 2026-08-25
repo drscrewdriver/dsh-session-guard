@@ -24,11 +24,13 @@ export default tseslint.config(
         process: 'readonly',
         URL: 'readonly',
         Buffer: 'readonly',
+        queueMicrotask: 'readonly',
       },
     },
     rules: {
       // 插件宿主端常用可选链/空值合并，eslint 推荐规则对它们无异议。
       'no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
     },
   },
 )

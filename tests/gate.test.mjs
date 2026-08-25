@@ -1,5 +1,5 @@
 /**
- * gate.js + store.js 测试：会话门两路（taskControl / 回退锁队列）+ fail-open。
+ * gate.js + store.js 测试：自研会话门主路径（pauseGate）+ 回退锁队列 + fail-open。
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -28,6 +28,17 @@ const CFG = {
   queueFallback: true,
 }
 
+/** 假自研会话门（可覆盖 pause/resume 行为）。 */
+function fakePauseGate(overrides = {}) {
+  return {
+    pause: (_id, _opts) => ({ kind: 'success', text: 'paused' }),
+    resume: (_id, _opts) => ({ kind: 'success', text: 'resumed' }),
+    cancel: () => ({ kind: 'success', text: 'cancelled' }),
+    taskControlAvailable: () => true,
+    ...overrides,
+  }
+}
+
 /** 每测试独立临时状态目录。 */
 function tmpStore(t) {
   const dir = mkdtempSync(join(tmpdir(), 'session-guard-test-'))
@@ -41,33 +52,48 @@ function tmpStore(t) {
   return createStore()
 }
 
-test('有 taskControl → stopNextTurn 透传 pause（safe+wait）', async (t) => {
+test('有 pauseGate → stopNextTurn 走自研真暂停（via pauseGate）', async (t) => {
   const store = tmpStore(t)
   const calls = []
-  const tc = {
-    pause: async (id, opts) => { calls.push(['pause', id, opts]); return { ok: true } },
-    resume: async (id, opts) => { calls.push(['resume', id, opts]); return { ok: true } },
-    state: () => ({ status: 'idle', paused: false }),
-  }
-  const gate = createGate({ getCtx: () => fakeCtx({ taskControl: tc }), getSettings: () => CFG, store })
+  const pg = fakePauseGate({ pause: (id, opts) => { calls.push([id, opts]); return { kind: 'success' } } })
+  const gate = createGate({ getCtx: () => fakeCtx({}), getSettings: () => CFG, store, pauseGate: pg })
   const r = await gate.stopNextTurn('s1')
-  assert.equal(r.via, 'taskControl')
+  assert.equal(r.via, 'pauseGate')
   assert.equal(r.ok, true)
-  assert.deepEqual(calls[0], ['pause', 's1', { mode: 'safe', reason: 'wait' }])
-  // 不透传时不写 queueLock
+  assert.deepEqual(calls[0], ['s1', { mode: 'safe', reason: 'wait' }])
+  // 走自研真暂停则不写 queueLock
   assert.equal(store.get('s1'), null)
 })
 
-test('有 taskControl → resume 透传（confirm）', async (t) => {
+test('有 pauseGate → resume 走自研真恢复（confirm + choice）', async (t) => {
   const store = tmpStore(t)
   const calls = []
-  const tc = { pause: async () => ({}), resume: async (id, opts) => { calls.push([id, opts]); return { ok: true } } }
-  const gate = createGate({ getCtx: () => fakeCtx({ taskControl: tc }), getSettings: () => CFG, store })
+  const pg = fakePauseGate({ resume: (id, opts) => { calls.push([id, opts]); return { kind: 'success' } } })
+  const gate = createGate({ getCtx: () => fakeCtx({}), getSettings: () => CFG, store, pauseGate: pg })
   await gate.resume('s1', { choice: 'skip' })
   assert.deepEqual(calls[0], ['s1', { confirm: true, choice: 'skip' }])
 })
 
-test('无 taskControl → 回退锁队列（只锁等待队列，D3/D5）', async (t) => {
+test('pauseGate.pause 返回 error（如 agent 不可用）→ fail-open 降级锁队列', async (t) => {
+  const store = tmpStore(t)
+  const events = []
+  const pg = fakePauseGate({ pause: () => ({ kind: 'error', text: 'no live agent' }) })
+  const gate = createGate({
+    getCtx: () => fakeCtx({}),
+    getSettings: () => CFG,
+    store,
+    pauseGate: pg,
+    emit: (ev, id, payload) => events.push(payload === undefined ? [ev, id] : [ev, id, payload]),
+  })
+  const r = await gate.stopNextTurn('s1')
+  assert.equal(r.via, 'queueLock')
+  assert.equal(r.ok, true)
+  assert.equal(store.get('s1').queueLocked, true)
+  assert.equal(store.get('s1').lockReason, 'peak')
+  assert.deepEqual(events[0], ['queue-lock', 's1', { reason: 'peak' }])
+})
+
+test('无 pauseGate → 回退锁队列（fail-open，D3/D5）', async (t) => {
   const store = tmpStore(t)
   const events = []
   const gate = createGate({
@@ -79,18 +105,16 @@ test('无 taskControl → 回退锁队列（只锁等待队列，D3/D5）', asyn
   const r = await gate.stopNextTurn('s1')
   assert.equal(r.via, 'queueLock')
   assert.equal(r.ok, true)
-  const st = store.get('s1')
-  assert.equal(st.queueLocked, true)
-  assert.equal(st.lockReason, 'peak')
+  assert.equal(store.get('s1').queueLocked, true)
+  assert.equal(store.get('s1').lockReason, 'peak')
   assert.deepEqual(events[0], ['queue-lock', 's1', { reason: 'peak' }])
-  // resume 清锁
   const r2 = await gate.resume('s1')
   assert.equal(r2.via, 'queueLock')
   assert.equal(store.get('s1').queueLocked, false)
   assert.deepEqual(events[1], ['queue-unlock', 's1'])
 })
 
-test('queueFallback=false 且无 taskControl → 不锁队列（如实上报）', async (t) => {
+test('无 pauseGate 且 queueFallback=false → 不锁队列（如实上报）', async (t) => {
   const store = tmpStore(t)
   const gate = createGate({
     getCtx: () => fakeCtx({}),
@@ -100,17 +124,6 @@ test('queueFallback=false 且无 taskControl → 不锁队列（如实上报）'
   const r = await gate.stopNextTurn('s1')
   assert.equal(r.ok, false)
   assert.equal(r.via, 'queueLock')
-  assert.equal(store.get('s1'), null)
-})
-
-test('fail-open：taskControl.pause 抛错 → 不上报崩溃、不误锁队列', async (t) => {
-  const store = tmpStore(t)
-  const tc = { pause: async () => { throw new Error('boom') } }
-  const gate = createGate({ getCtx: () => fakeCtx({ taskControl: tc }), getSettings: () => CFG, store })
-  const r = await gate.stopNextTurn('s1')
-  assert.equal(r.ok, false)
-  assert.equal(r.via, 'taskControl')
-  assert.match(r.error, /boom/)
   assert.equal(store.get('s1'), null)
 })
 

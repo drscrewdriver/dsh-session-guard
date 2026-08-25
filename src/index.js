@@ -17,11 +17,13 @@ import { createStore } from './store.js'
 import { createGate } from './gate.js'
 import { createBridge } from './bridge.js'
 import { createRetry } from './retry.js'
+import { createPauseStore } from './pause-store.js'
+import { createPauseGate } from './pause-gate.js'
 import { detectTaskControl } from './detect.js'
 import { NS, DEFAULT_SETTINGS, SettingsSchema, registerSettings } from './settings.js'
 
 export const name = 'session-guard'
-export const inject = ['agents', 'webServer', 'settings', 'timer']
+export const inject = ['agents', 'webServer', 'settings', 'timer', 'commands', 'goals']
 
 export { NS, DEFAULT_SETTINGS }
 
@@ -39,11 +41,70 @@ export function apply(ctx) {
     }
   }
 
-  const gate = createGate({ getCtx: () => ctx, getSettings: readCfg, store })
-  const bridge = createBridge(ctx, gate, store)
+  // ── 自研会话门（脱离 dsh-task-control，真暂停）──
+  // 状态持久化 + 引擎；经 gate.stopNextTurn/resume 主路径接入；/pause /resume /cancel 命令。
+  const pauseStore = createPauseStore()
+  const pauseGate = createPauseGate({ ctx, pauseStore })
+  const gate = createGate({ getCtx: () => ctx, getSettings: readCfg, store, pauseGate })
+  const bridge = createBridge(ctx, gate, store, pauseGate)
 
   // ── 冗余端口：input-traffic 冻结按钮透传接入（D5/D6/D8）──
   ctx.provide('sessionGuard', bridge)
+
+  // ── 自研会话门：安全边界监听（session/event 落地延迟暂停）──
+  // 监听在命令注册之前，让任何会话事件都能在安全边界落地 pending pause。
+  if (typeof ctx.on === 'function') {
+    ctx.effect(() => ctx.on('session/event', (session, event) => {
+      try {
+        pauseGate.handleEvent(session, event)
+      } catch (e) {
+        ctx.logger?.warn?.('[session-guard] session event handling failed: ' + String(e))
+      }
+    }), 'session-guard: pause-gate events')
+  }
+
+  // ── 手动会话门命令（/pause /resume /cancel，全量移植）──
+  if (typeof ctx.commands?.register === 'function') {
+    const tokensOf = (rawInput) => String(rawInput ?? '').trim().split(/\s+/).filter(Boolean)
+    ctx.effect(() => ctx.commands.register({
+      name: 'pause',
+      description: 'pause the running task (safe: defers to the safe boundary; force: interrupts tools and reasoning now; wait: let reasoning finish; bare /pause follows the pause settings)',
+      input: { hint: '[force|safe] [stop|wait]' },
+      handler: (invocation) => {
+        const sid = String(invocation?.agent?.id ?? '')
+        if (!sid) return { kind: 'error', text: 'no session for this command' }
+        const opts = {}
+        for (const t of tokensOf(invocation.rawInput)) {
+          if (t === 'force' || t === 'safe') opts.mode = t
+          if (t === 'stop' || t === 'wait') opts.reason = t
+        }
+        return pauseGate.pause(sid, opts)
+      },
+    }))
+    ctx.effect(() => ctx.commands.register({
+      name: 'resume',
+      description: 'resume the paused task and continue from the pause point (a force-paused task with an interrupted tool needs `confirm`, plus `rerun`/`skip` for the tool)',
+      input: { hint: '[confirm] [rerun|skip]' },
+      handler: (invocation) => {
+        const sid = String(invocation?.agent?.id ?? '')
+        if (!sid) return { kind: 'error', text: 'no session for this command' }
+        const tokens = tokensOf(invocation.rawInput)
+        return pauseGate.resume(sid, {
+          confirm: tokens.includes('confirm'),
+          choice: tokens.includes('skip') ? 'skip' : 'rerun',
+        })
+      },
+    }))
+    ctx.effect(() => ctx.commands.register({
+      name: 'cancel',
+      description: 'cancel the running task (stops the current turn immediately, keeps the queue)',
+      handler: (invocation) => {
+        const sid = String(invocation?.agent?.id ?? '')
+        if (!sid) return { kind: 'error', text: 'no session for this command' }
+        return pauseGate.cancel(sid)
+      },
+    }))
+  }
 
   // ── 后端自动重试（D9）：冻结/门控期间让路，绝不绕过会话门 ──
   createRetry({
@@ -52,6 +113,7 @@ export function apply(ctx) {
     isFrozen: (sessionId) => {
       const st = bridge.state(sessionId)
       if (st.queueLocked) return true
+      if (st.paused) return true // 自研会话门真暂停
       if (st.taskControl && st.taskControl.paused) return true
       return false
     },

@@ -117,3 +117,33 @@ service = {
   不直接动 main。
 
 ## 6. 结论：方案 A（patch input-traffic）定案，基座 = feat/absorb-auto-continue 分支
+
+## 7. 【补全】自实现真实锁定：dsh-task-control 用的 runtime 原语（脱离依赖）
+
+用户定案：**脱离 dsh-task-control，session-guard 自行实现真实锁定**。自实现蓝本 =
+`.peakref/task-control/lib/index.js`（837 行，已通读）。真暂停全部依赖 dsh runtime
+提供的原语，**均非 task-control 私有**，可自研复用：
+
+| runtime 原语 | 用途 | 来自 |
+|---|---|---|
+| `ctx.agents.get(id)` → agent | `agent.status/session.events/cancel/followup` | dsh agents 服务 |
+| `agent.cancel({kind:'user'},{keepInbox:true})` | 立即停当前回合（中断推理/在途工具，留 inbox） | agent 面 |
+| `ctx.get('goals')` + `goals.get(agent)` + `goals.pause(agent,{id,revision})` | 暂停同会话 goal，防 goal-round driver 再排队 | goals 服务 |
+| `ctx.on('session/event', cb)` | 安全边界：tool/call 记 inFlight；tool/result 删+尝试落地；assistant/message 记录 deferredTools+落地；user/message 兜底 | dsh 事件 |
+| `agent.followup(createUserMessage({content,source:{kind:'plugin',plugin}}))` | 恢复时发指令（从暂停点继续/跳过工具/重跑工具） | agent 面 + `@deepseek-ai/dsh-llm` 的 `createUserMessage` |
+| 持久化 `~/.dsh/.../<id>.json`（原子 tmp+rename） | 暂停状态不写 session log（避免重启不可加载） | 节点 fs |
+
+### 7.1 暂停三种粒度（自研可用）
+| 粒度 | 行为 |
+|---|---|
+| `force` | `agent.cancel` + goals.pause + 记录 `interruptedTool`（最新在途），立即停 |
+| `safe`+`stop` | 在途工具>0 时挂 pendingPause，等 `tool/result` 落安全边界 |
+| `safe`+`wait` | 不中断推理；`assistant/message` 后记 `deferredTools`，再落地 + `queueMicrotask` |
+
+### 7.2 状态模型（自研持久化字段）
+`{ sessionId, paused, resumeContent, forced, interruptedTool, deferredTools, updatedAt }`
+
+### 7.3 自研 vs 依赖 task-control
+- 依赖 `ctx.get('taskControl')` → 需外部插件（当前未装）。
+- 自研 → session-guard `gate.stopNextTurn` 直接调自研 pause（真暂停），
+  不再退化成 `queueLocked` 标记；`queueFallback` 留作 agent 不可用时的降级。

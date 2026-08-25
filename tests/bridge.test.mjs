@@ -30,40 +30,53 @@ function tmpStore(t) {
   return createStore()
 }
 
-function setup(services = {}, t) {
+function fakePauseGate(overrides = {}) {
+  return {
+    pause: () => ({ kind: 'success', text: 'paused' }),
+    resume: () => ({ kind: 'success', text: 'resumed' }),
+    cancel: () => ({ kind: 'success', text: 'cancelled' }),
+    taskControlAvailable: () => true,
+    state: (_id) => ({ paused: false, forced: false }),
+    ...overrides,
+  }
+}
+
+function setup(services = {}, t, pauseGate) {
   const ctx = fakeCtx(services)
   const store = t ? tmpStore(t) : createStore()
-  const gate = createGate({ getCtx: () => ctx, getSettings: () => CFG, store })
-  const bridge = createBridge(ctx, gate, store)
+  const gate = createGate({ getCtx: () => ctx, getSettings: () => CFG, store, pauseGate })
+  const bridge = createBridge(ctx, gate, store, pauseGate)
   return { ctx, store, gate, bridge }
 }
 
 test('bridge.state：无 taskControl 时回退路径状态', (t) => {
-  const { bridge } = setup({}, t)
+  const { bridge, gate } = setup({}, t)
   const st = bridge.state('s1')
   assert.equal(st.queueLocked, false)
   assert.equal(st.taskControlAvailable, false)
   assert.equal(st.taskControl, null)
+  assert.equal(st.paused, false)
+  assert.equal(gate.taskControlAvailable(), false)
 })
 
-test('bridge.state：taskControl 在时暴露其状态', (t) => {
+test('bridge.state：自研 paused + 外部 taskControl 状态共存', (t) => {
   const tc = { state: () => ({ status: 'running', paused: false, forced: false }) }
-  const { bridge } = setup({ taskControl: tc }, t)
+  const { bridge } = setup({ taskControl: tc }, t, fakePauseGate())
   const st = bridge.state('s1')
   assert.equal(st.taskControlAvailable, true)
   assert.equal(st.taskControl.status, 'running')
+  assert.equal(st.paused, false)
 })
 
 test('bridge.stopNextTurn 两路都通', async (t) => {
-  // 无 taskControl → 锁队列
+  // 无 pauseGate → 降级锁队列
   const fb = setup({}, t)
   const r1 = await fb.bridge.stopNextTurn('s1')
   assert.equal(r1.via, 'queueLock')
-  // 有 taskControl → 透传
-  const tc = { pause: async (id) => ({ ok: true, paused: id }) }
-  const gt = setup({ taskControl: tc }, t)
+  // 有 pauseGate → 自研真暂停
+  const gt = setup({}, t, fakePauseGate())
   const r2 = await gt.bridge.stopNextTurn('s1')
-  assert.equal(r2.via, 'taskControl')
+  assert.equal(r2.via, 'pauseGate')
 })
 
 test('detectTaskControl / detectSessionGuard', () => {

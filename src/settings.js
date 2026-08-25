@@ -19,6 +19,7 @@ export const NS = 'session-guard'
 /** 默认配置（核心逻辑依赖；设置服务不可用时即用此值）。 */
 export const DEFAULT_SETTINGS = Object.freeze({
   enabled: true, // 高峰自动处理开关（简单开关）
+  offPeakAutoResume: true, // 低谷自动恢复开关：低峰时段自动恢复被高峰暂停的会话
   weekendMode: true, // 周末模式开关：识别周末，无视峰谷（简单开关）
   timezone: 'Asia/Shanghai',
   peakWindows: [
@@ -43,6 +44,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
  */
 export const SettingsSchema = z.object({
   enabled: z.boolean().default(DEFAULT_SETTINGS.enabled),
+  offPeakAutoResume: z.boolean().default(DEFAULT_SETTINGS.offPeakAutoResume),
   weekendMode: z.boolean().default(DEFAULT_SETTINGS.weekendMode),
   timezone: z.string().default(DEFAULT_SETTINGS.timezone),
   peakWindows: z

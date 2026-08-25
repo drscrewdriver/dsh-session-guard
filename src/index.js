@@ -140,7 +140,12 @@ export function apply(ctx) {
     ctx.logger?.info?.(`[session-guard] peak entered — paused ${paused.length} running session(s): ${JSON.stringify(paused)}`)
   }
 
-  async function onLeavePeak() {
+  async function onLeavePeak(cfg) {
+    // 低谷自动恢复开关：关掉则退峰不自动恢复（会话保持暂停，需手动恢复）。
+    if (cfg.offPeakAutoResume === false) {
+      ctx.logger?.info?.('[session-guard] off-peak auto-resume disabled — sessions stay paused')
+      return
+    }
     const agents = ctx.agents
     const roots = typeof agents.roots === 'function' ? agents.roots() : agents.list()
     const resumed = []
@@ -165,7 +170,7 @@ export function apply(ctx) {
         void onEnterPeak(cfg)
       } else if (t.leave) {
         lastState = { ...next }
-        void onLeavePeak()
+        void onLeavePeak(cfg)
       } else {
         lastState = next
       }

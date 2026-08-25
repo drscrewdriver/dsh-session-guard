@@ -35,7 +35,8 @@ dsh plugin --profile web add github:<owner>/dsh-session-guard
 
 | 开关 | 默认 | 说明 |
 |---|---|---|
-| `enabled` | on | **高峰自动处理**：高峰时段自动暂停运行会话 |
+| `enabled` | on | **高峰自动暂停冻结会话**：高峰时段自动暂停运行会话 |
+| `offPeakAutoResume` | on | **低谷自动恢复**：低峰时段自动恢复被暂停的会话；关掉则退峰不自动恢复（需手动） |
 | `weekendMode` | on | **周末模式**：识别周末 → 周末不自动暂停（周末本无高峰，畅快跑） |
 | `queueFallback` | on | 自研会话门不可用时回退锁等待队列（fail-open） |
 | `retryEnabled` | off | **自动重试（后端）**：瞬时失败自动续跑（默认关，保守） |
@@ -51,7 +52,7 @@ dsh plugin --profile web add github:<owner>/dsh-session-guard
 ### 高峰自动门（全局）
 
 - **入峰**（且非周末）：对所有 running root session 调 `gate.stopNextTurn`——自研会话门真暂停（不打断推理，推理完成/工具派发前落在安全边界暂停），或按 `queueFallback` 回退锁等待队列；
-- **退峰 / 周末**：`gate.resume` **全部**会话（自动续跑，无需手动）；
+- **退峰 / 周末**：`gate.resume` **全部**会话（自动续跑，无需手动）——受 `offPeakAutoResume` 开关控制，关掉则退峰不自动恢复；
 - 状态机：单实例 `NORMAL ↔ PAUSED_PEAK`（`scheduler.js`），由单一 30s tick 驱动。
 
 ### 会话锁定（冻结）

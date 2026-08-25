@@ -17,6 +17,7 @@ import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
 /** 命名空间值形状（与 host 的 DEFAULT_SETTINGS 对应）。 */
 export interface SessionGuardConfig {
   enabled: boolean
+  offPeakAutoResume: boolean
   weekendMode: boolean
   queueFallback: boolean
   retryEnabled: boolean
@@ -54,7 +55,7 @@ const CARD_CSS = `
 .sgSwitch>input:disabled{cursor:not-allowed}
 .sgSwitchTrack{position:absolute;inset:0;border-radius:22px;background:var(--dsw-alias-interactive-bg-hover);transition:background .16s}
 .sgSwitch>input:checked+.sgSwitchTrack{background:var(--dsw-alias-button-primary-fill)}
-.sgSwitchThumb{position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:var(--dsw-alias-bg-base);box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .16s}
+.sgSwitchThumb{position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .16s}
 .sgSwitch>input:checked~.sgSwitchThumb{transform:translateX(18px)}
 .sgReadonly{color:var(--dsw-alias-label-tertiary);font-size:12px;margin:8px 0 0}
 `
@@ -146,11 +147,18 @@ export function SessionGuardCard({ scope }: SettingsCardProps): JSX.Element {
           ) : (
             <>
               <SwitchRow
-                label="高峰自动处理"
+                label="高峰自动暂停冻结会话"
                 description="高峰时段自动暂停运行会话"
                 checked={value.enabled ?? true}
                 disabled={readonly}
                 onChange={(next) => toggle('enabled', next)}
+              />
+              <SwitchRow
+                label="低谷自动恢复"
+                description="低峰时段自动恢复被暂停的会话"
+                checked={value.offPeakAutoResume ?? true}
+                disabled={readonly}
+                onChange={(next) => toggle('offPeakAutoResume', next)}
               />
               <SwitchRow
                 label="周末模式"

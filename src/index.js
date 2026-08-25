@@ -7,7 +7,7 @@
  *   （有 taskControl → 会话门 safe+wait；无 → 回退锁等待队列）。
  * - 退峰/周末：gate.resume 全部。
  * - `ctx.provide('sessionGuard')` 冗余端口，input-traffic 冻结按钮透传接入。
- * - 设置：设置 → 插件 → session-guard 子板块，简单开关（enabled / weekendMode / resumeOnWeekend / queueFallback）。
+ * - 设置：设置 → 插件 → session-guard 子板块，简单开关（enabled / weekendMode / queueFallback）。
  *   schemastery 为常规 dependency，设置经 `ctx.inject(['settings'])` 本地接口注册（src/settings.js，
  *   对齐 dsh-thinking-levels；不 value-import dsh-settings）；设置服务缺失时 fail-open 用默认配置照常运行。
  */

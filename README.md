@@ -21,8 +21,7 @@ dsh plugin --profile web add github:<owner>/dsh-session-guard
 | 开关 | 默认 | 说明 |
 |---|---|---|
 | `enabled` | on | **高峰自动处理**：高峰时段自动暂停运行会话 |
-| `weekendMode` | on | **周末模式**：识别周末 → 无视峰谷，畅快跑 |
-| `resumeOnWeekend` | on | 进入周末自动恢复已暂停会话 |
+| `weekendMode` | on | **周末模式**：识别周末 → 周末不自动暂停（周末本无高峰，畅快跑） |
 | `queueFallback` | on | 无会话门（task-control 未装）时回退锁等待队列 |
 | `retryEnabled` | off | **自动重试**（后端）：turn/end 失败（error/429/max-tokens）自动续跑 |
 

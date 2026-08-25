@@ -18,7 +18,6 @@ import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
 export interface SessionGuardConfig {
   enabled: boolean
   weekendMode: boolean
-  resumeOnWeekend: boolean
   queueFallback: boolean
   retryEnabled: boolean
   timezone: string
@@ -159,13 +158,6 @@ export function SessionGuardCard({ scope }: SettingsCardProps): JSX.Element {
                 checked={value.weekendMode ?? true}
                 disabled={readonly}
                 onChange={(next) => toggle('weekendMode', next)}
-              />
-              <SwitchRow
-                label="周末自动恢复"
-                description="周末到了自动恢复运行"
-                checked={value.resumeOnWeekend ?? true}
-                disabled={readonly}
-                onChange={(next) => toggle('resumeOnWeekend', next)}
               />
               <SwitchRow
                 label="回退锁队列"

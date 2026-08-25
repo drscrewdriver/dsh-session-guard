@@ -25,7 +25,6 @@ export const DEFAULT_SETTINGS = Object.freeze({
     { start: '09:00', end: '12:00' },
     { start: '14:00', end: '18:00' },
   ],
-  resumeOnWeekend: true, // 周末到了自动恢复（简单开关）
   pauseMode: 'safe', // 透传 taskControl.pause mode
   pauseReason: 'wait', // 透传 taskControl.pause reason
   queueFallback: true, // 无会话门时回退锁等待队列（简单开关）
@@ -49,7 +48,6 @@ export const SettingsSchema = z.object({
   peakWindows: z
     .array(z.object({ start: z.string(), end: z.string() }))
     .default(DEFAULT_SETTINGS.peakWindows),
-  resumeOnWeekend: z.boolean().default(DEFAULT_SETTINGS.resumeOnWeekend),
   pauseMode: z.union([z.const('safe'), z.const('force')]).default(DEFAULT_SETTINGS.pauseMode),
   pauseReason: z.union([z.const('wait'), z.const('stop')]).default(DEFAULT_SETTINGS.pauseReason),
   queueFallback: z.boolean().default(DEFAULT_SETTINGS.queueFallback),

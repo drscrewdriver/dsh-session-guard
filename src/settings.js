@@ -80,11 +80,16 @@ export const SettingsSchema = z.object({
  */
 export function registerSettings(ctx) {
   try {
-    const sctx = /** @type {SettingsAwareCtx} */ (ctx)
-    sctx.inject(['settings'], ({ settings }) => {
-      // base 用副本：DEFAULT_SETTINGS 被 Object.freeze，直接当 base 可能被写。
-      settings.register(NS, SettingsSchema, { base: { ...DEFAULT_SETTINGS } })
-    })
+    // 本插件顶层 `inject` 已声明 `settings`（见 src/index.js 的
+    // `export const inject`），所以 apply 时 `ctx.settings` 已是完整
+    // SettingsProvider（带 .register），直接注册即可 —— 无需再 `ctx.inject`
+    // 二次动态注入（对已在 fiber 上解析的服务做二次注入，回调作为异步插件
+    // apply 排队，`registerSettings` 同步返回 true 会掩盖实际操作未生效）。
+    // 与 dsh-thinking-levels / dsh-context 的区别仅在于它们顶层未声明
+    // settings，才必须动态注入；这里已声明，直接用最可靠。
+    const svc = /** @type {{ register(ns: string, schema: unknown, options?: { base?: unknown }): unknown }} */ (ctx.settings)
+    // base 用副本：DEFAULT_SETTINGS 被 Object.freeze，直接当 base 可能被写。
+    svc.register(NS, SettingsSchema, { base: { ...DEFAULT_SETTINGS } })
     return true
   } catch {
     return false

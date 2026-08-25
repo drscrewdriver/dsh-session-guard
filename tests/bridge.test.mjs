@@ -60,7 +60,7 @@ test('bridge.stopNextTurn 两路都通', async (t) => {
   const r1 = await fb.bridge.stopNextTurn('s1')
   assert.equal(r1.via, 'queueLock')
   // 有 taskControl → 透传
-  const tc = { pause: async (id, o) => ({ ok: true, paused: id }) }
+  const tc = { pause: async (id) => ({ ok: true, paused: id }) }
   const gt = setup({ taskControl: tc }, t)
   const r2 = await gt.bridge.stopNextTurn('s1')
   assert.equal(r2.via, 'taskControl')

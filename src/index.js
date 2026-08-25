@@ -77,7 +77,7 @@ export function apply(ctx) {
     ctx.logger?.info?.(`[session-guard] peak entered — paused ${paused.length} running session(s): ${JSON.stringify(paused)}`)
   }
 
-  async function onLeavePeak(cfg) {
+  async function onLeavePeak() {
     const agents = ctx.agents
     const roots = typeof agents.roots === 'function' ? agents.roots() : agents.list()
     const resumed = []
@@ -102,7 +102,7 @@ export function apply(ctx) {
         void onEnterPeak(cfg)
       } else if (t.leave) {
         lastState = { ...next }
-        void onLeavePeak(cfg)
+        void onLeavePeak()
       } else {
         lastState = next
       }

@@ -3,7 +3,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { parseHHMM, inWindow, wallClock, isWeekend, isInPeak, shouldPause } from '../src/time.js'
+import { parseHHMM, inWindow, wallClock, isWeekend, shouldPause } from '../src/time.js'
 
 const SETTINGS = {
   enabled: true,

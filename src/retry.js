@@ -116,7 +116,6 @@ export function createRetry({ ctx, getSettings, isFrozen, send }) {
     const cfg = getSettings()
     if (s.pending) return
     const frozen = isFrozen(sessionId)
-    const facts = failureFacts(reason)
     if (!shouldRetry({ ...s, pending: true }, cfg, frozen)) return
     s.pending = true
     const grace = cfg.retryGraceMs ?? DEFAULT_RETRY.retryGraceMs

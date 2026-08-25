@@ -8,8 +8,8 @@
  * - 退峰/周末：gate.resume 全部。
  * - `ctx.provide('sessionGuard')` 冗余端口，input-traffic 冻结按钮透传接入。
  * - 设置：设置 → 插件 → session-guard 子板块，简单开关（enabled / weekendMode / resumeOnWeekend / queueFallback）。
- *   设置栈（schemastery + dsh-settings）为 dsh 原生组件，本插件**不硬依赖**：schema 与注册走
- *   动态 import + fail-open（src/settings.js），设置栈缺失时静默用默认配置照常运行。
+ *   schemastery 为常规 dependency，设置经 `ctx.inject(['settings'])` 本地接口注册（src/settings.js，
+ *   对齐 dsh-thinking-levels；不 value-import dsh-settings）；设置服务缺失时 fail-open 用默认配置照常运行。
  */
 import { computeState, transition } from './scheduler.js'
 import { isWeekend, isInPeak } from './time.js'

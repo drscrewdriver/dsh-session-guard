@@ -1,0 +1,10 @@
+# dsh-session-guard bundle patch：一行装配进 profile。
+#
+# host 半（src/index.js）注册 sessionGuard 服务（冗余端口，供 input-traffic 适配）、
+# 高峰自动会话门（taskControl.pause/resume，缺失时回退锁等待队列）、
+# /session-guard/* 路由与 设置→插件→session-guard 子板块（简单开关）。
+# 浏览器半（src/client/index.js，经 package.json dsh.client 声明）提供
+# 高峰状态徽标 + 无 input-traffic 时的回退冻结按钮。
+- insert:
+    - id: session-guard
+      name: dsh-session-guard

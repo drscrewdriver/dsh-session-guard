@@ -1,0 +1,59 @@
+{
+  "name": "dsh-session-guard",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "高峰自动会话门：高峰时段自动暂停运行会话（经 taskControl 会话门），无会话门时回退只锁等待队列；周末模式识别周末、无视峰谷畅快跑。设置位于 设置 → 插件 → session-guard，简单开关。",
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "plugin",
+    "peak",
+    "off-peak",
+    "weekend",
+    "pause",
+    "session-gate"
+  ],
+  "license": "MIT",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./client": "./src/client/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src/",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "dsh": {
+    "client": {
+      "inject": [],
+      "platform": "web"
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "scripts": {
+    "test": "node --test \"tests/*.test.mjs\""
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-settings": "^0.1.0-rc.0",
+    "@deepseek-ai/schemastery": "^4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-settings": {
+      "optional": true
+    },
+    "@deepseek-ai/schemastery": {
+      "optional": true
+    }
+  }
+}

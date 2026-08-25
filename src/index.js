@@ -8,64 +8,21 @@
  * - 退峰/周末：gate.resume 全部。
  * - `ctx.provide('sessionGuard')` 冗余端口，input-traffic 冻结按钮透传接入。
  * - 设置：设置 → 插件 → session-guard 子板块，简单开关（enabled / weekendMode / resumeOnWeekend / queueFallback）。
+ *   设置栈（schemastery + dsh-settings）为 dsh 原生组件，本插件**不硬依赖**：schema 与注册走
+ *   动态 import + fail-open（src/settings.js），设置栈缺失时静默用默认配置照常运行。
  */
-import z from '@deepseek-ai/schemastery'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { computeState, transition } from './scheduler.js'
 import { createStore } from './store.js'
 import { createGate } from './gate.js'
 import { createBridge } from './bridge.js'
-import { createRetry, DEFAULT_RETRY } from './retry.js'
+import { createRetry } from './retry.js'
 import { detectTaskControl } from './detect.js'
+import { NS, DEFAULT_SETTINGS, registerSettings } from './settings.js'
 
 export const name = 'session-guard'
 export const inject = ['agents', 'webServer', 'settings', 'timer']
 
-/** 设置命名空间（设置 → 插件 → session-guard）。 */
-export const NS = 'session-guard'
-
-/** 默认配置。 */
-export const DEFAULT_SETTINGS = Object.freeze({
-  enabled: true, // ← 高峰自动处理开关（简单开关）
-  weekendMode: true, // ← 周末模式开关：识别周末，无视峰谷（简单开关）
-  timezone: 'Asia/Shanghai',
-  peakWindows: [
-    { start: '09:00', end: '12:00' },
-    { start: '14:00', end: '18:00' },
-  ],
-  resumeOnWeekend: true, // 周末到了自动恢复（简单开关）
-  pauseMode: 'safe', // 透传 taskControl.pause mode
-  pauseReason: 'wait', // 透传 taskControl.pause reason
-  queueFallback: true, // 无会话门时回退锁等待队列（简单开关）
-  retryEnabled: false, // ← 自动重试开关（后端，D9；默认关，保守）
-  retryText: DEFAULT_RETRY.retryText,
-  retryGraceMs: DEFAULT_RETRY.retryGraceMs,
-  retryCooldownMs: DEFAULT_RETRY.retryCooldownMs,
-  retryBackoffFactor: DEFAULT_RETRY.retryBackoffFactor,
-  retryBackoffMaxMs: DEFAULT_RETRY.retryBackoffMaxMs,
-  retryMaxConsecutive: DEFAULT_RETRY.retryMaxConsecutive,
-})
-
-/** 设置 schema：布尔字段渲染为简单开关。 */
-export const SessionGuardSchema = z.object({
-  enabled: z.boolean().default(DEFAULT_SETTINGS.enabled),
-  weekendMode: z.boolean().default(DEFAULT_SETTINGS.weekendMode),
-  timezone: z.string().default(DEFAULT_SETTINGS.timezone),
-  peakWindows: z
-    .array(z.object({ start: z.string(), end: z.string() }))
-    .default(DEFAULT_SETTINGS.peakWindows),
-  resumeOnWeekend: z.boolean().default(DEFAULT_SETTINGS.resumeOnWeekend),
-  pauseMode: z.union([z.literal('safe'), z.literal('force')]).default(DEFAULT_SETTINGS.pauseMode),
-  pauseReason: z.union([z.literal('wait'), z.literal('stop')]).default(DEFAULT_SETTINGS.pauseReason),
-  queueFallback: z.boolean().default(DEFAULT_SETTINGS.queueFallback),
-  retryEnabled: z.boolean().default(DEFAULT_SETTINGS.retryEnabled),
-  retryText: z.string().default(DEFAULT_SETTINGS.retryText),
-  retryGraceMs: z.natural().default(DEFAULT_SETTINGS.retryGraceMs),
-  retryCooldownMs: z.natural().default(DEFAULT_SETTINGS.retryCooldownMs),
-  retryBackoffFactor: z.natural().default(DEFAULT_SETTINGS.retryBackoffFactor),
-  retryBackoffMaxMs: z.natural().default(DEFAULT_SETTINGS.retryBackoffMaxMs),
-  retryMaxConsecutive: z.natural().default(DEFAULT_SETTINGS.retryMaxConsecutive),
-})
+export { NS, DEFAULT_SETTINGS }
 
 export function apply(ctx) {
   const store = createStore()
@@ -100,9 +57,8 @@ export function apply(ctx) {
   })
 
   // ── 设置子板块（设置 → 插件 → session-guard，简单开关）──
-  ctx.inject(['settings'], (settingsCtx) => {
-    settingsCtx.settings.register(settingsNamespace(NS), SessionGuardSchema, { applies: 'live' })
-  })
+  // fail-open：原生设置栈可用才注册，缺失则静默降级用默认配置（永不因设置依赖而崩）。
+  void registerSettings(ctx)
 
   // ── 状态机驱动（30s tick）──
   async function onEnterPeak(cfg) {

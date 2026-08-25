@@ -12,7 +12,7 @@
  *   对齐 dsh-thinking-levels；不 value-import dsh-settings）；设置服务缺失时 fail-open 用默认配置照常运行。
  */
 import { computeState, transition } from './scheduler.js'
-import { isWeekend, isInPeak } from './time.js'
+import { wallClock, isWeekend, isInPeak } from './time.js'
 import { createStore } from './store.js'
 import { createGate } from './gate.js'
 import { createBridge } from './bridge.js'
@@ -143,8 +143,9 @@ export function apply(ctx) {
           if (method === 'GET' && url.pathname === '/session-guard/status') {
             const cfg = readCfg()
             const now = new Date()
-            const weekend = isWeekend(cfg.timezone, now)
-            const peak = cfg.enabled && !weekend && isInPeak(cfg.peakWindows, cfg.timezone, now)
+            const wc = wallClock(cfg.timezone, now)
+            const weekend = isWeekend(wc.weekday)
+            const peak = cfg.enabled && !weekend && isInPeak(wc, cfg.peakWindows || [])
             return json(200, {
               ok: true,
               status: {

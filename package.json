@@ -1,6 +1,6 @@
 {
   "name": "dsh-session-guard",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "高峰自动会话门：周末模式 + 高峰自动暂停（全局）+ 会话级冻结/恢复 + 后端自动重试；周末识别正确、退峰自动续跑。设置位于 设置 → 插件 → session-guard，简单开关。",
   "keywords": [
@@ -52,8 +52,10 @@
     "node": ">=20"
   },
   "dependencies": {
-    "@deepseek-ai/dsh-llm": "0.1.1-rc.2",
     "@deepseek-ai/schemastery": "^3.18.1"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-llm": "0.1.1-rc.2"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

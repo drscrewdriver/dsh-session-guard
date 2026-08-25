@@ -53,9 +53,9 @@ const CARD_CSS = `
 .sgSwitch{position:relative;width:40px;height:22px;flex:none}
 .sgSwitch>input{position:absolute;inset:0;width:100%;height:100%;opacity:0;margin:0;cursor:pointer}
 .sgSwitch>input:disabled{cursor:not-allowed}
-.sgSwitchTrack{position:absolute;inset:0;border-radius:22px;background:var(--dsw-alias-bg-disabled);transition:background .16s}
-.sgSwitch>input:checked+.sgSwitchTrack{background:var(--dsw-alias-interactive-bg-primary)}
-.sgSwitchThumb{position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:var(--dsw-alias-bg-module-platform);box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .16s}
+.sgSwitchTrack{position:absolute;inset:0;border-radius:22px;background:var(--dsw-alias-interactive-bg-hover);transition:background .16s}
+.sgSwitch>input:checked+.sgSwitchTrack{background:var(--dsw-alias-button-primary-fill)}
+.sgSwitchThumb{position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:var(--dsw-alias-bg-base);box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .16s}
 .sgSwitch>input:checked~.sgSwitchThumb{transform:translateX(18px)}
 .sgReadonly{color:var(--dsw-alias-label-tertiary);font-size:12px;margin:8px 0 0}
 `

@@ -2,7 +2,7 @@
   "name": "dsh-session-guard",
   "version": "0.1.0",
   "type": "module",
-  "description": "高峰自动会话门：高峰时段自动暂停运行会话（经 taskControl 会话门），无会话门时回退只锁等待队列；周末模式识别周末、无视峰谷畅快跑。设置位于 设置 → 插件 → session-guard，简单开关。",
+  "description": "高峰自动会话门：周末模式 + 高峰自动暂停（全局）+ 会话级冻结/恢复 + 后端自动重试；周末识别正确、退峰自动续跑。设置位于 设置 → 插件 → session-guard，简单开关。",
   "keywords": [
     "deepseek-harness",
     "dsh",
@@ -11,6 +11,8 @@
     "off-peak",
     "weekend",
     "pause",
+    "freeze",
+    "retry",
     "session-gate"
   ],
   "license": "MIT",
@@ -24,7 +26,8 @@
     "src/",
     "lib/",
     "cordis.patch.yml",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "dsh": {
     "client": {

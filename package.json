@@ -35,10 +35,14 @@
     }
   },
   "scripts": {
+    "build": "node scripts/build-client.mjs",
     "test": "node --test \"tests/*.test.mjs\""
   },
   "engines": {
     "node": ">=20"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
   },
   "peerDependencies": {
     "@deepseek-ai/dsh-settings": "^0.1.0-rc.0",

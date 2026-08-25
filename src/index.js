@@ -18,7 +18,7 @@ import { createGate } from './gate.js'
 import { createBridge } from './bridge.js'
 import { createRetry } from './retry.js'
 import { detectTaskControl } from './detect.js'
-import { NS, DEFAULT_SETTINGS, registerSettings } from './settings.js'
+import { NS, DEFAULT_SETTINGS, SettingsSchema, registerSettings } from './settings.js'
 
 export const name = 'session-guard'
 export const inject = ['agents', 'webServer', 'settings', 'timer']
@@ -157,6 +157,35 @@ export function apply(ctx) {
                 weekendMode: cfg.weekendMode,
                 timezone: cfg.timezone,
                 now: now.toISOString(),
+              },
+            })
+          }
+          // GET /session-guard/diag —— 运行时诊断：settings 服务形状 + 已注册 namespace 列表
+          if (method === 'GET' && url.pathname === '/session-guard/diag') {
+            const settings = ctx.settings
+            let hasSettings = !!settings && typeof settings === 'object'
+            let hasRegister = typeof (settings && settings.register) === 'function'
+            let namespaces = null
+            let describeErr = null
+            try {
+              const d = typeof settings.describe === 'function' ? settings.describe() : null
+              namespaces = Array.isArray(d) ? d.map((x) => x && x.ns) : d
+            } catch (e) {
+              describeErr = String(e && e.message || e)
+            }
+            return json(200, {
+              ok: true,
+              diag: {
+                hasSettings,
+                settingsType: hasSettings ? (settings.constructor ? settings.constructor.name : typeof settings) : typeof settings,
+                settingsKeys: hasSettings ? Object.keys(settings) : [],
+                hasRegister,
+                hasGet: typeof (settings && settings.get) === 'function',
+                hasDescribe: typeof (settings && settings.describe) === 'function',
+                namespaces,
+                describeErr,
+                ns: NS,
+                schemaOk: !!SettingsSchema && typeof SettingsSchema === 'function',
               },
             })
           }

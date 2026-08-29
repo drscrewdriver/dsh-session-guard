@@ -62,7 +62,8 @@ dsh plugin --profile web add github:<owner>/dsh-session-guard
 
 附属配置：
 
-- `timezone`（默认 Asia/Shanghai）、`peakWindows`（默认 09:00–12:00 / 14:00–18:00）；
+- `timezone`（默认 Asia/Shanghai）——**周末判定**和徽标显示用的时区；**不影响峰谷判定**（峰谷固定按北京时间）；
+- `peakWindows`（默认 09:00–12:00 / 14:00–18:00）——按北京时间（UTC+8）的峰谷窗口，与 DeepSeek 官方计费一致；
 - `pauseMode`（`safe`/`force`）、`pauseReason`（`wait`/`stop`）——暂停推进方式；
 - 重试参数：`retryText`、`retryGraceMs`、`retryCooldownMs`、`retryBackoffFactor`、`retryBackoffMaxMs`、`retryMaxConsecutive`。
 
@@ -72,6 +73,7 @@ dsh plugin --profile web add github:<owner>/dsh-session-guard
 
 - **入峰**（且非周末）：对所有 running root session 调 `gate.stopNextTurn`——自研会话门真暂停（不打断推理，推理完成/工具派发前落在安全边界暂停），或按 `queueFallback` 回退锁等待队列；
 - **退峰 / 周末**：`gate.resume` **全部**会话（自动续跑，无需手动）——受 `offPeakAutoResume` 开关控制，关掉则退峰不自动恢复；
+- **峰谷时区**：固定使用北京时间（`Asia/Shanghai`），与 DeepSeek 官方计费基准一致，不受 `timezone` 配置影响；
 - 状态机：单实例 `NORMAL ↔ PAUSED_PEAK`（`scheduler.js`），由单一 30s tick 驱动。
 
 ### 会话锁定（冻结）

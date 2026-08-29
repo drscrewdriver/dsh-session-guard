@@ -12,7 +12,7 @@
  *   对齐 dsh-thinking-levels；不 value-import dsh-settings）；设置服务缺失时 fail-open 用默认配置照常运行。
  */
 import { computeState, transition } from './scheduler.js'
-import { wallClock, isWeekend, isInPeak } from './time.js'
+import { wallClock, isWeekend, isInPeak, BILLING_TIMEZONE } from './time.js'
 import { createStore } from './store.js'
 import { createGate } from './gate.js'
 import { createBridge } from './bridge.js'
@@ -207,12 +207,15 @@ export function apply(ctx) {
             return json(200, { ok: true, settings: cfg, taskControlAvailable: detectTaskControl(ctx) })
           }
           // GET /session-guard/status —— 全局当前阶段（状态徽标轮询用）
+          // 峰谷判定：固定北京时间（BILLING_TIMEZONE），与 DeepSeek 官方计费一致
+          // 周末判定：用配置时区（用户本地的周末）
           if (method === 'GET' && url.pathname === '/session-guard/status') {
             const cfg = readCfg()
             const now = new Date()
-            const wc = wallClock(cfg.timezone, now)
-            const weekend = isWeekend(wc.weekday)
-            const peak = cfg.enabled && !weekend && isInPeak(wc, cfg.peakWindows || [])
+            const wcUser = wallClock(cfg.timezone, now)
+            const wcBilling = wallClock(BILLING_TIMEZONE, now)
+            const weekend = isWeekend(wcUser.weekday)
+            const peak = cfg.enabled && !weekend && isInPeak(wcBilling, cfg.peakWindows || [])
             return json(200, {
               ok: true,
               status: {
@@ -223,6 +226,7 @@ export function apply(ctx) {
                 enabled: cfg.enabled,
                 weekendMode: cfg.weekendMode,
                 timezone: cfg.timezone,
+                billingTimezone: BILLING_TIMEZONE,
                 now: now.toISOString(),
               },
             })

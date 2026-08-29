@@ -58,6 +58,49 @@ dsh plugin --profile web add github:<owner>/dsh-session-guard
 | `queueFallback` | on | カスタムセッションゲート利用不可時にロック待機キューにフォールバック（fail-open） |
 | `retryEnabled` | off | **自動リトライ（バックエンド）**：瞬時失敗自動再試行（デフォルトオフ、保守的） |
 
+追加設定：
+
+- `timezone`（デフォルト Asia/Shanghai）——**週末判定**とバッジ表示に使用。**峰谷判定には影響しない**（峰谷は常に北京時間）；
+- `peakWindows`（デフォルト 09:00–12:00 / 14:00–18:00）——北京時間（UTC+8）の峰谷ウィンドウ。DeepSeek 公式課金と一致；
+- `pauseMode`（`safe`/`force`）、`pauseReason`（`wait`/`stop`）；
+- リトライパラメータ：`retryText`、`retryGraceMs`、`retryCooldownMs`、`retryBackoffFactor`、`retryBackoffMaxMs`、`retryMaxConsecutive`。
+
+## 動作
+
+### ピーク自動ゲート（グローバル）
+
+- **ピーク入り**（かつ非週末）：全 running ルートセッションに `gate.stopNextTurn` を呼び出し——カスタムセッションゲートで真の一時停止（推論を中断せず、安全境界で一時停止）、`queueFallback` でロック待機キューにフォールバック；
+- **退峰 / 週末**：`gate.resume` **全**セッション（自動再開、手動不要）——`offPeakAutoResume` スイッチで制御；
+- **峰谷タイムゾーン**：常に北京時間（`Asia/Shanghai`）を使用。DeepSeek 公式課金基準に一致。`timezone` 設定の影響を受けません；
+- 状態機械：単一インスタンス `NORMAL ↔ PAUSED_PEAK`（`scheduler.js`）、単一 30s tick で駆動。
+
+### タイムゾーン処理
+
+- **峰谷判定**：常に **北京時間（UTC+8）** を使用（`BILLING_TIMEZONE = 'Asia/Shanghai'`）。DeepSeek 公式課金基準。`timezone` 設定で変更不可（ハードコード）；
+- **週末判定**：ユーザー設定の `timezone`（例：`Asia/Tokyo`、`Asia/Seoul`）を使用。「週末」はローカル概念のため；
+- `Intl.DateTimeFormat` でタイムゾーン投影。無効な IANA タイムゾーン名は `RangeError` で fail-open し `Asia/Shanghai` にフォールバック；
+- 峰谷ウィンドウは**左閉右開** `[start, end)`。深夜跨ぎウィンドウ（例：`22:00–06:00`）対応。
+
+### status-badge（フロントエンド表示）
+
+コンポーザー入力エリア右側に**読み取り専用**のステータスバッジを表示：
+
+| 階層 | ラベル | CSS クラス | 意味 |
+|---|---|---|---|
+| `peak` | 高峰 | `sg-peak` | 平日ピーク時間帯、セッション自動一時停止中 |
+| `off-peak` | 谷時 | `sg-off` | オフピーク時間帯、セッション通常稼働 |
+| `weekend` | 週末 | `sg-weekend` | 週末（週末モード有効時）、峰谷無視 |
+
+- 15 秒ごとに `GET /session-guard/status` をポーリング；
+- fail-open：ルート到達不可・ネットワークエラー・`enabled` オフ時→バッジ非表示；
+- **input-traffic に依存しない**：session-guard クライアントコードが単独で描画。input-traffic は凍結ボタンのみ担当；
+
+### input-traffic との連携
+
+- input-traffic の**凍結ボタン**は `sessionGuard.stopNextTurn`（RPC、セッション経由）経由でサーバーサイドに伝達；
+- input-traffic は**凍結強化のみ**（キュー凍結/解凍 + composer ブロック）、リトライは本プラグインのバックエンドが処理；
+- 両方「セッション分離」セマンティスを共有：input-traffic 凍結キューは sessionId で分離、session-guard RPC も sessionId で分離。
+
 ## ライセンス
 
 MIT — [LICENSE](LICENSE) 参照。

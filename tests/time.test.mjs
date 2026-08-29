@@ -1,9 +1,12 @@
 /**
  * time.js 测试：高峰 / 周末 / 时区正确性（D1）。
+ *
+ * 峰谷判定固定北京时间（BILLING_TIMEZONE = 'Asia/Shanghai'），
+ * 周末判定用配置时区（settings.timezone）。
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { parseHHMM, inWindow, wallClock, isWeekend, shouldPause } from '../src/time.js'
+import { parseHHMM, inWindow, wallClock, isWeekend, shouldPause, BILLING_TIMEZONE } from '../src/time.js'
 
 const SETTINGS = {
   enabled: true,
@@ -93,4 +96,65 @@ test('shouldPause：跨午夜高峰窗口', () => {
   // 北京周四 12:00 = UTC 04:00 → 不在 [22:00,06:00)
   const r2 = shouldPause(overnight, new Date('2026-08-20T04:00:00Z'))
   assert.equal(r2.pause, false)
+})
+
+// ── 峰谷固定北京时间（BILLING_TIMEZONE）测试 ──
+
+test('BILLING_TIMEZONE 为 Asia/Shanghai', () => {
+  assert.equal(BILLING_TIMEZONE, 'Asia/Shanghai')
+})
+
+test('shouldPause：东京用户（Asia/Tokyo）高峰仍按北京时间判定', () => {
+  // 东京用户把 timezone 设为 Asia/Tokyo
+  const tokyoSettings = { ...SETTINGS, timezone: 'Asia/Tokyo' }
+  // 北京周三 10:00 = UTC 02:00 = 东京周三 11:00
+  // 北京时间在高峰 [09:00,12:00) → 应暂停
+  // 东京时间 11:00 也在 [09:00,12:00) → 但关键是必须按北京时间判
+  const r = shouldPause(tokyoSettings, new Date('2026-08-19T02:00:00Z'))
+  assert.equal(r.pause, true)
+  assert.equal(r.reason, 'peak')
+})
+
+test('shouldPause：东京用户北京时间 12:00（东京 13:00）→ 谷时不暂停', () => {
+  // 北京周三 12:00 = UTC 04:00 = 东京周三 13:00
+  // 北京时间 12:00 不在 [09:00,12:00) → 谷时
+  const tokyoSettings = { ...SETTINGS, timezone: 'Asia/Tokyo' }
+  const r = shouldPause(tokyoSettings, new Date('2026-08-19T04:00:00Z'))
+  assert.equal(r.pause, false)
+  assert.equal(r.reason, 'off-peak')
+})
+
+test('shouldPause：东京用户东京周末但北京还是工作日 → 周末不暂停', () => {
+  // 东京周六 00:30 = UTC 周五 15:30 = 北京周五 23:30
+  // 东京已经是周六（周末），但北京时间还是周五
+  // 周末判定用东京时区 → 周末 → 不暂停
+  const tokyoSettings = { ...SETTINGS, timezone: 'Asia/Tokyo' }
+  const r = shouldPause(tokyoSettings, new Date('2026-08-21T15:30:00Z'))
+  assert.equal(r.pause, false)
+  assert.equal(r.reason, 'weekend')
+})
+
+test('shouldPause：北京时间周末但东京还是工作日 → 按东京判定周末', () => {
+  // 北京周日 00:30 = UTC 周六 16:30 = 东京周日 01:30
+  // 北京和东京都是周日 → 周末
+  // 换个场景：北京周一 00:30 = UTC 周日 16:30 = 东京周一 01:30
+  // 北京已是周一（工作日），东京也是周一 → 不是周末
+  // 再换：北京周日 23:30 = UTC 周日 15:30 = 东京周一 00:30
+  // 北京还是周日（周末），东京已是周一（工作日）
+  // 周末判定用东京时区 → 周一 → 不是周末 → 按峰谷判
+  const tokyoSettings = { ...SETTINGS, timezone: 'Asia/Tokyo' }
+  // 北京周日 23:30 = UTC 周日 15:30 → 东京周一 00:30
+  const r = shouldPause(tokyoSettings, new Date('2026-08-23T15:30:00Z'))
+  // 东京周一（工作日）→ 不是周末
+  // 北京时间 23:30 → 不在高峰 → 谷时
+  assert.equal(r.pause, false)
+  assert.equal(r.reason, 'off-peak')
+})
+
+test('shouldPause：首尔用户（Asia/Seoul）与北京时间差相同，行为一致', () => {
+  const seoulSettings = { ...SETTINGS, timezone: 'Asia/Seoul' }
+  // 北京周三 10:00 = UTC 02:00 = 首尔周三 11:00
+  const r = shouldPause(seoulSettings, new Date('2026-08-19T02:00:00Z'))
+  assert.equal(r.pause, true)
+  assert.equal(r.reason, 'peak')
 })

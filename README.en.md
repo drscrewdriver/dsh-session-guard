@@ -60,7 +60,8 @@ Restart dsh web and refresh the page after installation.
 
 Additional configuration:
 
-- `timezone` (default Asia/Shanghai), `peakWindows` (default 09:00–12:00 / 14:00–18:00);
+- `timezone` (default Asia/Shanghai) — used for **weekend detection** and badge display; **does not affect peak/off-peak detection** (always Beijing time);
+- `peakWindows` (default 09:00–12:00 / 14:00–18:00) — peak windows in Beijing time (UTC+8), matching DeepSeek's official billing;
 - `pauseMode` (`safe`/`force`), `pauseReason` (`wait`/`stop`);
 - Retry parameters: `retryText`, `retryGraceMs`, `retryCooldownMs`, `retryBackoffFactor`, `retryBackoffMaxMs`, `retryMaxConsecutive`.
 
@@ -70,6 +71,7 @@ Additional configuration:
 
 - **Peak entry** (and not weekend): calls `gate.stopNextTurn` on all running root sessions — custom session gate truly pauses (doesn't interrupt reasoning, pauses at safe boundary before next tool dispatch), or falls back to lock-wait queue per `queueFallback`;
 - **Off-peak / weekend**: `gate.resume` **all** sessions (auto-resume, no manual action) — controlled by `offPeakAutoResume` toggle;
+- **Peak timezone**: hardcoded to Beijing time (`Asia/Shanghai`), matching DeepSeek's official billing basis — not affected by the `timezone` setting;
 - State machine: single-instance `NORMAL ↔ PAUSED_PEAK` (`scheduler.js`), driven by a single 30s tick.
 
 ### Session locking (freeze)
@@ -86,6 +88,29 @@ Listens to `turn/end`, classifies failures:
 - **Permanent** (auth/balance/model/context limit) → stop;
 - **Yields during freeze/gate**: `isFrozen(sessionId)` true (queueLocked / paused / taskControl paused) → no retry;
 - User intervention or successful turn resets consecutive failure count.
+
+### Status badge (frontend display)
+
+A **read-only** status badge is rendered on the right side of the composer input area, reflecting the current phase in real time:
+
+| Phase | Label | CSS class | Meaning |
+|---|---|---|---|
+| `peak` | 高峰 | `sg-peak` | Weekday peak hours, sessions auto-paused |
+| `off-peak` | 谷时 | `sg-off` | Off-peak hours, sessions running normally |
+| `weekend` | 周末 | `sg-weekend` | Weekend (when weekend mode is on), ignore peak/off-peak |
+
+- **Polling**: requests `GET /session-guard/status` every 15 seconds for the global `phase`;
+- **Fail-open**: route unreachable, network error, or `enabled` off → badge silently hidden, no session affected;
+- **Independent of input-traffic**: the badge is rendered by session-guard's client code alone — **input-traffic is not required**. input-traffic only provides the freeze button, which is unrelated to the badge;
+- **Tooltip**: hovering shows `phase · timezone · weekend mode` (e.g. `周末 · Asia/Shanghai · 周末模式`).
+
+### Timezone handling
+
+- **Peak/off-peak detection**: always uses **Beijing time (UTC+8)** via `BILLING_TIMEZONE = 'Asia/Shanghai'`, matching DeepSeek's official billing basis. This is **hardcoded** and not affected by the `timezone` setting;
+- **Weekend detection**: uses the user-configured `timezone` (e.g. `Asia/Tokyo`, `Asia/Seoul`), because "weekend" is a local concept;
+- `Intl.DateTimeFormat` is used for timezone projection — invalid IANA timezone names throw `RangeError`, caught by fail-open and falling back to `Asia/Shanghai`;
+- Peak windows are **left-closed, right-open** `[start, end)`, supporting cross-midnight windows (e.g. `22:00–06:00`);
+- The `timezone` setting works identically across all UI languages (zh/en/ja/ko) — IANA timezone names are locale-independent.
 
 ### Coordination with input-traffic
 

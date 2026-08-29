@@ -1,12 +1,22 @@
 /**
  * dsh-session-guard — 时间判定（纯函数，零依赖，可单测）。
  *
- * 高峰/周末识别必须基于「配置时区」的墙钟，而不是裸 UTC（D1）：
- * 周末判断用 `Intl.DateTimeFormat(timeZone)` 投影，避免 off-peak 那种
- * 用 `getUTCDay()` 导致北京周末边界错 8 小时的 bug。
+ * 峰谷判定必须基于 DeepSeek 官方计费基准——北京时间（UTC+8），
+ * 而不是用户配置的本地时区。用硬编码 BILLING_TIMEZONE = 'Asia/Shanghai'。
+ *
+ * 周末判定基于用户配置时区（settings.timezone），因为"周末"是用户本地概念。
+ *
+ * 两者都通过 `Intl.DateTimeFormat(timeZone)` 投影，避免裸 `getUTCDay()`
+ * 导致北京周末边界错 8 小时的 bug。
  *
  * 高峰时段为左闭右开 [start, end)；跨午夜窗口（start > end）安全。
  */
+
+/**
+ * DeepSeek 峰谷计费基准时区（固定北京时间 UTC+8）。
+ * 峰谷窗口判定必须用此时区，不受用户 timezone 配置影响。
+ */
+export const BILLING_TIMEZONE = 'Asia/Shanghai'
 
 /** 解析 "HH:mm" → 当日分钟数，非法返回 null。 */
 export function parseHHMM(s) {
@@ -69,6 +79,10 @@ export function isInPeak(wc, windows) {
 
 /**
  * 主判定：此刻是否应触发高峰暂停。
+ *
+ * - 峰谷判定：固定使用 BILLING_TIMEZONE（北京时间），与 DeepSeek 官方计费一致；
+ * - 周末判定：使用 settings.timezone（用户本地时区），因为周末是用户本地概念。
+ *
  * @param {object} settings { enabled, weekendMode, timezone, peakWindows }
  * @param {Date} date
  * @returns {{pause:boolean, reason:string}}
@@ -76,12 +90,14 @@ export function isInPeak(wc, windows) {
  */
 export function shouldPause(settings, date) {
   if (!settings || settings.enabled !== true) return { pause: false, reason: 'disabled' }
-  const wc = wallClock(settings.timezone, date)
-  // 周末模式：识别周末 → 无视峰谷，畅快跑（D6）。
-  if (settings.weekendMode === true && isWeekend(wc.weekday)) {
+  // 周末判定：用用户配置时区（用户本地的周末）
+  const wcUser = wallClock(settings.timezone, date)
+  if (settings.weekendMode === true && isWeekend(wcUser.weekday)) {
     return { pause: false, reason: 'weekend' }
   }
-  if (isInPeak(wc, settings.peakWindows || [])) {
+  // 峰谷判定：固定北京时间（DeepSeek 官方计费基准）
+  const wcBilling = wallClock(BILLING_TIMEZONE, date)
+  if (isInPeak(wcBilling, settings.peakWindows || [])) {
     return { pause: true, reason: 'peak' }
   }
   return { pause: false, reason: 'off-peak' }

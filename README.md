@@ -1,6 +1,8 @@
 <p align="center">
   <strong>高峰自动会话门：周末模式 + 高峰自动暂停 + 会话级冻结 + 后端自动重试</strong>
 </p>
+<img width="832" height="182" alt="00c4b89a-b026-4bf1-a358-a068e80d2da7" src="https://github.com/user-attachments/assets/31a8836f-0fe0-4043-948a-f0865bb1b3bb" />
+
 <p align="center">
   <a href="README.en.md">English</a> · <strong>中文</strong> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a>
 </p>

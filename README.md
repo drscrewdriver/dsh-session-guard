@@ -89,6 +89,28 @@ dsh plugin --profile web add github:<owner>/dsh-session-guard
 - **冻结/门控期间让路**：`isFrozen(sessionId)` 为真（queueLocked / paused / taskControl paused）时不重试；
 - 用户介入或成功回合重置连续失败计数。
 
+### 状态徽标（前端展示）
+
+输入区右侧显示一个**纯展示**状态徽标，实时反映当前所处阶段：
+
+| 阶段 | 徽标文案 | CSS 类 | 含义 |
+|---|---|---|---|
+| `peak` | 高峰 | `sg-peak` | 工作日高峰时段，会话已被自动暂停 |
+| `off-peak` | 谷时 | `sg-off` | 非高峰时段，会话正常运行 |
+| `weekend` | 周末 | `sg-weekend` | 周末（周末模式开启时），无视峰谷畅快跑 |
+
+- **轮询**：每 15 秒请求 `GET /session-guard/status`，获取全局 `phase`；
+- **fail-open**：路由不可达、网络错误、或 `enabled` 关闭时→ 徽标静默隐藏，不影响任何会话；
+- **独立于 input-traffic**：徽标由 session-guard 客户端独立渲染，**不需要安装 input-traffic 插件**即可显示。input-traffic 只负责冻结按钮，与徽标无依赖关系；
+- **tooltip**：悬停显示 `阶段 · 时区 · 周末模式`（如 `周末 · Asia/Shanghai · 周末模式`）。
+
+### 时区处理与校验
+
+- 时区判定基于 **IANA 时区名**（如 `Asia/Shanghai`、`Asia/Tokyo`、`Asia/Seoul`），通过 `Intl.DateTimeFormat` 投影为配置时区的墙钟，**不依赖裸 `getUTCDay()`**——避免北京时区 UTC+8 边界错 8 小时的经典 bug（周六 00:30 北京时间，UTC 还是周五）；
+- `Intl.DateTimeFormat` 本身即为校验层：传入无效时区名（如 `Foo/Bar`）会抛 `RangeError`，被外层 try-catch 静默降级为默认时区 `Asia/Shanghai`（fail-open）；
+- 峰谷窗口为**左闭右开** `[start, end)`，支持跨午夜窗口（如 `22:00–06:00`）；
+- `timezone` 配置项对所有语言（中/英/日/韩）通用——`Intl.DateTimeFormat` 的 IANA 时区名不依赖 locale，日文/韩文界面下时区行为与中文完全一致。
+
 ### 与 input-traffic 协作
 
 - input-traffic 的**冻结按钮**触发时经 `sessionGuard.stopNextTurn`（RPC，会话级）透传服务端；

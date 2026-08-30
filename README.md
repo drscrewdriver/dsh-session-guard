@@ -42,6 +42,15 @@
 - **后端自动重试（D9）**：turn/end 瞬时失败（error/429/max-tokens）自适应退避自动续跑；永久失败停止；**冻结/门控期间让路**，绝不绕过会话门。
 - **fail-open**：自研会话门不可用、session-guard 未装、设置服务缺失——均静默降级，绝不因依赖而崩。
 
+## 界面预览
+
+实际运行截屏（Windows，dsh web）——周末模式激活状态：
+
+<figure>
+  <img style="max-width:100%" alt="输入区状态控制条：处于激活态的「周末」按钮高亮（周末模式开启时无视峰谷畅快跑），相邻「冻结会话」按钮（配 input-traffic）、DeepSeek-V4-Flash 思维档位与发送控件，底部为轮次/步数、LLM 耗时、缓存命中率等状态条" src="assets/高峰低峰周末提醒-周末状态.png" />
+  <figcaption>周末模式激活：输入区「周末」徽标高亮，与「冻结会话」并列；周末无视峰谷、会话自动畅跑。</figcaption>
+</figure>
+
 ## 安装
 
 ```bash

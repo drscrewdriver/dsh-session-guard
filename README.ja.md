@@ -55,6 +55,7 @@ dsh plugin --profile web add github:<owner>/dsh-session-guard
 | スイッチ | デフォルト | 説明 |
 |---|---|---|
 | `enabled` | on | **ピーク自動一時停止**：ピーク時間帯に実行セッションを自動一時停止 |
+| `stepLevelPause` | on | **step 級ゲート**：ピーク時、次の step のモデルリクエスト**前**にゲートを閉じる（ターン級より早く・より節約）。オフでターン級一時停止にフォールバック |
 | `providerGuard` | on | **公式ソース二次判定**：ピーク時は DeepSeek 公式ソースのみ遮断、ローカル/第三者 provider は通常実行 |
 | `guardSubagents` | on | **サブエージェントも対象**：サブエージェントのリクエストも課金対象、既定で遮断 |
 | `offPeakAutoResume` | on | **オフピーク自動再開**：オフピーク時に一時停止セッションを自動再開 |
@@ -68,6 +69,7 @@ dsh plugin --profile web add github:<owner>/dsh-session-guard
 - `timezone`（デフォルト Asia/Shanghai）——**週末判定**とバッジ表示に使用。**峰谷判定には影響しない**（峰谷は常に北京時間）；
 - `peakWindows`（デフォルト 09:00–12:00 / 14:00–18:00）——北京時間（UTC+8）の峰谷ウィンドウ。DeepSeek 公式課金と一致；
 - `pauseMode`（`safe`/`force`）、`pauseReason`（`wait`/`stop`）；
+- `stepGateTimeoutMs`（既定 300000）——step ゲートの保留タイムアウト。期限切れでゲートを解放し**ターン級一時停止へ昇格**（デッドロック回避、「5 分ごとに 1 step」のトークン滴漏も回避）；
 - 公式ソース判定：`officialProviders`（公式 provider id を追加、カンマ区切り、最優先）、`officialBaseURLs`（公式エンドポイント host、既定 `api.deepseek.com`）；
 - 延後キュー：`deferredMode`（`hold` / `error`）、`deferredResumeText`、`deferredMaxHoldMs`（保留上限、既定 6h、超過で error）；
 - リトライパラメータ：`retryText`、`retryGraceMs`、`retryCooldownMs`、`retryBackoffFactor`、`retryBackoffMaxMs`、`retryMaxConsecutive`。
@@ -76,10 +78,30 @@ dsh plugin --profile web add github:<owner>/dsh-session-guard
 
 ### ピーク自動ゲート（グローバル）
 
-- **ピーク入り**（かつ非週末）：全 running ルートセッションに `gate.stopNextTurn` を呼び出し——カスタムセッションゲートで真の一時停止（推論を中断せず、安全境界で一時停止）、`queueFallback` でロック待機キューにフォールバック；
-- **退峰 / 週末**：`gate.resume` **全**セッション（自動再開、手動不要）——`offPeakAutoResume` スイッチで制御；
+- **ピーク入り**（かつ非週末）：`stepLevelPause` が有効なら**ターンを即中断しない**——セッションは次の `agent/pre-step` 境界まで走り、そこで step ゲートが閉じます（下記）。無効なら全 running ルートセッションに `gate.stopNextTurn`（カスタムセッションゲート、`queueFallback` でロック待機キューにフォールバック）；
+- **退峰 / 週末**：まず保留中の step を `releaseAll` で解放（ターンはその場で継続）、次に `gate.resume` **全**セッション（`offPeakAutoResume` で制御）；
 - **峰谷タイムゾーン**：常に北京時間（`Asia/Shanghai`）を使用。DeepSeek 公式課金基準に一致。`timezone` 設定の影響を受けません；
 - 状態機械：単一インスタンス `NORMAL ↔ PAUSED_PEAK`（`scheduler.js`）、単一 30s tick で駆動。
+
+### step 級ゲート（v0.2.0、節約の要）
+
+`agent/pre-step` waterfall に接続し、**次の step のモデルリクエストが発生する前**にターンを保留します。
+
+- **ゲート条件**（すべて満たす）：`enabled` + `stepLevelPause` + `step > 1` + ピーク（北京時間、非週末）+ 対象 provider が公式（`providerGuard`、オフなら全部）+ リクエスト級 hold されていない + このピーク期間で手動スキップされていない；
+- **`step > 1` の理由**：ターン最初の step はリクエスト級ガードが担当するため、二重ゲートにならない；
+- **解放経路**：①「⏸ 一時停止中（再開）」ボタン / `POST /session-guard/rpc {action:'stepResume'}` / `/resume` → 現在の step を通し、**このピーク期間はもうゲートしない**；② 退峰 → 全解放、ターンはその場で継続（**followup 不要**）；③ 凍結ボタン / `/pause` / `/cancel` → ゲート解放してターン級一時停止へ；④ `signal` abort → 解放；
+- **タイムアウト昇格**：`stepGateTimeoutMs`（既定 5 分）超過でゲート解放 + **ターン級 force 一時停止へ昇格**、退峰で復帰（デッドロックなし・トークン滴漏なし）；
+- **状態**：`GET /session-guard/state?session=<id>` が `paused: { step, turn }` と `stepGate: { held, since, bypass }` を返す。サービス側 `state().paused` は**互換のため真偽値のまま**、step 状態は `pausedStep`；
+- **永続化しない**：保留はプロセス内 Promise、再起動で消滅（幽霊状態を避ける）。
+
+#### 「一時停止 / 再開」ボタン（session-guard が提供）
+
+コンポーザー右側の「一時停止」ボタン（slot `conversation.input.right`、id `session-guard-pause`、order 20 — input-traffic の「❄ 凍結して追加」の左）：
+
+- 未一時停止 → 「一時停止」、**クリック可**：`stepPause` を呼び、**次の step のモデルリクエスト前**にセッションを停止（現在の step は中断しない。step 1 も対象で、峰谷 / provider の制限を受けない）；
+- 一時停止中 → 「再開」、`stepResume` を呼び現在の step を放行、このピーク期間はもうゲートしない；
+- **イベント push**：`GET /session-guard/events?session=<id>`（SSE）が step ゲート状態の変化を**即時**通知——ピークで自動的に閉じたらボタンは即「再開」に変わります。10 秒ごとの `/session-guard/state` ポーリングはフォールバック（SSE 不通でも収束）；
+- 同じ行の input-traffic ボタンと見た目を揃えています（高さ 24px / 角丸 6px / 12px フォント / 同じ CSS トークン）。
 
 ### 公式ソース判定（providerGuard）
 
@@ -134,15 +156,21 @@ dsh plugin --profile web add github:<owner>/dsh-session-guard
 | `off-peak` | 谷時 | `sg-off` | オフピーク時間帯、セッション通常稼働 |
 | `weekend` | 週末 | `sg-weekend` | 週末（週末モード有効時）、峰谷無視 |
 
-- 15 秒ごとに `GET /session-guard/status` をポーリング（`phase` / `providerGuard` / `held` / `deferred`）；
+- 15 秒ごとに `GET /session-guard/status` をポーリング（`phase` / `providerGuard` / `held` / `deferred` / `stepHeld`）；
 - fail-open：ルート到達不可・ネットワークエラー・`enabled` オフ時→バッジ非表示；
 - **input-traffic に依存しない**：session-guard クライアントコードが単独で描画。input-traffic は凍結ボタンのみ担当；
 
 ### input-traffic との連携
 
-- input-traffic の**凍結ボタン**は `sessionGuard.stopNextTurn`（RPC、セッション経由）経由でサーバーサイドに伝達；
-- input-traffic は**凍結強化のみ**（キュー凍結/解凍 + composer ブロック）、リトライは本プラグインのバックエンドが処理；
-- 両方「セッション分離」セマンティスを共有：input-traffic 凍結キューは sessionId で分離、session-guard RPC も sessionId で分離。
+- input-traffic の**「❄ 凍結して追加」ボタン**は `sessionGuard.stopNextTurn`（RPC、セッション経由）で伝達し、**まず step ゲートを解放**します（そうしないとターン級一時停止が永遠に来ない安全境界を待ち、相互待機になります）；
+### input-traffic との役割分担：「止める」側と「並べる」側
+
+**DSH のキュー意味論（2 本のキュー）**：`next-step` = 「次の step 境界を待つ入力」（次の `agent/pre-step` で**ツール結果と同じレベル**の step として同一 turn 内で消費）、`next-turn` = 「独立したターンを待つプロンプト」（現在のターン終了後に**新しい turn** として消費）。`Inbox.claim()` は**必ず `next-step` を先に全部取り**、新ターンを開く境界でのみ `next-turn` を **1 件**追加で取ります。
+
+- **session-guard = 止める**：いつ進めるかだけを決め、**キューの内容・順序には触れません**。step ゲート（`agent/pre-step`、次の step のモデルリクエスト前）、ターン級一時停止（`agent.cancel({keepInbox:true})` + `goals.pause`、**キューは保持**）、リクエスト級 hold（`agent/request`）。
+- **input-traffic = 並べる**：ユーザー入力がどのキューに、どの段階で入り、いつ消費されるかだけを決めます（三档：赤=interrupt は `cancel()` 後に `steer`、黄=`steer`（→ `next-step`）、緑=`next-turn` に待機）。凍結 = `queued`+`steering` 行を段階ごと退避 + composer ブロック + `sessionGuard.stopNextTurn`；再開 = ブロック解除 → `sessionGuard.resume` → 段階順に再投入。
+- **接点の 2 つの不変条件**：① 凍結は本プラグインに**先に step ゲートを解放**させる（でないとターン級一時停止が永遠に来ない安全境界を待ち、相互待機になる）；② step ゲート保留中は `preStep()` が waterfall 前に `inbox.claim()` 済みなので、新しい入力は取られた分の後ろに並ぶ（`keepInbox` はターン級のみ）。
+- ボタン：本プラグインの「一時停止 / 再開」（order 20）と input-traffic の「❄ 凍結して追加 / 再開して追加」（order 30）は**並列表示・相互に置き換えなし**。
 
 ## ライセンス
 

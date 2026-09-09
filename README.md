@@ -84,6 +84,7 @@ dsh plugin --profile web add github:<owner>/dsh-session-guard
 | 开关 | 默认 | 说明 |
 |---|---|---|
 | `enabled` | on | **高峰自动暂停冻结会话**：高峰时段自动暂停运行会话 |
+| `stepLevelPause` | on | **step 级门控**：高峰在下一个 step 的模型请求**之前**拉门（比回合级暂停更早、更省）；关掉则回退为回合级暂停 |
 | `providerGuard` | on | **官方源二维判定**：高峰期只拦 DeepSeek 官方源，本地/第三方 provider 照常跑 |
 | `guardSubagents` | on | **纳入子代理请求**：子代理请求同样计费，默认一并拦截 |
 | `offPeakAutoResume` | on | **低谷自动恢复**：低峰时段自动恢复被暂停的会话；关掉则退峰不自动恢复（需手动） |
@@ -97,6 +98,7 @@ dsh plugin --profile web add github:<owner>/dsh-session-guard
 - `timezone`（默认 Asia/Shanghai）——**周末判定**和徽标显示用的时区；**不影响峰谷判定**（峰谷固定按北京时间）；
 - `peakWindows`（默认 09:00–12:00 / 14:00–18:00）——按北京时间（UTC+8）的峰谷窗口，与 DeepSeek 官方计费一致；
 - `pauseMode`（`safe`/`force`）、`pauseReason`（`wait`/`stop`）——暂停推进方式；
+- `stepGateTimeoutMs`（默认 300000）——step 门挂起超时；到期释放门并**升级为回合级暂停**（防死锁，不会形成「每 5 分钟一个 step」的 token 滴漏）；
 - 官方源判定：`officialProviders`（追加官方 provider id，逗号分隔，优先级最高）、`officialBaseURLs`（官方端点 host 名单，默认 `api.deepseek.com`）；
 - 延后队列：`deferredMode`（`hold` 挂起等待 / `error` 报错并延后）、`deferredResumeText`（退峰续跑文案）、`deferredMaxHoldMs`（挂起上限，默认 6 小时，到期转 error）；
 - 重试参数：`retryText`、`retryGraceMs`、`retryCooldownMs`、`retryBackoffFactor`、`retryBackoffMaxMs`、`retryMaxConsecutive`。
@@ -105,10 +107,30 @@ dsh plugin --profile web add github:<owner>/dsh-session-guard
 
 ### 高峰自动门（全局）
 
-- **入峰**（且非周末）：对所有 running root session 调 `gate.stopNextTurn`——自研会话门真暂停（不打断推理，推理完成/工具派发前落在安全边界暂停），或按 `queueFallback` 回退锁等待队列；
-- **退峰 / 周末**：`gate.resume` **全部**会话（自动续跑，无需手动）——受 `offPeakAutoResume` 开关控制，关掉则退峰不自动恢复；
+- **入峰**（且非周末）：`stepLevelPause` 开启时**不再立即掐断回合**——会话自然跑到下一个 `agent/pre-step` 边界由 step 门拉门（见下节）；关掉则对所有 running root session 调 `gate.stopNextTurn`（自研会话门真暂停，或按 `queueFallback` 回退锁等待队列）；
+- **退峰 / 周末**：先 `releaseAll` 放行被挂起的 step（回合原地续跑），再 `gate.resume` **全部**会话——受 `offPeakAutoResume` 开关控制，关掉则退峰不自动恢复；
 - **峰谷时区**：固定使用北京时间（`Asia/Shanghai`），与 DeepSeek 官方计费基准一致，不受 `timezone` 配置影响；
 - 状态机：单实例 `NORMAL ↔ PAUSED_PEAK`（`scheduler.js`），由单一 30s tick 驱动。
+
+### step 级门控（v0.2.0，省 token 的关键）
+
+挂在 `agent/pre-step` waterfall 上：**在下一个 step 的模型请求发生之前**把回合挂起。
+
+- **拉门条件**（全部满足）：`enabled` + `stepLevelPause` + `step > 1` + 高峰（北京时间，非周末）+ 目标 provider 属官方（`providerGuard`，关闭时全部拦）+ 该会话未被请求级 hold + 本峰内未被手动跳过；
+- **为什么 `step > 1`**：一个回合的第 1 个 step 由请求级守卫覆盖，两道门不重叠；
+- **释放路径**：①「⏸ 暂停中（继续）」按钮 / `POST /session-guard/rpc {action:'stepResume'}` / `/resume` → 放行当前 step，且**本高峰内不再拦该会话**；② 退峰 → 全部放行，回合原地续跑（**不需要 followup**）；③ 冻结按钮 / `/pause` / `/cancel` → 释放门并转入回合级暂停；④ `signal` abort（用户取消）→ 释放门；
+- **超时升级**：挂起超过 `stepGateTimeoutMs`（默认 5 分钟）→ 释放门并**升级为回合级 force 暂停**，退峰统一恢复（不会卡死，也不会在高峰形成 token 滴漏）；
+- **状态**：`GET /session-guard/state?session=<id>` 返回 `paused: { step, turn }` 与 `stepGate: { held, since, bypass }`；服务端口 `state()` 的 `paused` **仍是布尔**（向后兼容），step 态用 `pausedStep`；
+- **不落盘**：挂起的是进程内 Promise，重启即失效（避免幽灵状态）。
+
+#### 暂停会话 / 继续会话按钮（session-guard 提供）
+
+输入区右侧的「暂停会话」按钮（slot `conversation.input.right`，id `session-guard-pause`，order 20，排在 input-traffic「❄ 冻结追加」左侧）：
+
+- 未暂停 → 「暂停会话」，**可点**：点击调 `stepPause`，在**下一次 step 的模型请求之前**暂停该会话（不打断当前 step；step 1 也拦，不受峰谷 / provider 限制）；
+- 已暂停 → 「继续会话」，点击调 `stepResume`：放行当前 step，且本高峰内不再拦该会话；
+- **事件推送**：`GET /session-guard/events?session=<id>`（SSE）在 step 门状态变化时**即时**推送——高峰期自动拉门后按钮立刻变「继续会话」，无需等轮询；另每 10 秒轮询 `/session-guard/state` 兜底（SSE 不可用 / 断线时仍能收敛）；
+- 样式与同一行的 input-traffic 按钮对齐（24px 高 / 6px 圆角 / 12px 字号 / 同一套 CSS 令牌），悬停与暂停态都有对应视觉反馈。
 
 ### 会话锁定（冻结）
 
@@ -136,10 +158,10 @@ dsh plugin --profile web add github:<owner>/dsh-session-guard
 | `off-peak` | 谷时 | `sg-off` | 非高峰时段，会话正常运行 |
 | `weekend` | 周末 | `sg-weekend` | 周末（周末模式开启时），无视峰谷畅快跑 |
 
-- **轮询**：每 15 秒请求 `GET /session-guard/status`，获取全局 `phase`、`providerGuard`、`held`、`deferred`；
+- **轮询**：每 15 秒请求 `GET /session-guard/status`，获取全局 `phase`、`providerGuard`、`held`、`deferred`、`stepHeld`；
 - **fail-open**：路由不可达、网络错误、或 `enabled` 关闭时→ 徽标静默隐藏，不影响任何会话；
 - **独立于 input-traffic**：徽标由 session-guard 客户端独立渲染，**不需要安装 input-traffic 插件**即可显示。input-traffic 只负责冻结按钮，与徽标无依赖关系；
-- **tooltip**：悬停显示 `阶段 · 时区 · 周末模式 · 判定口径 · 挂起/延后数量`。
+- **tooltip**：悬停显示 `阶段 · 时区 · 周末模式 · 判定口径 · 挂起/延后/step 挂起数量`。
 
 ### 官方源判定口径（providerGuard）
 
@@ -183,11 +205,47 @@ dsh plugin --profile web add github:<owner>/dsh-session-guard
 - 峰谷窗口为**左闭右开** `[start, end)`，支持跨午夜窗口（如 `22:00–06:00`）；
 - `timezone` 配置项对所有语言（中/英/日/韩）通用——`Intl.DateTimeFormat` 的 IANA 时区名不依赖 locale，日文/韩文界面下时区行为与中文完全一致。
 
-### 与 input-traffic 协作
+### 与 input-traffic 的分工：一个「停」，一个「排」
 
-- input-traffic 的**冻结按钮**触发时经 `sessionGuard.stopNextTurn`（RPC，会话级）透传服务端；
-- input-traffic **只做冻结增强**（队列冻结/解冻 + composer block），重试归本插件后端；
-- 两者共享「会话隔离」语义：input-traffic 冻结队列按 sessionId 隔离，session-guard RPC 同样按 sessionId 锁。
+两者作用在**同一条链**的不同环节，边界由 DSH 自身的 inbox 模型决定：
+
+```
+用户输入 ──(input-traffic 定档)──▶ next-step / next-turn 两条待处理队列
+                                        │
+                          agent/pre-step ──(本插件 step 门)──▶ 放行 / 挂起
+                                        │
+                            agent/request ──(本插件请求级 hold)──▶ 放行 / 挂起
+                                        │
+                                     模型调用
+```
+
+**DSH 的队列语义（两条队列，别记混）**
+
+| 队列 | 含义 | 消费时机 |
+|---|---|---|
+| `next-step` | 「等下一个 step 边界的输入」 | 下一个 `agent/pre-step`：与**工具返回同级**，在同一次 turn 里再走一个 step |
+| `next-turn` | 「等待独立回合的提示」 | 当前回合结束后，作为**新的 turn** 开跑 |
+
+`Inbox.claim()` **永远先取光 `next-step`**，只有该次边界要开新回合时再额外取 **1 条** `next-turn`；一个 turn 的第 1 个 step 取 next-turn，之后都取 next-step。
+
+**职责划分**
+
+- **session-guard = 停**：只决定「何时可以推进」，**不碰队列内容与顺序**。
+  - step 门（`agent/pre-step`）：在下一个 step 的模型请求**之前**挂起；
+  - 回合级暂停（`agent.cancel({keepInbox:true})` + `goals.pause` + 安全边界）：停掉当前回合，**队列原样保留**；
+  - 请求级守卫（`agent/request` hold）：挂起**这一次模型请求**。
+- **input-traffic = 排**：只决定「用户输入进哪条队列、什么档位、何时被消费」。
+  - 三档 = 往哪条队列放：红「打断」先 `cancel()` 再 `steer`；黄「插话」`steer`（→ `next-step`，同 turn 的下一步）；绿「排队」留在 `next-turn`；
+  - 冻结 = 把 `queued` + `steering` 行整体摘出（保留档位）+ composer block + 调 `sessionGuard.stopNextTurn`；恢复 = 清 block → 先 `sessionGuard.resume` → 按档位重投。
+
+**相遇点上的两条铁律**
+
+1. **冻结必须让本插件先释放 step 门**：step 门挂在 `agent/pre-step`，而回合级暂停在等安全边界事件——两者互等（本插件 `pauseTask` / `cancelTask` 已先 `release`）；
+2. **step 门挂起时消息已被取走**：`preStep()` 先 `inbox.claim()` 再派发 waterfall，所以挂起期间新输入排在被取走的那批之后；`keepInbox` 只作用于回合级暂停。
+
+**不会互相越界**：input-traffic 不监听 `agent/pre-step` / `agent/request`（唯一例外是「打断」档显式 `cancel()`，那是用户主动要求打断）；本插件也不改写 `next-step` / `next-turn` 的内容与顺序。
+
+按钮上：本插件的「暂停会话 / 继续会话」（order 20）与 input-traffic 的「❄ 冻结追加 / 恢复追加」（order 30）并列显示、互不取代——前者控 step 门，后者控队列摘除 + 回合级冻结。
 
 ## 冗余端口 `sessionGuard`
 
@@ -197,18 +255,21 @@ dsh plugin --profile web add github:<owner>/dsh-session-guard
   resume(sessionId, opts),        // 恢复（confirm + choice: rerun|skip）
   lockQueue(sessionId, reason),   // 显式锁队列
   unlockQueue(sessionId),         // 显式解锁
-  state(sessionId),               // { queueLocked, lockReason, paused, taskControlAvailable, taskControl }
+  stepPause(sessionId),           // 手动请求 step 级暂停（下一次 pre-step 边界拉门，step 1 也拦）
+  stepResume(sessionId, opts),    // 解开 step 门（v0.2.0）；opts.bypass=false 时不置本峰跳过
+  state(sessionId),               // { queueLocked, lockReason, paused, pausedStep, stepHeldSince, stepBypass, taskControlAvailable, taskControl }
 }
 ```
 
 ## HTTP 路由
 
-- `GET /session-guard/state?session=<id>` — 会话状态（含最近目标 / 是否挂起 / 是否延后）
+- `GET /session-guard/state?session=<id>` — 会话状态（含 `paused: { step, turn, manual }` / `stepGate` / 最近目标 / 是否挂起 / 是否延后）
+- `GET /session-guard/events?session=<id>` — **SSE**：step 门状态变化即时推送（按钮据此更新）
 - `GET /session-guard/settings` — 设置 + taskControl 可用性
-- `GET /session-guard/status` — 全局当前阶段（状态徽标轮询）
+- `GET /session-guard/status` — 全局当前阶段（状态徽标轮询；含 `stepHeld`）
 - `GET /session-guard/provider?provider=<id>` — 官方源判定诊断（`official` / `matchedBy` / `endpoint`）
-- `GET /session-guard/diag` — 运行时诊断
-- `POST /session-guard/rpc` — `{ action: stopNextTurn|resume|lockQueue|unlockQueue|state, sessionId }`
+- `GET /session-guard/diag` — 运行时诊断（含 `stepGate`）
+- `POST /session-guard/rpc` — `{ action: stopNextTurn|resume|lockQueue|unlockQueue|stepPause|stepResume|state, sessionId }`
 
 ## 状态存储
 
@@ -230,9 +291,10 @@ npm test   # node --test tests/*.test.mjs（时区/周末/状态机/会话门/�
 | `src/provider-directory.js` | 端点目录（`llm.listConfigurableProviders` + `settings.get`，全链路降级） |
 | `src/deferrals.js` | 延后登记表（hold 挂起 / 释放 / 超限 / `PeakDeferredError`） |
 | `src/request-guard.js` | `agent/request` 请求级守卫（hold / error 两模式） |
+| `src/step-gate.js` | **`agent/pre-step` step 级门控**（v0.2.0：拉门 / 释放 / 超时升级 / bypass，纯判定 `decideStepHold` 可单测） |
 | `src/targets.js` | 会话「最近真实目标」追踪（`request/header` + `model/selection`） |
-| `src/wiring.js` | 接线编排（入峰过滤 / 退峰释放 / 精确定时 / 卸载清理） |
-| `src/pause-gate.js` | 自研会话门引擎（agent.cancel keepInbox + goals.pause + 安全边界 + followup 续跑） |
+| `src/wiring.js` | 接线编排（入峰过滤 / step 门接线 / 退峰释放 / 精确定时 / 卸载清理） |
+| `src/pause-gate.js` | 自研会话门引擎（agent.cancel keepInbox + goals.pause + 安全边界 + followup 续跑；暂停前先释放 step 门） |
 | `src/pause-store.js` | 自研暂停状态持久化 |
 | `src/gate.js` | 会话门驱动（自研真暂停 / 回退锁队列，fail-open） |
 | `src/bridge.js` | `sessionGuard` 冗余端口 |
@@ -241,7 +303,7 @@ npm test   # node --test tests/*.test.mjs（时区/周末/状态机/会话门/�
 | `src/store.js` | 每会话持久化状态 |
 | `src/settings.js` | 设置子板块（schemastery schema + fail-open 注册） |
 | `src/index.js` | host apply（设置/路由/tick/提供服务/重试接线/请求守卫） |
-| `src/client/` | 浏览器 half（状态徽标 + 设置卡片 + 四语言字典） |
+| `src/client/` | 浏览器 half（**暂停会话按钮** + 状态徽标 + 设置卡片） |
 
 ## License
 

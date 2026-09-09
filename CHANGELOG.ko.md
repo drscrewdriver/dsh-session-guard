@@ -6,6 +6,29 @@
 - [日本語 changelog](./CHANGELOG.ja.md)
 - [한국어 changelog](./CHANGELOG.ko.md)
 
+## 0.2.0-beta.1 — 2026-09-10
+
+### 추가
+
+- **step급 게이트(`agent/pre-step`)**: 피크 시간에 턴 경계에서 중단하는 대신 **다음 step의 모델 요청 전에** 턴을 보류합니다. 세션은 다음 `agent/pre-step`까지 진행하고 거기서 게이트가 닫힙니다(설정 `stepLevelPause`, 기본 on). 오피크에는 **그 자리에서** 재개되며 followup 메시지가 필요 없습니다. 게이트 조건: 피크(북경 시간) + 주말 아님 + `step > 1` + 대상 provider가 공식(`providerGuard`) + 요청급 hold 아님 + 이번 피크 구간에서 스킵 아님. 신규 모듈 `src/step-gate.js`(순수 `decideStepHold` + hold / release / abort / timeout 엔진).
+- **`stepResume` 포트 + RPC + `/resume`**: `sessionGuard.stepResume(sessionId, {bypass})`, `POST /session-guard/rpc {action:'stepResume'}`, `/resume` 모두 게이트를 해제합니다. 수동 재개는 해당 피크 구간 동안 게이트를 중단합니다.
+- **타임아웃 승격**: `stepGateTimeoutMs`(기본 300000)로 게이트를 해제하고 **턴급 force 일시정지로 승격**합니다. 긴 피크에서도 교착이 없고 "5분마다 1 step" 누수도 없습니다.
+- **"⏸ 일시정지" 버튼**(클라이언트, slot `conversation.input.right`, id `session-guard-pause`, order 20 — input-traffic 동결 버튼 왼쪽). 1초마다 `/session-guard/state`를 폴링하며, 미보류 시 비활성, 보류 시 `stepResume`을 호출합니다. 배지는 order 40으로 이동하고 step 보류 수를 표시합니다.
+- **신규 설정**: `stepLevelPause`, `stepGateTimeoutMs`.
+- **신규 상태**: `GET /session-guard/state`가 `paused: { step, turn }`과 `stepGate: { held, since, bypass }`를 반환하고, `/status`는 `stepHeld`, `/diag`는 `stepGate`를 반환합니다. 서비스 포트 `state().paused`는 호환을 위해 불리언 유지(신규 필드 `pausedStep`).
+
+### 수정
+
+- **step 보류와 턴급 일시정지의 교착**: `pauseTask` / `resumeTask` / `cancelTask`가 먼저 step 게이트를 해제합니다. step 보류는 `agent/pre-step`에 있어 `assistant/message` / `tool/result`가 영원히 오지 않으므로, `safe` 일시정지가 무한 대기하고 `paused`도 영속화되지 않았습니다.
+
+### 변경
+
+- **피크 진입 시 실행 중 턴을 중단하지 않습니다**(`stepLevelPause` on일 때 `onEnterPeak`는 `stopNextTurn` 대신 step 게이트를 arm). off일 때는 기존 턴급 동작 그대로입니다.
+- input-traffic 동결 버튼 라벨이 **"동결 후 추가"**로 바뀌었고(`冻结追加` / `Freeze & append` / `凍結して追加`), 재개 라벨은 **"재개 후 추가"**(`恢复追加` / `Resume & append` / `再開して追加`)입니다 — 턴을 동결하면서 큐를 보존하는 동작으로, 일시정지 버튼과는 다릅니다.
+- **일시정지 버튼이 토글이 되었습니다**: "일시정지" / "재개" (회색 비활성 상태 제거). "일시정지"는 새 `stepPause`를 호출해 **다음 step 경계**에서 세션을 보류합니다(step 1도 대상, 피크/provider 제한 없음). "재개"는 `stepResume`. 신규 포트 메서드 `sessionGuard.stepPause(sessionId)`.
+- **SSE push**: 새 라우트 `GET /session-guard/events?session=<id>`가 step 게이트 상태 변화를 즉시 전달 — 피크에서 자동으로 닫히는 순간 버튼이 "재개"로 바뀝니다. 10초 폴링은 폴백으로 남습니다. `/state`는 `paused.manual`과 `stepGate.manual`을 반환합니다.
+- **스타일을 input-traffic 컴포저 버튼과 맞췄습니다**(높이 24px / 반경 6px / 12px 글꼴 / 동일 border·hover·pressed 토큰). 버튼과 상태 배지 모두. 스타일은 `<style data-plugin-css="session-guard-client">`로 한 번만 주입.
+
 ## Unreleased
 
 ### 추가

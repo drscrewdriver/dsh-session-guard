@@ -26,14 +26,40 @@ const BASE_CFG = {
   offPeakAutoResume: true,
 }
 
+/** 假 step gate：记录 release/releaseAll/clearBypass 调用，`hold` 直接放行。 */
+function fakeStepGate() {
+  const rec = { released: [], releaseAll: [], clearedBypass: [], holdCalls: 0, onReleaseAll: null }
+  return {
+    rec,
+    release: (id, reason) => {
+      rec.released.push([id, reason])
+      return { released: true, reason }
+    },
+    releaseAll: (reason) => {
+      rec.releaseAll.push(reason)
+      if (typeof rec.onReleaseAll === 'function') rec.onReleaseAll()
+      return []
+    },
+    clearBypass: (id) => rec.clearedBypass.push(id),
+    clearAllBypass: () => rec.clearedBypass.push('*'),
+    markBypass: () => {},
+    state: () => ({ held: false, step: null, since: null, bypass: false }),
+    hold: (payload, next) => {
+      rec.holdCalls += 1
+      return next()
+    },
+  }
+}
+
 const PEAK_NOW = () => new Date('2026-08-19T02:00:00Z') // 北京周三 10:00
 const silent = { info() {}, warn() {}, error() {} }
 const tick = () => new Promise((r) => setImmediate(r))
 
-function harness({ cfg = {}, roots = [], setTimer, clearTimer, unrefTimers = true, clock = PEAK_NOW } = {}) {
+function harness({ cfg = {}, roots = [], setTimer, clearTimer, unrefTimers = true, clock = PEAK_NOW, stepGate } = {}) {
   const paused = []
   const resumed = []
   const followups = []
+  const listeners = {}
   const clockRef = { current: clock }
   const agents = {
     roots: () => roots,
@@ -50,18 +76,29 @@ function harness({ cfg = {}, roots = [], setTimer, clearTimer, unrefTimers = tru
       return { via: 'pauseGate', ok: true }
     },
   }
-  const ctx = { agents, get: () => null, logger: silent }
+  const ctx = {
+    agents,
+    get: () => null,
+    logger: silent,
+    on: (name, fn) => {
+      listeners[name] = fn
+      return () => {
+        delete listeners[name]
+      }
+    },
+  }
   const wiring = createWiring({
     ctx,
     getSettings: () => ({ ...BASE_CFG, ...cfg }),
     gate,
+    stepGate,
     logger: silent,
     clock: () => clockRef.current(),
     setTimer,
     clearTimer,
     unrefTimers,
   })
-  return { wiring, paused, resumed, followups, agents, clockRef }
+  return { wiring, paused, resumed, followups, agents, clockRef, listeners, ctx }
 }
 
 /** 造一个 idle agent（可收 followup）。 */
@@ -308,4 +345,105 @@ test('dispose：清定时器 + 拒绝全部挂起（无泄漏）', async () => {
   await assert.rejects(p, /disposed/)
   assert.equal(timers[0].cleared, true)
   assert.equal(h.wiring.deferrals.size(), 0)
+})
+
+// ── task_11：step 级门控接线（v0.2.0）──
+
+test('installStepGuard：注册 agent/pre-step 监听，disposer 释放全部门', async () => {
+  const sg = fakeStepGate()
+  const h = harness({ stepGate: sg })
+  const off = h.wiring.installStepGuard()
+  assert.equal(typeof h.listeners['agent/pre-step'], 'function')
+  const next = () => Promise.resolve('NEXT')
+  assert.equal(await h.listeners['agent/pre-step']({ agent: { id: 's1' }, step: 2 }, next), 'NEXT')
+  assert.equal(sg.rec.holdCalls, 1)
+  off()
+  assert.equal(h.listeners['agent/pre-step'], undefined)
+  assert.deepEqual(sg.rec.releaseAll, ['disposed'])
+})
+
+test('installStepGuard：无 stepGate / 无 ctx.on → 空 disposer（fail-open）', () => {
+  const noGate = harness()
+  assert.doesNotThrow(() => noGate.wiring.installStepGuard()())
+  const sg = fakeStepGate()
+  const noOn = createWiring({
+    ctx: { agents: { roots: () => [] }, logger: silent },
+    getSettings: () => BASE_CFG,
+    gate: { stopNextTurn: async () => ({}), resume: async () => ({}) },
+    stepGate: sg,
+    logger: silent,
+  })
+  assert.doesNotThrow(() => noOn.installStepGuard()())
+})
+
+test('onEnterPeak：stepLevelPause=true → 不调 turn 级 stopNextTurn，改为 arm step 门', async () => {
+  const roots = [{ id: 'official', status: 'running' }]
+  const sg = fakeStepGate()
+  const h = harness({ roots, cfg: { stepLevelPause: true }, stepGate: sg })
+  h.wiring.targets.update('official', { type: 'model/selection', data: { provider: 'deepseek-official', model: 'm' } })
+  const r = await h.wiring.onEnterPeak({ ...BASE_CFG, stepLevelPause: true })
+  assert.equal(h.paused.length, 0, '不得再调 turn 级暂停')
+  assert.deepEqual(r.paused, [{ sessionId: 'official', via: 'stepGate', ok: true }])
+  assert.deepEqual(sg.rec.clearedBypass, ['official'], '新一轮高峰必须清掉上一轮 bypass')
+})
+
+test('onEnterPeak：stepLevelPause=false / 缺省 → 保持 turn 级暂停（向后兼容）', async () => {
+  const roots = [{ id: 'official', status: 'running' }]
+  const sg = fakeStepGate()
+  const h = harness({ roots, stepGate: sg })
+  h.wiring.targets.update('official', { type: 'model/selection', data: { provider: 'deepseek-official', model: 'm' } })
+  await h.wiring.onEnterPeak(BASE_CFG)
+  assert.deepEqual(h.paused.map(([id]) => id), ['official'])
+  assert.deepEqual(sg.rec.clearedBypass, [])
+})
+
+test('onEnterPeak：step 级模式下已 hold / 非官方 仍被跳过', async () => {
+  const roots = [
+    { id: 'held', status: 'running' },
+    { id: 'local', status: 'running' },
+  ]
+  const sg = fakeStepGate()
+  const h = harness({ roots, cfg: { stepLevelPause: true }, stepGate: sg })
+  h.wiring.targets.update('local', { type: 'model/selection', data: { provider: 'local-35b', model: 'q' } })
+  const p = h.wiring.deferrals.hold('held', { config: {} })
+  const r = await h.wiring.onEnterPeak({ ...BASE_CFG, stepLevelPause: true })
+  assert.deepEqual(r.paused, [])
+  assert.deepEqual(r.skipped, [
+    { sessionId: 'held', why: 'held' },
+    { sessionId: 'local', why: 'non-official', provider: 'local-35b' },
+  ])
+  h.wiring.deferrals.releaseAll()
+  await p
+})
+
+test('onLeavePeak：先释放 step 门（此时请求仍挂起），再放行 deferrals', async () => {
+  const sg = fakeStepGate()
+  const h = harness({ roots: [{ id: 's1', status: 'running' }], stepGate: sg })
+  const p = h.wiring.deferrals.hold('s1', { config: { ok: 1 } })
+  let heldWhenStepReleased = null
+  sg.rec.onReleaseAll = () => {
+    heldWhenStepReleased = h.wiring.deferrals.size()
+  }
+  await h.wiring.onLeavePeak(BASE_CFG)
+  assert.deepEqual(sg.rec.releaseAll, ['off-peak'])
+  assert.deepEqual(sg.rec.clearedBypass, ['*'])
+  assert.equal(heldWhenStepReleased, 1, 'step 门必须先于 deferrals 释放')
+  assert.deepEqual(await p, { ok: 1 })
+})
+
+test('目标转非官方 → 释放 step 门（不依赖 pausedByPeak）', async () => {
+  const sg = fakeStepGate()
+  const h = harness({ roots: [{ id: 's1', status: 'running' }], stepGate: sg })
+  h.wiring.onSessionEvent({ id: 's1' }, { type: 'model/selection', data: { provider: 'local-35b', model: 'q' } })
+  await tick()
+  assert.deepEqual(sg.rec.released, [['s1', 'non-official']])
+  assert.equal(h.resumed.length, 0, '未因入峰暂停过的会话不调 turn 级 resume')
+})
+
+test('dispose：释放 step 门 + 清 bypass', () => {
+  const sg = fakeStepGate()
+  const h = harness({ stepGate: sg })
+  h.wiring.dispose()
+  assert.deepEqual(sg.rec.releaseAll, ['disposed'])
+  assert.deepEqual(sg.rec.clearedBypass, ['*'])
 })

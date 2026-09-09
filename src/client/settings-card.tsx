@@ -24,6 +24,9 @@ export interface SessionGuardConfig {
   timezone: string
   pauseMode: 'safe' | 'force'
   pauseReason: 'wait' | 'stop'
+  // ── step 级门控（v0.2.0）──
+  stepLevelPause: boolean
+  stepGateTimeoutMs: number
   // ── 官方 provider 二维判定（高峰 × 目标源）──
   providerGuard: boolean
   officialProviders: string[]
@@ -271,6 +274,24 @@ export function SessionGuardCard({ scope }: SettingsCardProps): JSX.Element {
                 checked={value.enabled ?? true}
                 disabled={readonly}
                 onChange={(next) => toggle('enabled', next)}
+              />
+              <SwitchRow
+                label="step 级门控"
+                description="高峰在下一个 step 的模型请求前拉门（省 token 更彻底）；关闭则回退为回合级暂停"
+                checked={value.stepLevelPause ?? true}
+                disabled={readonly}
+                onChange={(next) => toggle('stepLevelPause', next)}
+              />
+              <TextRow
+                label="step 门控超时（毫秒）"
+                description="到期释放 step 门并升级为回合级暂停（防死锁）；0 或非法值用默认 300000"
+                value={String(value.stepGateTimeoutMs ?? 300000)}
+                placeholder="300000"
+                disabled={readonly}
+                onCommit={(next) => {
+                  const n = Number(String(next).trim())
+                  void scope.set('stepGateTimeoutMs', Number.isFinite(n) && n > 0 ? n : 300000)
+                }}
               />
               <SwitchRow
                 label="官方源二维判定"

@@ -16,6 +16,8 @@ export interface Status {
   held?: number
   /** error 模式记下的延后会话数。 */
   deferred?: number
+  /** 当前被 step 门挂起的会话数（v0.2.0）。 */
+  stepHeld?: number
   timezone: string
 }
 
@@ -39,6 +41,9 @@ export function badgeTitle(status: Status): string {
   const mode = status.providerGuard === true ? '仅拦截 DeepSeek 官方源' : '全部会话暂停（未启用二维判定）'
   const held = status.held ?? 0
   const deferred = status.deferred ?? 0
-  const extra = held > 0 || deferred > 0 ? ` · 挂起 ${held} · 延后 ${deferred}` : ''
+  const stepHeld = status.stepHeld ?? 0
+  const extra = held > 0 || deferred > 0 || stepHeld > 0
+    ? ` · 挂起 ${held} · 延后 ${deferred} · step 挂起 ${stepHeld}`
+    : ''
   return `${base} · ${mode}${extra}`
 }

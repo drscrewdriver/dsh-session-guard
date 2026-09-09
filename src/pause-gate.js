@@ -52,10 +52,25 @@ export function createPluginUserMessage({ content, source }) {
  * @param {ReturnType<import('./pause-store.js').createPauseStore>} deps.pauseStore 暂停状态存储
  * @param {string} [deps.pluginId] followup 消息的 source.plugin（默认 'session-guard'）
  * @param {(input: {content: object, source: object}) => unknown} [deps.makeFollowupMessage] 恢复消息构造（默认本地构造；测试注入）
+ * @param {ReturnType<import('./step-gate.js').createStepGate>} [deps.stepGate] step 级门控（v0.2.0）
+ *
+ * **为什么 pause/resume/cancel 必须先释放 step gate（F6 死锁）**：step 门控挂起在
+ * `agent/pre-step`，此刻既不会产生 `assistant/message` 也不会产生 `tool/result`；
+ * 而 safe+wait / safe+stop 都靠这两个事件落地暂停 → 两边互等，会话永久卡死。
  */
-export function createPauseGate({ ctx, pauseStore, pluginId = 'session-guard', makeFollowupMessage = createPluginUserMessage }) {
+export function createPauseGate({ ctx, pauseStore, pluginId = 'session-guard', makeFollowupMessage = createPluginUserMessage, stepGate }) {
   const state = { inFlight: new Map(), pendingPause: new Map() }
   const getAgent = (sessionId) => (ctx && typeof ctx.agents?.get === 'function' ? ctx.agents.get(sessionId) : undefined)
+
+  /** 先解开 step 门（若存在），再走 turn 级逻辑；任何异常都不阻断暂停动作。 */
+  function releaseStepGate(sessionId, reason) {
+    if (!stepGate || typeof stepGate.release !== 'function') return
+    try {
+      stepGate.release(sessionId, reason)
+    } catch (e) {
+      ctx?.logger?.warn?.('[session-guard] step gate release failed: ' + String(e))
+    }
+  }
 
   /** 会话门（dsh-task-control）当前是否可用（兼容探测；自研后始终视为可用）。 */
   const taskControlAvailable = () => true
@@ -218,6 +233,8 @@ export function createPauseGate({ ctx, pauseStore, pluginId = 'session-guard', m
    * 默认 safe+wait（对齐 DEFAULT_SETTINGS）。返回 { kind, text, needConfirmation? }。
    */
   function pauseTask(sessionId, opts = {}) {
+    // F6：先解开 step 门，否则 safe 模式的 pendingPause 永远等不到安全边界事件。
+    releaseStepGate(sessionId, 'pause')
     const agent = getAgent(sessionId)
     if (agent === undefined) return { kind: 'error', text: 'no live agent for this session — nothing to pause' }
     const current = currentPause(sessionId)
@@ -262,6 +279,8 @@ export function createPauseGate({ ctx, pauseStore, pluginId = 'session-guard', m
    * opts: { confirm:boolean, choice:'rerun'|'skip' }。
    */
   function resumeTask(sessionId, opts = {}) {
+    // F6：step 门挂起时「恢复」等价于放行该 step（回合本来就还开着）。
+    releaseStepGate(sessionId, 'resume')
     const agent = getAgent(sessionId)
     if (agent === undefined) return { kind: 'error', text: 'no live agent for this session' }
     state.pendingPause.delete(sessionId)
@@ -336,6 +355,8 @@ export function createPauseGate({ ctx, pauseStore, pluginId = 'session-guard', m
 
   /** 立即终止当前回合，回报被中断工具的目的/副作用风险。 */
   function cancelTask(sessionId) {
+    // F6：取消 = 释放 step 门 + 中断回合（顺序无所谓，release 幂等）。
+    releaseStepGate(sessionId, 'cancel')
     const agent = getAgent(sessionId)
     if (agent === undefined) return { kind: 'error', text: 'no live agent for this session' }
     const current = currentPause(sessionId)

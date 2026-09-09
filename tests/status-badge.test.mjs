@@ -45,3 +45,12 @@ test('badgeTitle：带上挂起/延后数量', () => {
   // 全为 0 时不显示
   assert.doesNotMatch(badgeTitle({ ...BASE, phase: 'peak', providerGuard: true, held: 0, deferred: 0 }), /挂起/)
 })
+
+test('badgeTitle：step 门挂起数（v0.2.0）', () => {
+  const t = badgeTitle({ ...BASE, phase: 'peak', providerGuard: true, stepHeld: 2 })
+  assert.match(t, /step 挂起 2/)
+  assert.doesNotMatch(badgeTitle({ ...BASE, phase: 'peak', providerGuard: true, stepHeld: 0 }), /step 挂起/)
+  // 与请求级挂起/延后共存
+  const both = badgeTitle({ ...BASE, phase: 'peak', providerGuard: true, held: 1, deferred: 0, stepHeld: 3 })
+  assert.match(both, /挂起 1 · 延后 0 · step 挂起 3/)
+})

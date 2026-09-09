@@ -36,7 +36,7 @@ function fakeAgent(overrides = {}, calls) {
   }
 }
 
-function setup(t, { agent = fakeAgent({}, []), calls = [], goals, makeFollowupMessage, useDefaultFollowup = false } = {}) {
+function setup(t, { agent = fakeAgent({}, []), calls = [], goals, makeFollowupMessage, useDefaultFollowup = false, stepGate } = {}) {
   const pauseStore = tmpEnv(t)
   const ctx = {
     agents: { get: (id) => (agent && agent.id === id ? agent : undefined) },
@@ -46,6 +46,7 @@ function setup(t, { agent = fakeAgent({}, []), calls = [], goals, makeFollowupMe
   const gate = createPauseGate({
     ctx,
     pauseStore,
+    stepGate,
     ...(useDefaultFollowup ? {} : { makeFollowupMessage: makeFollowupMessage ?? ((input) => input) }),
   })
   return { pauseStore, gate, agent, calls }
@@ -201,4 +202,70 @@ test('默认 makeFollowupMessage 走本地构造（无 @deepseek-ai/dsh-llm 依�
   assert.equal(msg.role, 'user')
   assert.equal(msg.source.plugin, 'session-guard')
   assert.equal(typeof msg.id, 'string')
+})
+
+// ── task_9：F6 死锁回归（step gate 挂起时 pause/resume/cancel 必须先释放门）──
+
+/** 把 stepGate.release 记进同一个 calls 数组，便于断言调用顺序。 */
+function recordingStepGate(calls) {
+  return {
+    release: (id, reason) => {
+      calls.push(['stepRelease', id, reason])
+      return { released: true, reason }
+    },
+  }
+}
+
+test('pause(force)：先释放 step 门，再 cancel（顺序断言）', (t) => {
+  const calls = []
+  const agent = fakeAgent({}, calls)
+  const { gate, pauseStore } = setup(t, { agent, calls, stepGate: recordingStepGate(calls) })
+  const r = gate.pause('s1', { mode: 'force' })
+  assert.equal(r.kind, 'success')
+  assert.deepEqual(calls[0], ['stepRelease', 's1', 'pause'], 'step 门必须最先释放')
+  assert.equal(calls[1][0], 'cancel')
+  assert.equal(pauseStore.get('s1').paused, true)
+})
+
+test('pause(safe+wait)：step 门已释放（否则 pendingPause 永远等不到安全边界）', (t) => {
+  const calls = []
+  const agent = fakeAgent({}, calls)
+  const { gate } = setup(t, { agent, calls, stepGate: recordingStepGate(calls) })
+  const r = gate.pause('s1', { mode: 'safe', reason: 'wait' })
+  assert.equal(r.kind, 'success')
+  assert.deepEqual(calls[0], ['stepRelease', 's1', 'pause'])
+  // wait 语义仍登记 pending（设计如此）——但门已开，step 会继续并产生 assistant/message
+  assert.equal(gate._pendingCount(), 1)
+})
+
+test('resume / cancel：同样先释放 step 门', (t) => {
+  const calls = []
+  const agent = fakeAgent({}, calls)
+  const { gate } = setup(t, { agent, calls, stepGate: recordingStepGate(calls) })
+  gate.resume('s1', { confirm: true })
+  gate.cancel('s1')
+  assert.deepEqual(calls.filter((c) => c[0] === 'stepRelease'), [
+    ['stepRelease', 's1', 'resume'],
+    ['stepRelease', 's1', 'cancel'],
+  ])
+})
+
+test('未注入 stepGate：行为与改造前一致（向后兼容）', (t) => {
+  const calls = []
+  const agent = fakeAgent({}, calls)
+  const { gate, pauseStore } = setup(t, { agent, calls })
+  assert.doesNotThrow(() => gate.pause('s1', { mode: 'force' }))
+  assert.equal(pauseStore.get('s1').paused, true)
+})
+
+test('stepGate.release 抛错：暂停动作不受影响', (t) => {
+  const calls = []
+  const agent = fakeAgent({}, calls)
+  const { gate, pauseStore } = setup(t, {
+    agent,
+    calls,
+    stepGate: { release: () => { throw new Error('boom') } },
+  })
+  assert.doesNotThrow(() => gate.pause('s1', { mode: 'force' }))
+  assert.equal(pauseStore.get('s1').paused, true)
 })

@@ -6,6 +6,29 @@
 - [日本語 changelog](./CHANGELOG.ja.md)
 - [한국어 changelog](./CHANGELOG.ko.md)
 
+## 0.2.0-beta.1 — 2026-09-10
+
+### 追加
+
+- **step 級ゲート（`agent/pre-step`）**：ピーク時、ターン境界で中断するのではなく、**次の step のモデルリクエスト前**にターンを保留します。セッションは次の `agent/pre-step` まで走り、そこでゲートが閉じます（設定 `stepLevelPause`、既定 on）。退峰時は**その場で**再開し、followup メッセージは不要。ゲート条件：ピーク（北京時間）+ 非週末 + `step > 1` + 対象 provider が公式（`providerGuard`）+ リクエスト級 hold なし + このピーク期間でスキップなし。新規モジュール `src/step-gate.js`（純関数 `decideStepHold` + hold / release / abort / timeout エンジン）。
+- **`stepResume` ポート + RPC + `/resume`**：`sessionGuard.stepResume(sessionId, {bypass})`、`POST /session-guard/rpc {action:'stepResume'}`、`/resume` のいずれでもゲートを解放。手動再開はそのピーク期間中のゲートを停止します。
+- **タイムアウト昇格**：`stepGateTimeoutMs`（既定 300000）でゲートを解放し**ターン級 force 一時停止へ昇格**。長時間ピークでもデッドロックせず、「5 分ごとに 1 step」の滴漏も起きません。
+- **「⏸ 一時停止」ボタン**（クライアント、slot `conversation.input.right`、id `session-guard-pause`、order 20 — input-traffic の凍結ボタンの左）。1 秒ごとに `/session-guard/state` をポーリングし、未保留時は無効、保留時は `stepResume` を呼びます。バッジは order 40 へ移動し、step 保留数を表示。
+- **新規設定**：`stepLevelPause`、`stepGateTimeoutMs`。
+- **新規状態**：`GET /session-guard/state` が `paused: { step, turn }` と `stepGate: { held, since, bypass }` を返し、`/status` は `stepHeld`、`/diag` は `stepGate` を返します。サービス側 `state().paused` は互換のため真偽値のまま（新フィールド `pausedStep`）。
+
+### 修正
+
+- **step 保留とターン級一時停止のデッドロック**：`pauseTask` / `resumeTask` / `cancelTask` が先に step ゲートを解放します。step 保留は `agent/pre-step` 上にあり `assistant/message` / `tool/result` が永遠に来ないため、`safe` 一時停止が永久に待ち、`paused` も永続化されませんでした。
+
+### 変更
+
+- **ピーク入りで実行中ターンを中断しなくなりました**（`stepLevelPause` 有効時、`onEnterPeak` は `stopNextTurn` ではなく step ゲートを arm）。無効時は従来のターン級動作のままです。
+- input-traffic の凍結ボタンのラベルは **「凍結して追加」** になりました（`冻结追加` / `Freeze & append` / `동결 후 추가`）。再開ラベルは **「再開して追加」**（`恢复追加` / `Resume & append` / `재개 후 추가`）——ターンを凍結しつつキューを保持する動作で、一時停止ボタンとは別物です。
+- **一時停止ボタンはトグルになりました**：「一時停止」/「再開」（グレー無効状態は廃止）。「一時停止」は新規 `stepPause` を呼び、**次の step 境界**でセッションを保留します（step 1 も対象、峰谷 / provider の制限なし）。「再開」は `stepResume`。新ポートメソッド `sessionGuard.stepPause(sessionId)`。
+- **SSE プッシュ**：新ルート `GET /session-guard/events?session=<id>` が step ゲート状態の変化を即時配信——ピークで自動的に閉じた瞬間にボタンが「再開」へ変わります。10 秒ポーリングはフォールバックとして残ります。`/state` は `paused.manual` と `stepGate.manual` を返すようになりました。
+- **スタイルを input-traffic のコンポーザーボタンに揃えました**（高さ 24px / 角丸 6px / 12px フォント / 同じ border・hover・pressed トークン）。ボタンとステータスバッジの両方。スタイルは `<style data-plugin-css="session-guard-client">` で一度だけ注入。
+
 ## Unreleased
 
 ### 追加

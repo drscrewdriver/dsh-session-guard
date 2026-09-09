@@ -19,7 +19,9 @@ import { createBridge } from './bridge.js'
 import { createRetry } from './retry.js'
 import { createPauseStore } from './pause-store.js'
 import { createPauseGate } from './pause-gate.js'
+import { createStepGate } from './step-gate.js'
 import { detectTaskControl } from './detect.js'
+import { makeIsRoot } from './request-guard.js'
 import { createWiring } from './wiring.js'
 import { NS, DEFAULT_SETTINGS, SettingsSchema, registerSettings } from './settings.js'
 
@@ -42,17 +44,52 @@ export function apply(ctx) {
     }
   }
 
+  // ── SSE 推送（v0.2.0）：step 门状态变化时立刻推给对应会话页面 ──
+  // 客户端「暂停会话 / 继续会话」按钮据此更新，无需等轮询。
+  const sseClients = new Set()
+
+  function sseSend(client, payload) {
+    try {
+      client.res.write(`data: ${JSON.stringify(payload)}\n\n`)
+    } catch {
+      /* 连接已断开：交给 close 事件清理 */
+    }
+  }
+
+  function broadcastStep(sessionId, stepState) {
+    const id = String(sessionId)
+    for (const client of [...sseClients]) {
+      if (client.sessionId !== '' && client.sessionId !== id) continue
+      sseSend(client, { type: 'step', sessionId: id, state: stepState })
+    }
+  }
+
   // ── 自研会话门（脱离 dsh-task-control，真暂停）──
   // 状态持久化 + 引擎；经 gate.stopNextTurn/resume 主路径接入；/pause /resume /cancel 命令。
+  // v0.2.0 追加 step 级门控（src/step-gate.js）：stepGate 与 pauseGate/wiring 互相需要，
+  // 用 late-bound 引用装配，避免构造期循环依赖。
   const pauseStore = createPauseStore()
-  const pauseGate = createPauseGate({ ctx, pauseStore })
+  let pauseGateRef = null
+  let wiringRef = null
+  const stepGate = createStepGate({
+    getSettings: readCfg,
+    shouldHoldSession: (cfg, id) => (wiringRef ? wiringRef.shouldPauseSession(cfg, id) : true),
+    isHeldByDeferrals: (id) => (wiringRef ? wiringRef.deferrals.has(id) : false),
+    isRootAgent: makeIsRoot(ctx),
+    pauseGate: { pause: (id, opts) => pauseGateRef.pause(id, opts) },
+    logger: ctx.logger,
+    onChange: (id, snapshot) => broadcastStep(id, snapshot),
+  })
+  const pauseGate = createPauseGate({ ctx, pauseStore, stepGate })
+  pauseGateRef = pauseGate
   const gate = createGate({ getCtx: () => ctx, getSettings: readCfg, store, pauseGate })
-  const bridge = createBridge(ctx, gate, store, pauseGate)
+  const bridge = createBridge(ctx, gate, store, pauseGate, stepGate)
 
   // ── 官方 provider 二维判定接线（目标追踪 / 请求级守卫 / 入峰过滤 / 退峰释放）──
   // 纯逻辑见 provider.js / provider-directory.js / deferrals.js / request-guard.js / targets.js，
   // 接线与编排见 wiring.js；这里只负责装配与生命周期。
-  const wiring = createWiring({ ctx, getSettings: readCfg, gate, logger: ctx.logger })
+  const wiring = createWiring({ ctx, getSettings: readCfg, gate, stepGate, logger: ctx.logger })
+  wiringRef = wiring
 
   // ── 冗余端口：input-traffic 冻结按钮透传接入（D5/D6/D8）──
   ctx.provide('sessionGuard', bridge)
@@ -74,6 +111,11 @@ export function apply(ctx) {
   // ── 请求级守卫（agent/request waterfall）──
   // 覆盖缺口：tick 只在状态跳变时处理 running 会话，入峰后新启动 / 中途切官方都会漏。
   ctx.effect(() => wiring.installGuard(), 'session-guard: request guard')
+
+  // ── step 级门控（agent/pre-step waterfall，v0.2.0）──
+  // 高峰 + 非周末 + 目标官方 → 在下一个 step 的模型请求前拉门；退峰原地续跑。
+  ctx.effect(() => wiring.installStepGuard(), 'session-guard: step guard')
+
   ctx.effect(() => () => wiring.dispose(), 'session-guard: wiring dispose')
 
   // ── 手动会话门命令（/pause /resume /cancel，全量移植）──
@@ -102,6 +144,8 @@ export function apply(ctx) {
         const sid = String(invocation?.agent?.id ?? '')
         if (!sid) return { kind: 'error', text: 'no session for this command' }
         const tokens = tokensOf(invocation.rawInput)
+        // v0.2.0：step 门挂起时，「恢复」= 放行该 step 且本峰内不再拦（用户显式继续）。
+        bridge.stepResume(sid, { bypass: true, reason: 'command' })
         return pauseGate.resume(sid, {
           confirm: tokens.includes('confirm'),
           choice: tokens.includes('skip') ? 'skip' : 'rerun',
@@ -114,6 +158,7 @@ export function apply(ctx) {
       handler: (invocation) => {
         const sid = String(invocation?.agent?.id ?? '')
         if (!sid) return { kind: 'error', text: 'no session for this command' }
+        bridge.stepResume(sid, { bypass: false, reason: 'command' })
         return pauseGate.cancel(sid)
       },
     }))
@@ -127,6 +172,7 @@ export function apply(ctx) {
       const st = bridge.state(sessionId)
       if (st.queueLocked) return true
       if (st.paused) return true // 自研会话门真暂停
+      if (st.pausedStep) return true // v0.2.0：step 门挂起同样让路，绝不绕过会话门
       if (st.taskControl && st.taskControl.paused) return true
       return false
     },
@@ -190,13 +236,51 @@ export function apply(ctx) {
           if (method === 'GET' && url.pathname === '/session-guard/state') {
             const sessionId = url.searchParams.get('session') ?? ''
             if (!sessionId) return json(400, { ok: false, error: 'missing session' })
+            const st = bridge.state(sessionId)
             return json(200, {
               ok: true,
-              state: bridge.state(sessionId),
+              state: st,
+              // v0.2.0：PRD §6.2 的 `paused: { step, turn }` 形状（顶层，兼容既有 state.paused 布尔）
+              // step = 已拉门；manual = 已请求但还没到边界（按钮同样显示「继续会话」）
+              paused: { step: st.pausedStep === true, turn: st.paused === true, manual: st.stepManual === true },
+              stepGate: {
+                held: st.pausedStep === true,
+                manual: st.stepManual === true,
+                since: st.stepHeldSince,
+                bypass: st.stepBypass === true,
+              },
               target: wiring.targets.get(sessionId),
               held: wiring.deferrals.has(sessionId),
               deferred: wiring.deferrals.isDeferred(sessionId),
             })
+          }
+          // GET /session-guard/events?session=<id> —— SSE：step 门状态变化即时推送
+          if (method === 'GET' && url.pathname === '/session-guard/events') {
+            const sessionId = url.searchParams.get('session') ?? ''
+            res.writeHead(200, {
+              'content-type': 'text/event-stream; charset=utf-8',
+              'cache-control': 'no-cache, no-transform',
+              connection: 'keep-alive',
+            })
+            res.write(': connected\n\n')
+            const client = { sessionId, res }
+            sseClients.add(client)
+            sseSend(client, { type: 'step', sessionId, state: stepGate.state(sessionId) })
+            const keepAlive = setInterval(() => {
+              try {
+                res.write(': ping\n\n')
+              } catch {
+                /* 连接已断开 */
+              }
+            }, 25_000)
+            if (typeof keepAlive.unref === 'function') keepAlive.unref()
+            const cleanup = () => {
+              clearInterval(keepAlive)
+              sseClients.delete(client)
+            }
+            req.on?.('close', cleanup)
+            res.on?.('close', cleanup)
+            return undefined
           }
           // GET /session-guard/provider?provider=<id> —— 官方判定诊断（排查误判用）
           if (method === 'GET' && url.pathname === '/session-guard/provider') {
@@ -229,8 +313,10 @@ export function apply(ctx) {
                 enabled: cfg.enabled,
                 weekendMode: cfg.weekendMode,
                 providerGuard: cfg.providerGuard === true,
+                stepLevelPause: cfg.stepLevelPause === true,
                 held: wiring.deferrals.size(),
                 deferred: wiring.deferrals.deferredSize(),
+                stepHeld: stepGate.heldIds().length,
                 timezone: cfg.timezone,
                 billingTimezone: BILLING_TIMEZONE,
                 now: now.toISOString(),
@@ -267,6 +353,12 @@ export function apply(ctx) {
                 configurableProviders: wiring.directory.entries().length,
                 held: wiring.deferrals.size(),
                 deferred: wiring.deferrals.deferredSize(),
+                stepGate: {
+                  held: stepGate.heldIds(),
+                  bypass: stepGate._bypassed(),
+                  timeoutMs: readCfg().stepGateTimeoutMs,
+                  enabled: readCfg().stepLevelPause === true,
+                },
               },
             })
           }
@@ -288,6 +380,16 @@ export function apply(ctx) {
             if (action === 'resume') return json(200, { ok: true, result: await bridge.resume(sessionId, parsed) })
             if (action === 'lockQueue') return json(200, { ok: true, result: bridge.lockQueue(sessionId, parsed.reason) })
             if (action === 'unlockQueue') return json(200, { ok: true, result: bridge.unlockQueue(sessionId) })
+            if (action === 'stepResume') {
+              return json(200, {
+                ok: true,
+                result: bridge.stepResume(sessionId, {
+                  bypass: parsed.bypass !== false,
+                  reason: typeof parsed.reason === 'string' && parsed.reason !== '' ? parsed.reason : 'rpc',
+                }),
+              })
+            }
+            if (action === 'stepPause') return json(200, { ok: true, result: bridge.stepPause(sessionId) })
             if (action === 'state') return json(200, { ok: true, state: bridge.state(sessionId) })
             return json(400, { ok: false, error: `unknown action ${action}` })
           }

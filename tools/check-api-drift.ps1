@@ -9,6 +9,7 @@
 
   Required (a miss is a FAILURE):
     - `agent/request` waterfall + payload `{ agent, ... }`
+    - `agent/pre-step` waterfall + `PreStepDecision` (v0.2.0 step gate)
     - `session/event` `request/header`
     - `settings.register` and `settings.get(ns)`
     - `llm.listConfigurableProviders()`
@@ -66,6 +67,8 @@ foreach ($tag in $Tags) {
   Write-Host "== $tag ==" -ForegroundColor Cyan
   Assert-Interface $tag 'agent/request waterfall' "agent/request" 'packages/core/agent-loop/src/agent.ts'
   Assert-Interface $tag 'agent/request payload carries agent' "agent: Agent; turn: number; step: number; signal: AbortSignal" 'packages/core/agent/src/runtime-types.ts'
+  Assert-Interface $tag 'agent/pre-step waterfall' "agent/pre-step" 'packages/core/agent-loop/src/agent.ts'
+  Assert-Interface $tag 'agent/pre-step payload + PreStepDecision' "PreStepDecision" 'packages/core/agent/src/runtime-types.ts'
   Assert-Interface $tag 'request/header session event' "request/header" 'packages/core/agent-loop/src/agent.ts'
   Assert-Interface $tag 'settings.register' "register<" 'packages/settings/settings/src/index.ts'
   Assert-Interface $tag 'settings.get(ns)' "get" 'packages/settings/settings/src/index.ts'

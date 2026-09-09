@@ -6,6 +6,58 @@ All notable changes to `dsh-session-guard` are recorded here. Versions follow se
 - [日本語 changelog](./CHANGELOG.ja.md)
 - [한국어 changelog](./CHANGELOG.ko.md)
 
+## 0.2.0-beta.1 — 2026-09-10
+
+### Added
+
+- **Step-level gate (`agent/pre-step`).** During peak hours the turn is now held **before** the
+  next step's model request instead of being interrupted at a turn boundary: the session keeps
+  running until the next `agent/pre-step`, where the gate holds it (setting `stepLevelPause`, on by
+  default). The turn resumes **in place** off-peak — no followup message needed. Hold conditions:
+  peak (Beijing time) + not weekend + `step > 1` + official target provider (`providerGuard`) +
+  not request-held + not bypassed in this peak window. New module `src/step-gate.js` (pure
+  `decideStepHold` + hold / release / abort / timeout engine).
+- **`stepResume` port + RPC + `/resume`.** `sessionGuard.stepResume(sessionId, {bypass})`,
+  `POST /session-guard/rpc {action:'stepResume'}` and `/resume` all release the gate; a manual
+  resume also stops gating that session for the rest of the peak window.
+- **Timeout escalation.** `stepGateTimeoutMs` (default 300000) releases the gate and escalates to a
+  turn-level **force** pause, so a long peak neither deadlocks nor drips one step every five minutes.
+- **"⏸ Pause session" button** (client, slot `conversation.input.right`, id `session-guard-pause`,
+  order 20 — left of input-traffic's freeze button). It polls `/session-guard/state` once a second,
+  stays disabled while nothing is held, and calls `stepResume` when it is. The status badge moved to
+  order 40 and now reports the number of step-held sessions.
+- **New settings**: `stepLevelPause`, `stepGateTimeoutMs`.
+- **New state**: `GET /session-guard/state` now returns `paused: { step, turn }` and
+  `stepGate: { held, since, bypass }`; `/status` returns `stepHeld`; `/diag` returns `stepGate`.
+  The service port's `state().paused` stays boolean for compatibility (new field `pausedStep`).
+
+### Fixed
+
+- **Deadlock between a held step and a turn-level pause.** `pauseTask` / `resumeTask` /
+  `cancelTask` now release the step gate first: a step hold sits at `agent/pre-step`, where no
+  `assistant/message` or `tool/result` can ever arrive, so a `safe` pause used to wait forever and
+  never persisted `paused`.
+
+### Changed
+
+- **Peak entry no longer interrupts running turns** when `stepLevelPause` is on (`onEnterPeak` arms
+  the step gate instead of calling `stopNextTurn`); with it off the previous turn-level behaviour is
+  unchanged.
+- input-traffic's freeze button label is now **"Freeze & append"** (`冻结追加` / `凍結して追加` /
+  `동결 후 추가`), and its resume label **"Resume & append"** (`恢复追加` / `再開して追加` /
+  `재개 후 추가`) — it freezes the turn and keeps queued messages, distinct from the pause button.
+- **The pause button is a toggle now**: "Pause session" / "Resume session" (no disabled grey state).
+  Clicking "Pause session" calls the new `stepPause` action, which holds the session at the **next
+  step boundary** (step 1 included, regardless of peak or provider); "Resume session" calls
+  `stepResume`. New port method `sessionGuard.stepPause(sessionId)`.
+- **SSE push**: new route `GET /session-guard/events?session=<id>` pushes step-gate state changes the
+  moment they happen, so peak auto-holds flip the button to "Resume session" without waiting for a
+  poll; the 10s `/session-guard/state` poll remains as a fallback. `/state` now reports
+  `paused.manual` and `stepGate.manual`.
+- **Styling aligned** with input-traffic's composer button (24px height, 6px radius, 12px font, the
+  same border/hover/pressed tokens) for both the pause button and the status badge; styles are
+  injected once via `<style data-plugin-css="session-guard-client">`.
+
 ## Unreleased
 
 ### Added

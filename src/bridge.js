@@ -16,8 +16,10 @@ import { idleState } from './store.js'
  * @param {object} ctx host context
  * @param {ReturnType<import('./gate.js').createGate>} gate
  * @param {ReturnType<import('./store.js').createStore>} store
+ * @param {ReturnType<import('./pause-gate.js').createPauseGate>} [pauseGate]
+ * @param {ReturnType<import('./step-gate.js').createStepGate>} [stepGate] step 级门控（v0.2.0）
  */
-export function createBridge(ctx, gate, store, pauseGate) {
+export function createBridge(ctx, gate, store, pauseGate, stepGate) {
   function taskControlState(sessionId) {
     let tcState = null
     try {
@@ -55,11 +57,64 @@ export function createBridge(ctx, gate, store, pauseGate) {
       const next = gate.unlockQueue(sessionId)
       return { ok: true, state: next }
     },
+    /**
+     * 手动请求 step 级暂停（「暂停会话」按钮）。
+     * 不打断当前 step：在下一次 `agent/pre-step` 边界拉门（step 1 也拦，且不受峰谷/provider 限制）。
+     * @param {string} sessionId
+     */
+    stepPause(sessionId) {
+      if (!stepGate || typeof stepGate.requestPause !== 'function') {
+        return { requested: false, held: false, reason: 'no-step-gate' }
+      }
+      try {
+        return stepGate.requestPause(sessionId)
+      } catch {
+        return { requested: false, held: false, reason: 'error' }
+      }
+    },
+    /**
+     * 解开 step 门（v0.2.0）：放行被挂起的 step。
+     * 默认 `bypass=true`（用户手动「继续」）——本高峰窗口内不再拦该会话；
+     * 退峰/非官方切换等自动释放请用 `{ bypass: false }`。
+     * @param {string} sessionId
+     * @param {{bypass?:boolean, reason?:string}} [opts]
+     */
+    stepResume(sessionId, opts = {}) {
+      if (!stepGate || typeof stepGate.release !== 'function') {
+        return { released: false, bypass: false, reason: 'no-step-gate' }
+      }
+      const reason = opts.reason ?? 'manual'
+      let r
+      try {
+        r = stepGate.release(sessionId, reason)
+      } catch {
+        return { released: false, bypass: false, reason }
+      }
+      const released = !!(r && r.released === true)
+      let bypassed = false
+      if (released && opts.bypass !== false && typeof stepGate.markBypass === 'function') {
+        try {
+          stepGate.markBypass(sessionId)
+          bypassed = true
+        } catch {
+          /* ignore */
+        }
+      }
+      return { released, bypass: bypassed, reason }
+    },
     /** 读一会话状态。 */
     state(sessionId) {
       const cur = store.get(sessionId)
       const base = cur || idleState(sessionId)
       const pausedState = pauseGate ? (pauseGate.state(sessionId) || {}) : {}
+      let stepState = {}
+      if (stepGate && typeof stepGate.state === 'function') {
+        try {
+          stepState = stepGate.state(sessionId) || {}
+        } catch {
+          stepState = {}
+        }
+      }
       return {
         sessionId: String(sessionId),
         queueLocked: base.queueLocked === true,
@@ -67,6 +122,11 @@ export function createBridge(ctx, gate, store, pauseGate) {
         // 自研会话门真暂停状态（脱离 task-control）。
         paused: pausedState.paused === true,
         pausedForced: pausedState.forced === true,
+        // step 级门控（v0.2.0）：paused 保持布尔以兼容既有消费者，step 态用独立字段。
+        pausedStep: stepState.held === true,
+        stepHeldSince: stepState.since ?? null,
+        stepBypass: stepState.bypass === true,
+        stepManual: stepState.manual === true,
         taskControlAvailable: gate.taskControlAvailable(),
         taskControl: taskControlState(sessionId),
         updatedAt: base.updatedAt ?? null,

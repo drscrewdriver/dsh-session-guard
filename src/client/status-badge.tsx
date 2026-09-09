@@ -7,6 +7,7 @@
  */
 import { useEffect, useState } from 'react'
 import { badgeTitle, peakLabel, type Status } from './badge-text'
+import { injectClientCss } from './styles'
 
 /** slot 运行时注入的会话级 props（sessionId 由 dsh 的 SessionStandardProps 提供）。 */
 export interface StatusBadgeProps {
@@ -18,6 +19,8 @@ const POLL_MS = 15_000
 /** 状态徽标：轮询全局阶段，显示 高峰/谷时/周末（enabled 关闭或请求失败时静默隐藏）。 */
 export function StatusBadge({ sessionId }: StatusBadgeProps) {
   const [status, setStatus] = useState<Status | null>(null)
+
+  injectClientCss()
 
   useEffect(() => {
     if (!sessionId) return
@@ -48,6 +51,7 @@ export function StatusBadge({ sessionId }: StatusBadgeProps) {
       title={badgeTitle(status)}
       data-sg-phase={status.phase}
       data-sg-provider-guard={status.providerGuard === true ? 'on' : 'off'}
+      data-sg-step-held={String(status.stepHeld ?? 0)}
     >
       {peakLabel(status)}
     </span>

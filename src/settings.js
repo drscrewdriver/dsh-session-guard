@@ -28,6 +28,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
   ],
   pauseMode: 'safe', // 透传 taskControl.pause mode
   pauseReason: 'wait', // 透传 taskControl.pause reason
+  stepLevelPause: true, // step 级门控（agent/pre-step）：高峰在下一个 step 前拉门
+  stepGateTimeoutMs: 300_000, // step 门控超时（防死锁；到期升级为 turn 级 force 暂停）
   queueFallback: true, // 无会话门时回退锁等待队列（简单开关）
   retryEnabled: false, // 自动重试开关（后端，D9；默认关，保守）
   retryText: DEFAULT_RETRY.retryText,
@@ -61,6 +63,8 @@ export const SettingsSchema = z.object({
     .default(DEFAULT_SETTINGS.peakWindows),
   pauseMode: z.union([z.const('safe'), z.const('force')]).default(DEFAULT_SETTINGS.pauseMode),
   pauseReason: z.union([z.const('wait'), z.const('stop')]).default(DEFAULT_SETTINGS.pauseReason),
+  stepLevelPause: z.boolean().default(DEFAULT_SETTINGS.stepLevelPause),
+  stepGateTimeoutMs: z.number().min(0).default(DEFAULT_SETTINGS.stepGateTimeoutMs),
   queueFallback: z.boolean().default(DEFAULT_SETTINGS.queueFallback),
   retryEnabled: z.boolean().default(DEFAULT_SETTINGS.retryEnabled),
   retryText: z.string().default(DEFAULT_SETTINGS.retryText),

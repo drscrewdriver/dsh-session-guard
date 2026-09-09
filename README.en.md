@@ -76,6 +76,7 @@ Restart dsh web and refresh the page after installation.
 | Toggle | Default | Description |
 |---|---|---|
 | `enabled` | on | **Peak auto-pause**: auto-pause running sessions during peak hours |
+| `stepLevelPause` | on | **Step-level gate**: during peak, hold *before* the next step's model request (earlier and cheaper than turn-level); off = fall back to turn-level pause |
 | `providerGuard` | on | **Official-source guard**: block only DeepSeek official sources during peak; local/third-party providers keep running |
 | `guardSubagents` | on | **Guard subagent requests**: subagent requests are billed too, guarded by default |
 | `offPeakAutoResume` | on | **Off-peak auto-resume**: auto-resume paused sessions off-peak; off = no auto-resume (manual required) |
@@ -89,6 +90,7 @@ Additional configuration:
 - `timezone` (default Asia/Shanghai) — used for **weekend detection** and badge display; **does not affect peak/off-peak detection** (always Beijing time);
 - `peakWindows` (default 09:00–12:00 / 14:00–18:00) — peak windows in Beijing time (UTC+8), matching DeepSeek's official billing;
 - `pauseMode` (`safe`/`force`), `pauseReason` (`wait`/`stop`);
+- `stepGateTimeoutMs` (default 300000) — step-gate hold timeout; on expiry the gate is released and the session **escalates to a turn-level pause** (anti-deadlock, and no "one step per 5 minutes" token drip);
 - Official-source guard: `officialProviders` (extra official provider ids, comma separated, highest priority), `officialBaseURLs` (official endpoint hosts, default `api.deepseek.com`);
 - Deferral queue: `deferredMode` (`hold` / `error`), `deferredResumeText`, `deferredMaxHoldMs` (hold cap, default 6h, then converts to an error);
 - Retry parameters: `retryText`, `retryGraceMs`, `retryCooldownMs`, `retryBackoffFactor`, `retryBackoffMaxMs`, `retryMaxConsecutive`.
@@ -97,10 +99,30 @@ Additional configuration:
 
 ### Peak auto-gate (global)
 
-- **Peak entry** (and not weekend): calls `gate.stopNextTurn` on all running root sessions — custom session gate truly pauses (doesn't interrupt reasoning, pauses at safe boundary before next tool dispatch), or falls back to lock-wait queue per `queueFallback`;
-- **Off-peak / weekend**: `gate.resume` **all** sessions (auto-resume, no manual action) — controlled by `offPeakAutoResume` toggle;
+- **Peak entry** (and not weekend): with `stepLevelPause` on, the running turn is **no longer interrupted** — the session runs to the next `agent/pre-step` boundary where the step gate holds it (see below); with it off, calls `gate.stopNextTurn` on all running root sessions (custom session gate truly pauses, or falls back to lock-wait queue per `queueFallback`);
+- **Off-peak / weekend**: first `releaseAll` the held steps (the turn just continues in place), then `gate.resume` **all** sessions — controlled by `offPeakAutoResume`;
 - **Peak timezone**: hardcoded to Beijing time (`Asia/Shanghai`), matching DeepSeek's official billing basis — not affected by the `timezone` setting;
 - State machine: single-instance `NORMAL ↔ PAUSED_PEAK` (`scheduler.js`), driven by a single 30s tick.
+
+### Step-level gate (v0.2.0, the token saver)
+
+Hooks the `agent/pre-step` waterfall and holds the turn **before the next step's model request happens**.
+
+- **Hold conditions** (all required): `enabled` + `stepLevelPause` + `step > 1` + peak (Beijing time, not weekend) + official target provider (`providerGuard`; all providers when off) + the session is not request-held + not manually bypassed this peak window;
+- **Why `step > 1`**: the first step of a turn is covered by the request-level guard, so the two gates never overlap;
+- **Release paths**: ① the "⏸ paused (resume)" button / `POST /session-guard/rpc {action:'stepResume'}` / `/resume` → lets the current step through and **stops gating this session for the rest of the peak window**; ② off-peak → release all, the turn continues in place (**no followup needed**); ③ freeze button / `/pause` / `/cancel` → release the gate and move to a turn-level pause; ④ `signal` abort → release;
+- **Timeout escalation**: holding longer than `stepGateTimeoutMs` (default 5 min) releases the gate and **escalates to a turn-level force pause**, resumed off-peak (no deadlock, no token drip);
+- **State**: `GET /session-guard/state?session=<id>` returns `paused: { step, turn }` and `stepGate: { held, since, bypass }`; the service port's `paused` **stays boolean** for compatibility, with `pausedStep` for the step gate;
+- **Not persisted**: the hold is an in-process promise; a restart drops it (no ghost state).
+
+#### Pause / resume session button (provided by session-guard)
+
+The "Pause session" button in the composer's right row (slot `conversation.input.right`, id `session-guard-pause`, order 20, left of input-traffic's "❄ Freeze & append"):
+
+- not paused → "Pause session", **clickable**: calls `stepPause` and pauses the session **before the next step's model request** (the current step is not interrupted; step 1 is held too, regardless of peak/provider);
+- paused → "Resume session", calls `stepResume`: lets the current step through and stops gating this session for the rest of the peak window;
+- **push updates**: `GET /session-guard/events?session=<id>` (SSE) pushes step-gate state changes **immediately** — when peak auto-holds, the button flips to "Resume session" without waiting for a poll; a 10s `/session-guard/state` poll remains as a fallback (SSE down → still converges);
+- styled to match input-traffic's button in the same row (24px height / 6px radius / 12px font / same CSS tokens), with hover and paused states.
 
 ### Session locking (freeze)
 
@@ -176,11 +198,47 @@ During peak hours the plugin does not blanket-pause sessions: it first decides w
 - Peak windows are **left-closed, right-open** `[start, end)`, supporting cross-midnight windows (e.g. `22:00–06:00`);
 - The `timezone` setting works identically across all UI languages (zh/en/ja/ko) — IANA timezone names are locale-independent.
 
-### Coordination with input-traffic
+### Division of labour with input-traffic: one "stops", one "orders"
 
-- input-traffic's **freeze button** triggers via `sessionGuard.stopNextTurn` (RPC, per-session) on the server side;
-- input-traffic **only does freeze enhancement** (queue freeze/unfreeze + composer block), retry is handled by this plugin's backend;
-- Both share "session isolation" semantics: input-traffic freeze queue keyed by sessionId, session-guard RPC also keyed by sessionId.
+They act on **different links of the same chain**, and the boundary is set by DSH's own inbox model:
+
+```
+user input ──(input-traffic picks the tier)──▶ next-step / next-turn pending queues
+                                        │
+                          agent/pre-step ──(this plugin's step gate)──▶ pass / hold
+                                        │
+                            agent/request ──(this plugin's request hold)──▶ pass / hold
+                                        │
+                                     model call
+```
+
+**DSH queue semantics (two queues — don't mix them up)**
+
+| Queue | Meaning | Consumed when |
+|---|---|---|
+| `next-step` | "Input awaiting the next step boundary" | The next `agent/pre-step`: **same level as a tool result**, another step inside the same turn |
+| `next-turn` | "Prompts awaiting individual turns" | After the current turn closes, as a **new turn** |
+
+`Inbox.claim()` **always drains `next-step` first**, and only additionally takes **one** `next-turn` when that boundary opens a new turn; a turn's first step reads next-turn, every later step reads next-step.
+
+**Ownership**
+
+- **session-guard = stop**: decides *when progress may happen*, and **never touches queue content or order**.
+  - step gate (`agent/pre-step`): holds **before** the next step's model request;
+  - turn-level pause (`agent.cancel({keepInbox:true})` + `goals.pause` + safe boundary): stops the turn, **queue preserved as-is**;
+  - request-level guard (`agent/request` hold): holds **this one model request**.
+- **input-traffic = order**: decides *which queue user input goes to, at what tier, and when it is consumed*.
+  - three tiers = which queue: red "interrupt" calls `cancel()` then `steer`; yellow "steer" calls `steer` (→ `next-step`, the same turn's next step); green "queue" stays in `next-turn`;
+  - freeze = detach all `queued` + `steering` rows (tiers preserved) + composer block + call `sessionGuard.stopNextTurn`; resume = clear the block → `sessionGuard.resume` first → re-submit by tier.
+
+**Two invariants at the meeting point**
+
+1. **Freeze must let this plugin release the step gate first**: the step gate sits at `agent/pre-step` while a turn-level pause waits for a safe-boundary event — they would wait on each other (`pauseTask` / `cancelTask` release it first);
+2. **While the step gate is held, messages are already claimed**: `preStep()` calls `inbox.claim()` *before* dispatching the waterfall, so new input queues behind the claimed batch; `keepInbox` only applies to turn-level pauses.
+
+**No crossing over**: input-traffic does not listen to `agent/pre-step` / `agent/request` (the only exception is the "interrupt" tier's explicit `cancel()`, which the user asked for); this plugin never rewrites `next-step` / `next-turn` content or order.
+
+Buttons: this plugin's "Pause session / Resume session" (order 20) and input-traffic's "❄ Freeze & append / Resume & append" (order 30) sit side by side and replace neither — the former owns the step gate, the latter owns queue detach + turn-level freeze.
 
 ## Redundant port `sessionGuard`
 
@@ -190,18 +248,21 @@ During peak hours the plugin does not blanket-pause sessions: it first decides w
   resume(sessionId, opts),
   lockQueue(sessionId, reason),
   unlockQueue(sessionId),
-  state(sessionId),
+  stepPause(sessionId),           // request a manual step-level pause (held at the next pre-step)
+  stepResume(sessionId, opts),    // release the step gate (v0.2.0); opts.bypass=false keeps gating this peak
+  state(sessionId),               // { queueLocked, lockReason, paused, pausedStep, stepHeldSince, stepBypass, ... }
 }
 ```
 
 ## HTTP routes
 
-- `GET /session-guard/state?session=<id>` — session state (last target / held / deferred)
+- `GET /session-guard/state?session=<id>` — session state (`paused: { step, turn, manual }` / `stepGate` / last target / held / deferred)
+- `GET /session-guard/events?session=<id>` — **SSE**: pushes step-gate state changes immediately (drives the button)
 - `GET /session-guard/settings` — settings + taskControl availability
-- `GET /session-guard/status` — global current phase (status badge polling)
+- `GET /session-guard/status` — global current phase (status badge polling; includes `stepHeld`)
 - `GET /session-guard/provider?provider=<id>` — official-source verdict diagnostics (`official` / `matchedBy` / `endpoint`)
-- `GET /session-guard/diag` — runtime diagnostics
-- `POST /session-guard/rpc` — `{ action: stopNextTurn|resume|lockQueue|unlockQueue|state, sessionId }`
+- `GET /session-guard/diag` — runtime diagnostics (includes `stepGate`)
+- `POST /session-guard/rpc` — `{ action: stopNextTurn|resume|lockQueue|unlockQueue|stepPause|stepResume|state, sessionId }`
 
 ## State storage
 
@@ -223,9 +284,10 @@ npm test   # node --test tests/*.test.mjs (timezone/weekend/state-machine/sessio
 | `src/provider-directory.js` | Endpoint directory (`llm.listConfigurableProviders` + `settings.get`, full degradation) |
 | `src/deferrals.js` | Deferral registry (hold / release / cap / `PeakDeferredError`) |
 | `src/request-guard.js` | `agent/request` request-level guard (hold / error modes) |
+| `src/step-gate.js` | **`agent/pre-step` step-level gate** (v0.2.0: hold / release / timeout escalation / bypass; pure `decideStepHold`) |
 | `src/targets.js` | Per-session "last real target" tracking (`request/header` + `model/selection`) |
-| `src/wiring.js` | Wiring/orchestration (peak-entry filter / off-peak release / exact timer / dispose) |
-| `src/pause-gate.js` | Custom session gate engine |
+| `src/wiring.js` | Wiring/orchestration (peak-entry filter / step-gate wiring / off-peak release / exact timer / dispose) |
+| `src/pause-gate.js` | Custom session gate engine (releases the step gate before pausing) |
 | `src/pause-store.js` | Custom pause state persistence |
 | `src/gate.js` | Session gate driver (custom true pause / fallback lock queue, fail-open) |
 | `src/bridge.js` | `sessionGuard` redundant port |

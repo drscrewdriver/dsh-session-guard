@@ -6,6 +6,21 @@ All notable changes to `dsh-session-guard` are recorded here. Versions follow se
 - [日本語 changelog](./CHANGELOG.ja.md)
 - [한국어 changelog](./CHANGELOG.ko.md)
 
+## 0.1.3 — 2026-09-09
+
+### Fixed
+
+- **package.json encoding restored**: description was corrupted (GB2312 bytes misread as UTF-8); rewritten with correct Chinese text.
+- **Missing metadata**: added `repository`, `homepage` fields.
+- **peerDependencies corrected**: removed pinned `dsh-llm` exact version; added `cordis`, `dsh-client-runtime`, `dsh-client-locale`, `dsh-client-ui-settings`, `dsh-client-ui-slots` as optional peers matching `dsh.client.inject`.
+- Added `dsh.plugin.json` manifest.
+
+## 0.1.2 — 2026-08-28
+
+### Fixed
+
+- **Peak timezone fixed**: 峰谷判定固定北京时间 (`BILLING_TIMEZONE`)，周末判定用配置时区。
+
 ## 0.1.1 — 2026-08-24
 
 ### Added

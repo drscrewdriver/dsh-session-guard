@@ -102,3 +102,94 @@ export function shouldPause(settings, date) {
   }
   return { pause: false, reason: 'off-peak' }
 }
+
+/**
+ * 某时区「本地 00:00」对应的绝对时刻（毫秒）。
+ * 通过两次投影迭代消掉时区偏移（第二次覆盖 DST 切换日）。
+ * @param {string} tz IANA 时区名
+ * @param {number} year
+ * @param {number} month 1-12
+ * @param {number} day
+ * @returns {number} epoch 毫秒
+ */
+export function localMidnight(tz, year, month, day) {
+  const target = Date.UTC(year, month - 1, day)
+  let guess = target
+  for (let i = 0; i < 2; i++) {
+    const wc = wallClock(tz, new Date(guess))
+    const actual = Date.UTC(wc.year, wc.month - 1, wc.day, Math.floor(wc.minutes / 60), wc.minutes % 60)
+    guess -= actual - target
+  }
+  return guess
+}
+
+/**
+ * 从 `date` 出发、下一个「确定非峰」的时刻；找不到返回 null。
+ * 取两个候选的最小值：
+ * (a) 当前所在高峰窗口的结束时刻（计费时区，跨午夜安全）；
+ * (b) 下一个周末日的本地 00:00（周末整天非峰，仅 weekendMode 开启时）。
+ * @param {object} settings
+ * @param {Date} date 已知处于高峰
+ * @returns {number|null}
+ */
+function nextOffPeakInstant(settings, date) {
+  const t0 = date.getTime()
+  // 分钟对齐：秒/毫秒在墙钟分钟偏移下与时区无关（所有 IANA 偏移均为整分钟）
+  const minuteStart = t0 - (date.getUTCSeconds() * 1000 + date.getUTCMilliseconds())
+  const candidates = []
+  const wcBilling = wallClock(BILLING_TIMEZONE, date)
+  for (const w of settings.peakWindows || []) {
+    const s = parseHHMM(w && w.start)
+    const e = parseHHMM(w && w.end)
+    if (s === null || e === null) continue
+    if (!inWindow(wcBilling.minutes, s, e)) continue
+    // 跨午夜窗口（s > e）在 m < e 时结束于当日，m >= s 时结束于次日
+    const deltaMin =
+      s < e
+        ? e - wcBilling.minutes
+        : wcBilling.minutes >= s
+          ? e + 1440 - wcBilling.minutes
+          : e - wcBilling.minutes
+    candidates.push(minuteStart + deltaMin * 60_000)
+  }
+  if (settings.weekendMode === true) {
+    const wcUser = wallClock(settings.timezone, date)
+    for (let k = 1; k <= 7; k++) {
+      const day = new Date(Date.UTC(wcUser.year, wcUser.month - 1, wcUser.day + k))
+      if (!isWeekend(day.getUTCDay())) continue
+      candidates.push(localMidnight(settings.timezone, day.getUTCFullYear(), day.getUTCMonth() + 1, day.getUTCDate()))
+      break
+    }
+  }
+  let best = null
+  for (const c of candidates) {
+    if (!Number.isFinite(c) || c <= t0) continue
+    if (best === null || c < best) best = c
+  }
+  return best
+}
+
+/**
+ * 距下一个「非峰」时刻的毫秒数（hold 释放定时用）。
+ *
+ * - 当前已非峰（含周末 / disabled）→ 0；
+ * - 处于高峰 → 当前窗口结束时刻（跨午夜安全）；
+ * - weekendMode 开启且窗口会跨进周末 → 取「周末开始」这个更早的时刻；
+ * - 配置异常（非法窗口 / 无法算出）→ 0（由 30s tick 兜底，不挂死）。
+ * @param {object} settings 同 shouldPause
+ * @param {Date} [date]
+ * @returns {number} 毫秒（>= 0）
+ */
+export function msUntilOffPeak(settings, date = new Date()) {
+  if (!settings || settings.enabled !== true) return 0
+  const t0 = date.getTime()
+  let probe = date
+  // 相邻窗口 / 设置热改时逐级往后找；上限 8 次防死循环。
+  for (let i = 0; i < 8; i++) {
+    if (!shouldPause(settings, probe).pause) return Math.max(0, probe.getTime() - t0)
+    const next = nextOffPeakInstant(settings, probe)
+    if (next === null) return 0
+    probe = new Date(next)
+  }
+  return Math.max(0, probe.getTime() - t0)
+}

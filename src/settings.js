@@ -36,6 +36,15 @@ export const DEFAULT_SETTINGS = Object.freeze({
   retryBackoffFactor: DEFAULT_RETRY.retryBackoffFactor,
   retryBackoffMaxMs: DEFAULT_RETRY.retryBackoffMaxMs,
   retryMaxConsecutive: DEFAULT_RETRY.retryMaxConsecutive,
+  // ── 官方 provider 二维判定（高峰 × 目标源）──
+  providerGuard: true, // 二维判定总开关；关掉 = 现有纯时间判定
+  officialProviders: [], // 追加的官方 provider id（精确匹配，最高优先级）
+  officialBaseURLs: ['api.deepseek.com'], // 官方端点 host 名单
+  deferredResume: true, // 退峰自动继续被延后的请求/会话
+  deferredResumeText: '继续（高峰已过，自动继续）', // error 模式退峰 followup 文案
+  deferredMode: 'hold', // hold（挂起不报错）/ error（抛错 + 记延后）
+  deferredMaxHoldMs: 6 * 60 * 60 * 1000, // 挂起上限（6h），到期转 error
+  guardSubagents: true, // 是否纳入子代理请求
 })
 
 /**
@@ -60,6 +69,14 @@ export const SettingsSchema = z.object({
   retryBackoffFactor: z.number().min(1).default(DEFAULT_SETTINGS.retryBackoffFactor),
   retryBackoffMaxMs: z.number().min(0).default(DEFAULT_SETTINGS.retryBackoffMaxMs),
   retryMaxConsecutive: z.number().min(0).default(DEFAULT_SETTINGS.retryMaxConsecutive),
+  providerGuard: z.boolean().default(DEFAULT_SETTINGS.providerGuard),
+  officialProviders: z.array(z.string()).default(DEFAULT_SETTINGS.officialProviders),
+  officialBaseURLs: z.array(z.string()).default(DEFAULT_SETTINGS.officialBaseURLs),
+  deferredResume: z.boolean().default(DEFAULT_SETTINGS.deferredResume),
+  deferredResumeText: z.string().default(DEFAULT_SETTINGS.deferredResumeText),
+  deferredMode: z.union([z.const('hold'), z.const('error')]).default(DEFAULT_SETTINGS.deferredMode),
+  deferredMaxHoldMs: z.number().min(0).default(DEFAULT_SETTINGS.deferredMaxHoldMs),
+  guardSubagents: z.boolean().default(DEFAULT_SETTINGS.guardSubagents),
 })
 
 /**

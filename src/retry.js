@@ -26,8 +26,30 @@ export const DEFAULT_RETRY = Object.freeze({
   retryMaxConsecutive: 3, // 连续重试上限，超过停止
 })
 
+/** 本插件自己的延后失败哨兵（与 deferrals.js 的 PEAK_DEFERRED_CODE 同一个值）。 */
+export const PEAK_DEFERRED_CODE = 'PEAK_DEFERRED'
+
+/**
+ * 是否本插件的「高峰延后」失败（**精确匹配，唯一短路**）。
+ *
+ * 两条路径都必须认：
+ * - `code === 'PEAK_DEFERRED'`：结构化路径（若上层保留了 failure.code）；
+ * - `message` 以 `PEAK_DEFERRED:` 开头：DSH 回合循环只对 `error instanceof LlmError`
+ *   保留结构化 failure，其它一律压成 `{ message: errorChain(error), code: 'UNKNOWN' }`
+ *   （见 findings 8.3），本插件不能 value-import `@deepseek-ai/dsh-llm`。
+ *
+ * **严禁**在这里加 `高峰` / `已延后` / `拦截` 之类宽泛关键词——那会误伤真实错误，
+ * 也会破坏 429 / 传输层的重试语义。
+ */
+export function isPeakDeferredFailure({ code, message } = {}) {
+  if (code === PEAK_DEFERRED_CODE) return true
+  return typeof message === 'string' && message.startsWith(`${PEAK_DEFERRED_CODE}:`)
+}
+
 /** 瞬时 vs 永久失败分类：瞬时值得重试，永久重试无益。 */
 export function isTransientFailure({ code, message, status } = {}) {
+  // 本插件自己的延后失败是「永久」——重试只会再被拦一次，形成放大。
+  if (isPeakDeferredFailure({ code, message })) return false
   const haystack = `${code ?? ''} ${message ?? ''}`.toLowerCase()
   if (status !== undefined && (status === 401 || status === 403)) return false
   const permanent =
@@ -42,14 +64,17 @@ export function isTransientFailure({ code, message, status } = {}) {
 /**
  * turn/end reason → 是否可自动重试。
  * - completed / aborted（用户停）/ blocked（策略拒）→ 否
- * - error → 按 isTransientFailure 分类
+ * - error → 先按精确码短路 `PEAK_DEFERRED`（永久），再按 isTransientFailure 分类
  * - interrupted（崩溃修复）→ 可重试
  * - max-tokens → 可重试
  */
 export function classifyTurnEnd(reason, failure) {
   const kind = reason && reason.kind
   if (kind === 'completed' || kind === 'aborted' || kind === 'blocked') return false
-  if (kind === 'error') return isTransientFailure(failure)
+  if (kind === 'error') {
+    if (isPeakDeferredFailure(failure)) return false
+    return isTransientFailure(failure)
+  }
   if (kind === 'interrupted' || kind === 'max-tokens') return true
   return false
 }

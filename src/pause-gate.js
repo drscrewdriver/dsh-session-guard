@@ -6,7 +6,7 @@
  * - `goals.pause(agent, { id, revision })` —— 停住同会话 goal，防 goal-round driver 再排。
  * - `ctx.on('session/event')` —— 安全边界：tool/call 记 in-flight，tool/result 落地，
  *   assistant/message 记录 deferredTools，再落地延迟暂停（queueMicrotask）。
- * - `agent.followup(createUserMessage({ content, source:{kind:'plugin',plugin} }))` —— 恢复续跑指令。
+ * - `agent.followup(<plugin user message>)` —— 恢复续跑指令（消息由本文件本地构造，见下）。
  * - 暂停状态持久化（src/pause-store.js），不写 session log。
  *
  * 三粒度（对齐 task-control）：
@@ -14,19 +14,46 @@
  *   safe + stop  在途工具跑完后再暂停（不中断推理则工具完成后落地）
  *   safe + wait  不中断推理，assistant/message 后记 deferredTools 再落地（默认）
  *
- * 设计为目标可单测：ctx / pauseStore / createUserMessage 全部依赖注入，
+ * 设计为目标可单测：ctx / pauseStore / makeFollowupMessage 全部依赖注入，
  * 停/续/取消判定不依赖真实 dsh runtime；`getAgent(sessionId)` 经 `ctx.agents.get` 懒取。
+ *
+ * DUAL-VERSION（DSH 0.1.1-rc.2 与 0.1.2-rc.1）：上述扩展点在两版本中签名一致
+ * （已逐行核对 `packages/session/session-persistence/src/coordinator.ts`、
+ * `packages/core/agent-loop/src/agent.ts`、`packages/goal/goal/src/index.ts`）。
+ * 唯一需要双读的是 `tool/result` 记录的调用 id 形态（见 readToolResultCallId）：
+ * 0.1.1 与 0.1.2 的回放日志都同时保留 `content[].toolCallId` 与 `source.callId` 两种形态。
  */
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { readToolResultBlockId, readToolResultCallId } from './tool-call-id.js'
+
+/**
+ * 构造一条 plugin-source 的 user 消息（形状与 `dsh-llm` 的 `createUserMessage` 一致：
+ * `{ id, role:'user', content, source }`）。
+ *
+ * **为什么不用 `@deepseek-ai/dsh-llm` 的 `createUserMessage`**：那是平台包值导入，
+ * 既未在本插件 `dependencies` 中声明（属未声明运行时依赖），也违反本仓库
+ * 「host 端只 value-import `@deepseek-ai/schemastery`」的约定（findings 8.4）。
+ * `agent.followup` 只把消息放进 inbox（`send → inbox.splice`），不要求冻结或品牌 id，
+ * 因此本地构造等价且无依赖。retry.js / wiring.js 已用同一形状。
+ * @param {{content: unknown, source: object}} input
+ * @returns {{id: string, role: 'user', content: unknown, source: object}}
+ */
+export function createPluginUserMessage({ content, source }) {
+  const cryptoObj = globalThis.crypto
+  const id =
+    cryptoObj && typeof cryptoObj.randomUUID === 'function'
+      ? cryptoObj.randomUUID()
+      : `session-guard-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  return { id, role: 'user', content, source }
+}
 
 /**
  * @param {object} deps
  * @param {object} deps.ctx host context（含 agents.get / get / logger，可选 goals）
  * @param {ReturnType<import('./pause-store.js').createPauseStore>} deps.pauseStore 暂停状态存储
  * @param {string} [deps.pluginId] followup 消息的 source.plugin（默认 'session-guard'）
- * @param {(content: object) => unknown} [deps.makeFollowupMessage] 恢复消息构造（默认 dsh-llm createUserMessage；测试注入）
+ * @param {(input: {content: object, source: object}) => unknown} [deps.makeFollowupMessage] 恢复消息构造（默认本地构造；测试注入）
  */
-export function createPauseGate({ ctx, pauseStore, pluginId = 'session-guard', makeFollowupMessage = createUserMessage }) {
+export function createPauseGate({ ctx, pauseStore, pluginId = 'session-guard', makeFollowupMessage = createPluginUserMessage }) {
   const state = { inFlight: new Map(), pendingPause: new Map() }
   const getAgent = (sessionId) => (ctx && typeof ctx.agents?.get === 'function' ? ctx.agents.get(sessionId) : undefined)
 
@@ -84,6 +111,12 @@ export function createPauseGate({ ctx, pauseStore, pluginId = 'session-guard', m
     return `${info?.name ?? '未知工具'}（${describeToolPurpose(info)}）`
   }
 
+  /**
+   * `tool/result` 调用 id 的双形态读取已抽到 `./tool-call-id.js`（零依赖、可单测）：
+   * 优先 `data.message.content[].toolCallId`，回退 `data.message.source.callId`。
+   * 两种形态在 DSH 0.1.1-rc.2 与 0.1.2-rc.1 的回放日志里都保留，勿改成单读。
+   */
+
   /** 在 session log 查一个中断工具的实际结果（kernel 会 drain 已启动工具到 tool/result）。 */
   function findToolOutcome(agent, callId) {
     if (!agent?.session?.events) return null
@@ -92,7 +125,7 @@ export function createPauseGate({ ctx, pauseStore, pluginId = 'session-guard', m
       if (event.type === 'tool/result') {
         const message = event.data?.message ?? {}
         const block = (Array.isArray(message.content) ? message.content : []).find((b) => b?.type === 'tool-result')
-        const id = block?.toolCallId ?? message.source?.callId
+        const id = readToolResultCallId(message)
         if (id === callId) {
           outcome = {
             hasResult: true,
@@ -104,7 +137,7 @@ export function createPauseGate({ ctx, pauseStore, pluginId = 'session-guard', m
       } else if (event.type === 'user/message') {
         const content = Array.isArray(event.data?.content) ? event.data.content : []
         for (const block of content) {
-          if (block?.type === 'tool-result' && block.toolCallId === callId) {
+          if (readToolResultBlockId(block) === callId) {
             outcome = { hasResult: true, isError: block.isError === true, abortedBeforeDispatch: false, content: block.content ?? [] }
           }
         }
@@ -356,7 +389,8 @@ export function createPauseGate({ ctx, pauseStore, pluginId = 'session-guard', m
       return
     }
     if (event.type === 'tool/result') {
-      const callId = event.data?.message?.source?.callId ?? event.data?.message?.content?.[0]?.toolCallId
+      // 双形态双读（见 readToolResultCallId）：块上 toolCallId 优先，旧记录回退 source.callId。
+      const callId = readToolResultCallId(event.data?.message)
       if (typeof callId === 'string') inflightOf(sessionId).delete(callId)
       tryApplyPending(sessionId)
       return
@@ -378,7 +412,8 @@ export function createPauseGate({ ctx, pauseStore, pluginId = 'session-guard', m
     if (event.type === 'user/message') {
       const content = Array.isArray(event.data?.content) ? event.data.content : []
       for (const block of content) {
-        if (block?.type === 'tool-result' && typeof block.toolCallId === 'string') inflightOf(sessionId).delete(block.toolCallId)
+        const blockId = readToolResultBlockId(block)
+        if (blockId !== undefined) inflightOf(sessionId).delete(blockId)
       }
       tryApplyPending(sessionId)
       return

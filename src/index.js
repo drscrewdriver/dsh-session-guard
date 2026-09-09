@@ -20,6 +20,7 @@ import { createRetry } from './retry.js'
 import { createPauseStore } from './pause-store.js'
 import { createPauseGate } from './pause-gate.js'
 import { detectTaskControl } from './detect.js'
+import { createWiring } from './wiring.js'
 import { NS, DEFAULT_SETTINGS, SettingsSchema, registerSettings } from './settings.js'
 
 export const name = 'session-guard'
@@ -48,11 +49,17 @@ export function apply(ctx) {
   const gate = createGate({ getCtx: () => ctx, getSettings: readCfg, store, pauseGate })
   const bridge = createBridge(ctx, gate, store, pauseGate)
 
+  // ── 官方 provider 二维判定接线（目标追踪 / 请求级守卫 / 入峰过滤 / 退峰释放）──
+  // 纯逻辑见 provider.js / provider-directory.js / deferrals.js / request-guard.js / targets.js，
+  // 接线与编排见 wiring.js；这里只负责装配与生命周期。
+  const wiring = createWiring({ ctx, getSettings: readCfg, gate, logger: ctx.logger })
+
   // ── 冗余端口：input-traffic 冻结按钮透传接入（D5/D6/D8）──
   ctx.provide('sessionGuard', bridge)
 
   // ── 自研会话门：安全边界监听（session/event 落地延迟暂停）──
   // 监听在命令注册之前，让任何会话事件都能在安全边界落地 pending pause。
+  // 同一条监听顺带做「最近真实目标」追踪（request/header 两版本通吃）。
   if (typeof ctx.on === 'function') {
     ctx.effect(() => ctx.on('session/event', (session, event) => {
       try {
@@ -60,8 +67,14 @@ export function apply(ctx) {
       } catch (e) {
         ctx.logger?.warn?.('[session-guard] session event handling failed: ' + String(e))
       }
+      wiring.onSessionEvent(session, event)
     }), 'session-guard: pause-gate events')
   }
+
+  // ── 请求级守卫（agent/request waterfall）──
+  // 覆盖缺口：tick 只在状态跳变时处理 running 会话，入峰后新启动 / 中途切官方都会漏。
+  ctx.effect(() => wiring.installGuard(), 'session-guard: request guard')
+  ctx.effect(() => () => wiring.dispose(), 'session-guard: wiring dispose')
 
   // ── 手动会话门命令（/pause /resume /cancel，全量移植）──
   if (typeof ctx.commands?.register === 'function') {
@@ -124,36 +137,14 @@ export function apply(ctx) {
   void registerSettings(ctx)
 
   // ── 状态机驱动（30s tick）──
+  // 入峰：只暂停「最近目标为官方或 unknown」的 running 会话（providerGuard 关闭时退回全部）；
+  // 退峰：先放行挂起的请求，再按 deferredResume / offPeakAutoResume 决定续跑（见 wiring.js）。
   async function onEnterPeak(cfg) {
-    const agents = ctx.agents
-    const roots = typeof agents.roots === 'function' ? agents.roots() : agents.list()
-    const paused = []
-    for (const agent of roots) {
-      if (agent && agent.status === 'running') {
-        const r = await gate.stopNextTurn(String(agent.id), {
-          mode: cfg.pauseMode,
-          reason: cfg.pauseReason,
-        })
-        paused.push({ sessionId: String(agent.id), via: r.via, ok: r.ok })
-      }
-    }
-    ctx.logger?.info?.(`[session-guard] peak entered — paused ${paused.length} running session(s): ${JSON.stringify(paused)}`)
+    await wiring.onEnterPeak(cfg)
   }
 
   async function onLeavePeak(cfg) {
-    // 低谷自动恢复开关：关掉则退峰不自动恢复（会话保持暂停，需手动恢复）。
-    if (cfg.offPeakAutoResume === false) {
-      ctx.logger?.info?.('[session-guard] off-peak auto-resume disabled — sessions stay paused')
-      return
-    }
-    const agents = ctx.agents
-    const roots = typeof agents.roots === 'function' ? agents.roots() : agents.list()
-    const resumed = []
-    for (const agent of roots) {
-      const r = await gate.resume(String(agent.id), { choice: 'rerun' })
-      resumed.push({ sessionId: String(agent.id), via: r.via, ok: r.ok })
-    }
-    ctx.logger?.info?.(`[session-guard] peak left — resumed ${resumed.length} session(s): ${JSON.stringify(resumed)}`)
+    await wiring.onLeavePeak(cfg)
   }
 
   function tick() {
@@ -199,7 +190,19 @@ export function apply(ctx) {
           if (method === 'GET' && url.pathname === '/session-guard/state') {
             const sessionId = url.searchParams.get('session') ?? ''
             if (!sessionId) return json(400, { ok: false, error: 'missing session' })
-            return json(200, { ok: true, state: bridge.state(sessionId) })
+            return json(200, {
+              ok: true,
+              state: bridge.state(sessionId),
+              target: wiring.targets.get(sessionId),
+              held: wiring.deferrals.has(sessionId),
+              deferred: wiring.deferrals.isDeferred(sessionId),
+            })
+          }
+          // GET /session-guard/provider?provider=<id> —— 官方判定诊断（排查误判用）
+          if (method === 'GET' && url.pathname === '/session-guard/provider') {
+            const provider = url.searchParams.get('provider') ?? ''
+            if (!provider) return json(400, { ok: false, error: 'missing provider' })
+            return json(200, { ok: true, verdict: wiring.directory.describe(provider) })
           }
           // GET /session-guard/settings
           if (method === 'GET' && url.pathname === '/session-guard/settings') {
@@ -225,6 +228,9 @@ export function apply(ctx) {
                 state: lastState,
                 enabled: cfg.enabled,
                 weekendMode: cfg.weekendMode,
+                providerGuard: cfg.providerGuard === true,
+                held: wiring.deferrals.size(),
+                deferred: wiring.deferrals.deferredSize(),
                 timezone: cfg.timezone,
                 billingTimezone: BILLING_TIMEZONE,
                 now: now.toISOString(),
@@ -257,6 +263,10 @@ export function apply(ctx) {
                 describeErr,
                 ns: NS,
                 schemaOk: !!SettingsSchema && typeof SettingsSchema === 'function',
+                providerGuard: readCfg().providerGuard === true,
+                configurableProviders: wiring.directory.entries().length,
+                held: wiring.deferrals.size(),
+                deferred: wiring.deferrals.deferredSize(),
               },
             })
           }

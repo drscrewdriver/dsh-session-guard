@@ -1,8 +1,8 @@
 {
   "id": "dsh-external/dsh-session-guard",
-  "version": "0.1.3",
+  "version": "0.1.5-beta.1",
   "main": "./src/index.js",
-  "description": "高峰自动会话门：周末模式 + 高峰自动暂停 + 会话级冻结 + 后端自动重试。",
+  "description": "高峰自动会话门：周末模式 + 高峰自动暂停 + 官方源二维判定 + 会话级冻结 + 后端自动重试。",
   "contributes": {
     "tools": [],
     "skills": []

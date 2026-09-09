@@ -147,3 +147,78 @@ service = {
 - 依赖 `ctx.get('taskControl')` → 需外部插件（当前未装）。
 - 自研 → session-guard `gate.stopNextTurn` 直接调自研 pause（真暂停），
   不再退化成 `queueLocked` 标记；`queueFallback` 留作 agent 不可用时的降级。
+
+## 8. 【2026-09-09】官方 provider 二维判定：接口锚点与四 tag 漂移矩阵
+
+本次改动（高峰 × 目标源）用到的每个上游接口，都在 `dsh-repo` 的四个 tag 上实测复核。
+命令模板：`git -C $R grep -n "<pattern>" <tag> -- <path>`。
+
+### 8.1 接口锚点（实施依据）
+
+| 接口 | 用途 | 锚点 |
+|---|---|---|
+| `agent/request` waterfall | 请求级拦截点 | `packages/core/agent-loop/src/agent.ts`，0.1.1-rc.2 `:458` / 0.1.2-rc.1 `:479` |
+| payload 含 `agent` | 取 sessionId（**关键**） | `packages/core/agent/src/runtime-types.ts:244`：`{ agent, turn, step, signal }`；`dispatch.ts:113-118` 的 `fused()` 注入 `agent` |
+| `request/header` 会话事件 | 最近真实目标 | `agent.ts:485/488`（0.1.1-rc.2）；`data.header.config.{provider,model}` |
+| `model/selection` 事件 | 切模型加速信号 | 仅 0.1.2+：`packages/api/session-controller/src/agent.ts:327`；形状 `{ provider, model, reasoningEffort? }`（`types.ts:82`） |
+| `llm.listConfigurableProviders()` | 端点目录 | `packages/llm/llm/src/index.ts:517`（0.1.1-rc.2）/ `:534`（0.1.2-rc.1） |
+| 目录条目形状 | `settingsNs` + `settingsPath` | `packages/llm/llm/src/types.ts:166`；`llm-deepseek/src/index.ts:442`（`settingsNs: NS, settingsPath: []`）；`llm-pi-ai/src/index.ts:118`（`settingsPath: ['providers', provider]`） |
+| `settings.register` | 注册命名空间 | 0.1.1-rc.2 `index.ts:435` `register<T>(ns, schema, options)`；0.1.2+ `:419` |
+| `settings.get(ns)` | 读他人命名空间 | 0.1.1-rc.2 `:519`；0.1.2-rc.1 `:546`；0.1.3+/0.1.5 `:541` |
+
+### 8.2 四 tag 漂移矩阵（本次实测，与计划 findings F8 一致）
+
+| 接口 | 0.1.1-rc.2 | 0.1.2-rc.1 | 0.1.3-alpha.2 | 0.1.5-alpha.1 |
+|---|---|---|---|---|
+| `agent/request` | ✅ 458 | ✅ 479 | ✅ 526 | ✅ 531 |
+| payload `agent` 注入 | ✅ | ✅ | ✅ | ✅ |
+| `request/header` | ✅ | ✅ | ✅ | ✅ |
+| `model/selection` | ❌ | ✅ 327 | ✅ 327 | ✅ 327 |
+| `settings.register` | ✅ 435 | ✅ 419 | ✅ 419 | ✅ 419 |
+| `settings.installSection` | ❌ | ✅ 472 | ✅ 472 | ✅ 472 |
+| `settings.installSettingsSection` | ✅ 863 | ❌ | ❌ | ❌ |
+| `settings.get(ns)` | ✅ 519 | ✅ 546 | ✅ 541 | ✅ 541 |
+| `listConfigurableProviders` | ✅ 517 | ✅ 534 | ✅ 538 | ✅ 541 |
+| `llm-deepseek` 目录条目 | ✅ | ✅ | ✅ | ✅ |
+| pi-ai `providers.<id>` | ✅ | ✅ | ✅ | ✅ |
+
+**结论**：漂移只发生在 0.1.1 → 0.1.2（`installSection` 新增、自由函数 `installSettingsSection` 移除、
+`model/selection` 引入）；0.1.2-rc.1 → 0.1.5-alpha.1 公共 API 连行号都没变。
+本插件只用 `register` + `get` 交集，两个被淘汰的 API 一律不碰。
+
+### 8.3 两处与计划不同的实测修正
+
+1. **`agent/request` payload 里有 `agent`**（`runtime-types.ts:244` + `dispatch.ts` 的 `fused()` 注入），
+   所以请求级拦截能拿到 sessionId，不需要额外推断。
+2. **抛错到 `turn/end` 时 `code` 会被压成 `UNKNOWN`**：`agent.ts` 的回合 catch 只对
+   `error instanceof LlmError` 保留结构化 `failure`，其它一律 `{ message: errorChain(error), code: 'UNKNOWN' }`。
+   本插件不能 value-import `@deepseek-ai/dsh-llm`（零 `@deepseek-ai/*` 值导入约束），
+   因此 `PEAK_DEFERRED` 必须以**精确哨兵前缀**出现在 message 首位（`PEAK_DEFERRED: …`），
+   `retry.js` 按 `code === 'PEAK_DEFERRED'` 或 message 以该哨兵开头短路——仍是精确匹配，
+   不含任何中文/宽泛关键词，`429` / `RATE_LIMIT` / `TRANSPORT` 保持瞬时。
+3. **pi-ai 内置 `deepseek` 路由的 catalog 端点就是 `https://api.deepseek.com`**
+   （本机 `@earendil-works/pi-ai@0.82.1` `dist/providers/data/deepseek.json` 两个模型 `baseUrl` 相同）
+   → `builtinEndpoints` 必须包含 `deepseek`，否则默认配置下漏拦官方请求。
+
+### 8.4 顺带修掉的未声明平台依赖：`pause-gate.js` 不再 import `@deepseek-ai/dsh-llm`
+
+实施时用漂移守卫脚本的「源码纪律」检查发现：`src/pause-gate.js` 原先
+`import { createUserMessage } from '@deepseek-ai/dsh-llm'`，而该包**未在 `dependencies` 声明**，
+且违反本仓库其余插件「host 端只 value-import `@deepseek-ai/schemastery`」的约定
+（perm-gate / thinking-levels / input-traffic / switch-search 全部只有类型导入或 schemastery）。
+
+- 上游实现（`dsh-v0.1.1-rc.2:packages/llm/llm/src/message.ts:178-199`）：
+  `createUserMessage(input)` = `{ ...input, role:'user', id: MessageId(crypto.randomUUID()) }` 再 `deepFreeze(structuredClone(...))`。
+- 消费端（`agent-loop/src/agent.ts:113-124`）：`followup(msg)` → `send(msg,'next-turn',true)` → `inbox.splice(target, Infinity, 0, [msg])`，
+  **不要求冻结、不校验品牌 id**。
+- 结论：本地构造等价 → 新增 `createPluginUserMessage({content, source})`（`pause-gate.js` 导出），
+  与 `retry.js` / `wiring.js` 已有的 plugin-source 消息形状统一，去掉未声明依赖。
+  `makeFollowupMessage` 注入点保留（测试继续注入桩）。
+
+### 8.5 延后语义的两处实测取舍
+
+1. **`deferredResume=false` + hold 模式 → 请求时刻直接转 error**（而不是「挂起到退峰再抛」）。
+   挂起却不放行只会让用户等数小时才看到错误；立即抛错更可诊断，且用户在高峰期手动切到
+   `local-35b` 后重发即可正常跑（新请求走非官方路径）。两条路径都「不自动续跑、不挂死」。
+2. **目标从官方切到非官方时自动恢复**：只恢复 `pausedByPeak` 集合里的会话（本插件入峰时暂停的），
+   绝不覆盖用户手动 `/pause`；受 `deferredResume` 约束；用 `queueMicrotask` 跳出事件派发避免重入。

@@ -25,6 +25,8 @@ export default tseslint.config(
         URL: 'readonly',
         Buffer: 'readonly',
         queueMicrotask: 'readonly',
+        setImmediate: 'readonly',
+        AbortController: 'readonly',
       },
     },
     rules: {

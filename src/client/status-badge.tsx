@@ -1,29 +1,17 @@
 /**
  * dsh-session-guard — 状态徽标（纯展示，fail-open）。
  *
- * 轮询 host 的 /session-guard/status（全局当前阶段），显示 高峰/谷时/周末。
+ * 轮询 host 的 /session-guard/status（全局当前阶段），显示 高峰/谷时/周末；
+ * 高峰期按二维判定区分「只拦官方」与「全部暂停」（文案见 badge-text.ts）。
  * 仅展示，不做任何队列/会话动作；冻结按钮由 input-traffic 经桥接管（D6/D8）。
  */
 import { useEffect, useState } from 'react'
+import { badgeTitle, peakLabel, type Status } from './badge-text'
 
 /** slot 运行时注入的会话级 props（sessionId 由 dsh 的 SessionStandardProps 提供）。 */
 export interface StatusBadgeProps {
   sessionId?: string
 }
-
-/** /session-guard/status 返回的全局阶段。 */
-export interface Status {
-  phase: 'peak' | 'off-peak' | 'weekend'
-  enabled: boolean
-  weekendMode: boolean
-  timezone: string
-}
-
-const LABELS = {
-  peak: '高峰',
-  'off-peak': '谷时',
-  weekend: '周末',
-} as const
 
 const POLL_MS = 15_000
 
@@ -57,10 +45,11 @@ export function StatusBadge({ sessionId }: StatusBadgeProps) {
   return (
     <span
       className={`sg-status ${cls}`}
-      title={`${LABELS[status.phase]} · ${status.timezone}${status.weekendMode ? ' · 周末模式' : ''}`}
+      title={badgeTitle(status)}
       data-sg-phase={status.phase}
+      data-sg-provider-guard={status.providerGuard === true ? 'on' : 'off'}
     >
-      {LABELS[status.phase]}
+      {peakLabel(status)}
     </span>
   )
 }

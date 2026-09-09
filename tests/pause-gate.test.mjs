@@ -9,7 +9,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createPauseStore } from '../src/pause-store.js'
-import { createPauseGate } from '../src/pause-gate.js'
+import { createPauseGate, createPluginUserMessage } from '../src/pause-gate.js'
 
 /** 每测试独立临时状态目录（pause 根 = state 根/pause）。 */
 function tmpEnv(t) {
@@ -36,7 +36,7 @@ function fakeAgent(overrides = {}, calls) {
   }
 }
 
-function setup(t, { agent = fakeAgent({}, []), calls = [], goals, makeFollowupMessage } = {}) {
+function setup(t, { agent = fakeAgent({}, []), calls = [], goals, makeFollowupMessage, useDefaultFollowup = false } = {}) {
   const pauseStore = tmpEnv(t)
   const ctx = {
     agents: { get: (id) => (agent && agent.id === id ? agent : undefined) },
@@ -46,7 +46,7 @@ function setup(t, { agent = fakeAgent({}, []), calls = [], goals, makeFollowupMe
   const gate = createPauseGate({
     ctx,
     pauseStore,
-    makeFollowupMessage: makeFollowupMessage ?? ((input) => input),
+    ...(useDefaultFollowup ? {} : { makeFollowupMessage: makeFollowupMessage ?? ((input) => input) }),
   })
   return { pauseStore, gate, agent, calls }
 }
@@ -176,4 +176,29 @@ test('taskControlAvailable：自研后恒 true', (t) => {
   const agent = fakeAgent({}, calls)
   const { gate } = setup(t, { agent, calls })
   assert.equal(gate.taskControlAvailable(), true)
+})
+
+test('createPluginUserMessage：形状与 dsh-llm createUserMessage 一致，id 唯一', () => {
+  const m = createPluginUserMessage({ content: [{ type: 'text', text: '继续' }], source: { kind: 'plugin', plugin: 'session-guard' } })
+  assert.equal(m.role, 'user')
+  assert.equal(typeof m.id, 'string')
+  assert.ok(m.id.length > 0)
+  assert.deepEqual(m.content, [{ type: 'text', text: '继续' }])
+  assert.deepEqual(m.source, { kind: 'plugin', plugin: 'session-guard' })
+  const m2 = createPluginUserMessage({ content: [], source: {} })
+  assert.notEqual(m.id, m2.id)
+})
+
+test('默认 makeFollowupMessage 走本地构造（无 @deepseek-ai/dsh-llm 依赖）', (t) => {
+  const calls = []
+  const agent = fakeAgent({}, calls)
+  const { gate } = setup(t, { agent, calls, useDefaultFollowup: true })
+  gate.pause('s1', { mode: 'force' })
+  gate.resume('s1', { confirm: true, choice: 'rerun' })
+  const sent = calls.filter((c) => c[0] === 'followup')
+  assert.ok(sent.length >= 1, 'expected a followup call')
+  const msg = sent[0][1]
+  assert.equal(msg.role, 'user')
+  assert.equal(msg.source.plugin, 'session-guard')
+  assert.equal(typeof msg.id, 'string')
 })

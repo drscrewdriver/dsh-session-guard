@@ -6,7 +6,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { parseHHMM, inWindow, wallClock, isWeekend, shouldPause, BILLING_TIMEZONE } from '../src/time.js'
+import { parseHHMM, inWindow, wallClock, isWeekend, shouldPause, msUntilOffPeak, localMidnight, BILLING_TIMEZONE } from '../src/time.js'
 
 const SETTINGS = {
   enabled: true,
@@ -157,4 +157,55 @@ test('shouldPause：首尔用户（Asia/Seoul）与北京时间差相同，行�
   const r = shouldPause(seoulSettings, new Date('2026-08-19T02:00:00Z'))
   assert.equal(r.pause, true)
   assert.equal(r.reason, 'peak')
+})
+
+// ── msUntilOffPeak：hold 释放定时（纯函数）──
+
+test('msUntilOffPeak：峰中 → 距窗口结束', () => {
+  // 北京周三 10:00，窗口 [09:00,12:00) → 2h
+  assert.equal(msUntilOffPeak(SETTINGS, WED_PEAK), 2 * 60 * 60 * 1000)
+})
+
+test('msUntilOffPeak：峰尾前 1 分钟 → 30s（保留秒级精度）', () => {
+  // 北京周三 11:59:30 = UTC 03:59:30
+  const t = new Date('2026-08-19T03:59:30Z')
+  assert.equal(msUntilOffPeak(SETTINGS, t), 30_000)
+})
+
+test('msUntilOffPeak：跨午夜窗口', () => {
+  const overnight = { ...SETTINGS, peakWindows: [{ start: '22:00', end: '06:00' }] }
+  // 北京周四 01:00 = UTC 周三 17:00 → 距 06:00 还有 5h
+  assert.equal(msUntilOffPeak(overnight, new Date('2026-08-20T17:00:00Z')), 5 * 60 * 60 * 1000)
+})
+
+test('msUntilOffPeak：周末（已非峰）→ 0', () => {
+  assert.equal(msUntilOffPeak(SETTINGS, SAT_PEAK), 0)
+})
+
+test('msUntilOffPeak：enabled=false → 0', () => {
+  assert.equal(msUntilOffPeak({ ...SETTINGS, enabled: false }, WED_PEAK), 0)
+})
+
+test('msUntilOffPeak：非法/缺失窗口 → 0（不挂死）', () => {
+  const bad = { ...SETTINGS, peakWindows: [{ start: 'abc', end: 'xyz' }] }
+  assert.equal(msUntilOffPeak(bad, WED_PEAK), 0)
+  assert.equal(msUntilOffPeak({ ...SETTINGS, peakWindows: null }, WED_PEAK), 0)
+  assert.equal(msUntilOffPeak({ ...SETTINGS, peakWindows: [] }, WED_PEAK), 0)
+})
+
+test('msUntilOffPeak：周末模式开启时窗口跨进周末 → 取周末起点（更早）', () => {
+  const overnight = { ...SETTINGS, peakWindows: [{ start: '22:00', end: '06:00' }] }
+  // 北京周五 23:00 = UTC 周五 15:00；窗口到周六 06:00，但周六 00:00 已是周末
+  const r = msUntilOffPeak(overnight, new Date('2026-08-21T15:00:00Z'))
+  assert.equal(r, 60 * 60 * 1000)
+})
+
+test('msUntilOffPeak：周末模式关闭时窗口跨进周末 → 取窗口结束', () => {
+  const overnight = { ...SETTINGS, weekendMode: false, peakWindows: [{ start: '22:00', end: '06:00' }] }
+  const r = msUntilOffPeak(overnight, new Date('2026-08-21T15:00:00Z'))
+  assert.equal(r, 7 * 60 * 60 * 1000)
+})
+
+test('localMidnight：Asia/Shanghai 本地零点 = UTC 前一日 16:00', () => {
+  assert.equal(localMidnight('Asia/Shanghai', 2026, 8, 22), Date.UTC(2026, 7, 21, 16, 0, 0))
 })

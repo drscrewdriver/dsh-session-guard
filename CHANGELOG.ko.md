@@ -6,6 +6,20 @@
 - [日本語 changelog](./CHANGELOG.ja.md)
 - [한국어 changelog](./CHANGELOG.ko.md)
 
+## 0.2.0-beta.2 — 2026-09-13
+
+### 수정 (DSH 0.1.5 호환 — `compat/0.1.5` 브랜치)
+
+- **재개 큐잉 듀얼 경로.** DSH 0.1.5에서는 Inbox가 agent-loop의 읽기 전용 프로젝션으로
+  바뀌어 `agent.followup`이 존재하지 않을 수 있습니다. 재개 시 `agent.followup` →
+  `agent.send` → warn 강등(예외 없음) 순으로 시도합니다.
+- **재개 메시지 `source`에 `form: 'instructions'` 추가** (0.1.5 `ContextFormed` 계약;
+  구버전은 알 수 없는 필드를 무시합니다).
+- **`webServer.register` try/catch 보호**: 라우트 등록 실패는 로그만 남기고 `apply`에서
+  예외를 던져 호스트 플러그인 로딩을 깨뜨리지 않습니다.
+- 0.1.5-rc.2 소스 기준 `WebRoute`(exact/prefix + SSE) 계약이 불변임을 확인했습니다.
+  클라이언트 `fetch('/session-guard/...')`에 `/api` 접두사는 불필요합니다.
+
 ## 0.2.0-beta.1 — 2026-09-10
 
 ### 추가

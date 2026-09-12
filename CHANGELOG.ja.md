@@ -6,6 +6,20 @@
 - [日本語 changelog](./CHANGELOG.ja.md)
 - [한국어 changelog](./CHANGELOG.ko.md)
 
+## 0.2.0-beta.2 — 2026-09-13
+
+### 修正（DSH 0.1.5 互換 — `compat/0.1.5` ブランチ）
+
+- **レジューム入隊のデュアルパス。** DSH 0.1.5 では Inbox が agent-loop の読み取り専用
+  投影に変わるため、`agent.followup` が存在しない可能性があります。レジューム時は
+  `agent.followup` → `agent.send` → warn 降級（例外は投げない）の順で試行します。
+- **レジュームメッセージの `source` に `form: 'instructions'` を追加**（0.1.5 の
+  `ContextFormed` 契約。旧バージョンは未知フィールドを無視します）。
+- **`webServer.register` を try/catch で保護**：ルート登録の失敗はログのみで、
+  `apply` から例外を投げてホストのプラグイン読み込みを壊しません。
+- 0.1.5-rc.2 ソースに対し `WebRoute`（exact/prefix + SSE）契約が不変であることを確認。
+  クライアントの `fetch('/session-guard/...')` に `/api` プレフィックスは不要です。
+
 ## 0.2.0-beta.1 — 2026-09-10
 
 ### 追加

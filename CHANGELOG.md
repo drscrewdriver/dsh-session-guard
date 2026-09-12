@@ -6,6 +6,22 @@ All notable changes to `dsh-session-guard` are recorded here. Versions follow se
 - [日本語 changelog](./CHANGELOG.ja.md)
 - [한국어 changelog](./CHANGELOG.ko.md)
 
+## 0.2.0-beta.2 — 2026-09-13
+
+### Fixed (DSH 0.1.5 compat — `compat/0.1.5` branch)
+
+- **Dual-path resume enqueue.** DSH 0.1.5 turns the Inbox into an agent-loop read-only
+  projection, so `agent.followup` may no longer exist. The resume flow now tries
+  `agent.followup` first, falls back to `agent.send`, and degrades to a warn (never throws)
+  when neither is available — a failed enqueue can no longer break resume.
+- **Resume messages carry `source.form: 'instructions'`** per the 0.1.5 `ContextFormed`
+  message-source contract (`kind: 'plugin'` is a built-in kind; older DSH versions ignore
+  the extra field).
+- **`webServer.register` is wrapped in try/catch**: a failed route registration now logs an
+  error instead of throwing out of `apply` and breaking host plugin loading.
+- Verified against the 0.1.5-rc.2 source: the `WebRoute` contract (exact/prefix + SSE) is
+  unchanged, so client `fetch('/session-guard/...')` paths need no `/api` prefix.
+
 ## 0.2.0-beta.1 — 2026-09-10
 
 ### Added

@@ -133,6 +133,31 @@ test('resume：清暂停态 + followup 续跑指令', async (t) => {
   const followup = calls.find(([kind]) => kind === 'followup')
   assert.ok(followup !== undefined)
   assert.equal(followup[1].source.plugin, 'session-guard')
+  // 0.1.5 compat：source 携带 ContextFormed 语义字段
+  assert.equal(followup[1].source.form, 'instructions')
+})
+
+test('resume：无 followup 时回退 agent.send（0.1.5 compat 双路径）', async (t) => {
+  const calls = []
+  // fakeAgent 的 followup 被 override 掉（undefined），只留 send
+  const agent = fakeAgent({ followup: undefined, send: (msg) => { calls.push(['send', msg]) } }, calls)
+  const { gate } = setup(t, { agent, calls })
+  gate.pause('s1', { mode: 'force' })
+  const r = gate.resume('s1', {})
+  assert.equal(r.kind, 'success')
+  const sent = calls.find(([kind]) => kind === 'send')
+  assert.ok(sent !== undefined, 'expected fallback send call')
+  assert.equal(sent[1].source.form, 'instructions')
+  assert.equal(calls.find(([kind]) => kind === 'followup'), undefined)
+})
+
+test('resume：followup/send 皆无时降级且不抛错（0.1.5 compat）', async (t) => {
+  const agent = fakeAgent({ followup: undefined }, [])
+  const { gate } = setup(t, { agent, calls: [] })
+  gate.pause('s1', { mode: 'force' })
+  // 不应抛错；resume 仍返回 success（入队失败只 warn 降级）
+  const r = gate.resume('s1', {})
+  assert.equal(r.kind, 'success')
 })
 
 test('resume：force 中断工具需 confirm（未确认 → needConfirmation）', (t) => {

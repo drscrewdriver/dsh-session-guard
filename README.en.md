@@ -32,8 +32,16 @@
 > | --- | --- | --- | --- | --- |
 > | 0.1.0-rc.7 ~ 0.1.1-rc.x | ✅ | `ctx.settings.register(ns, schema, { base })` | ✅ same shape | ✅ no platform value imports |
 > | 0.1.2-alpha.2+ / 0.1.2-rc.1 | ✅ | `register` still present (`installSection` added) | ✅ same shape | ✅ no platform value imports |
-> | 0.1.3+ / 0.1.5-alpha.1 | APIs still present (unverified) | `register` unchanged | ✅ | ✅ |
+> | 0.1.3+ / 0.1.5-rc.x | ✅ adapted | `register` unchanged (string namespaces) | ✅ | ✅ |
 >
+> **0.1.5 adaptation (compat/0.1.5 branch, v0.2.0-beta.2)**:
+> ① dual-path resume enqueue — 0.1.5 turns Inbox into an agent-loop read-only projection;
+> if `agent.followup` is gone the plugin falls back to `agent.send`, and degrades to a warn
+> (never throws) when neither exists; ② resume messages now carry
+> `source.form: 'instructions'` (0.1.5 ContextFormed contract; older versions ignore it);
+> ③ `webServer.register` is wrapped in try/catch so a failed registration only logs instead
+> of breaking host loading. Verified that 0.1.5 `WebRoute` (exact/prefix + SSE) contract is
+> unchanged — client `fetch('/session-guard/...')` needs no `/api` prefix.
 > One artifact covers both. `session/event`, `agent.cancel`, `goals.pause`,
 > `agent.followup`, `commands.register`, `timer.interval`, `webServer.register`,
 > `agent/request`, `llm.listConfigurableProviders` and `settings.register/get`

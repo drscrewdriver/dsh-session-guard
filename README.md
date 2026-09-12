@@ -34,8 +34,15 @@
 > | --- | --- | --- | --- | --- |
 > | 0.1.0-rc.7 ~ 0.1.1-rc.x | ✅ | `ctx.settings.register(ns, schema, { base })` | ✅ 形状一致 | ✅ 无平台值导入 |
 > | 0.1.2-alpha.2+ / 0.1.2-rc.1 | ✅ | `register` 仍保留（另加 `installSection`） | ✅ 形状一致 | ✅ 无平台值导入 |
-> | 0.1.3+ / 0.1.5-alpha.1 | 接口仍在（未验证） | `register` 仍在（行号未变） | ✅ | ✅ |
+> | 0.1.3+ / 0.1.5-rc.x | ✅ 已适配 | `register` 仍在（字符串命名空间） | ✅ | ✅ |
 >
+> **0.1.5 适配（compat/0.1.5 分支，v0.2.0-beta.2）**：
+> ① `agent.followup` 双路径——0.1.5 将 Inbox 改为 agent-loop 只读投影，若 `followup`
+> 不再存在则回退 `agent.send`，两者皆无时 warn 降级不抛错（恢复续跑的兜底）；
+> ② 恢复消息 `source` 补 `form: 'instructions'`（0.1.5 ContextFormed 契约，旧版本忽略）；
+> ③ `webServer.register` 包 try/catch，注册失败仅记日志不炸宿主加载。
+> 已核实 0.1.5 的 `WebRoute`（exact/prefix + SSE）契约不变，客户端
+> `fetch('/session-guard/...')` 无需改 `/api` 前缀。
 > 一份产物同时支持两版本。`session/event`、`agent.cancel`、`goals.pause`、
 > `agent.followup`、`commands.register`、`timer.interval`、`webServer.register`、
 > `agent/request`、`llm.listConfigurableProviders`、`settings.register/get` 在

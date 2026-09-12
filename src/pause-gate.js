@@ -47,6 +47,36 @@ export function createPluginUserMessage({ content, source }) {
 }
 
 /**
+ * 恢复消息入队（0.1.5 compat 双路径）。
+ *
+ * 0.1.5 把 Inbox 从独立服务改为 agent-loop 只读投影（消息入队走 session 事件），
+ * `agent.followup` 是否保留无法静态确认，因此运行时检测：
+ * 1. `agent.followup(msg)` —— ≤0.1.4 与（若保留的）0.1.5 首选路径；
+ * 2. `agent.send(msg)` —— followup 被移除时的回退；
+ * 3. 两者皆无 —— 记 warn 并返回 false，绝不让 resume 因入队失败而抛错。
+ * @param {object} agent 目标 agent（live agent）
+ * @param {{id: string, role: 'user', content: unknown, source: object}} message 本地构造的 user 消息
+ * @param {object} [ctx] host context（仅用于 logger）
+ * @returns {boolean} 是否成功入队
+ */
+export function enqueueFollowup(agent, message, ctx) {
+  if (typeof agent.followup === 'function') {
+    agent.followup(message)
+    return true
+  }
+  if (typeof agent.send === 'function') {
+    agent.send(message)
+    return true
+  }
+  try {
+    ctx?.logger?.warn?.('[session-guard] agent has no followup/send; resume message dropped')
+  } catch {
+    /* logger 不可用时静默 */
+  }
+  return false
+}
+
+/**
  * @param {object} deps
  * @param {object} deps.ctx host context（含 agents.get / get / logger，可选 goals）
  * @param {ReturnType<import('./pause-store.js').createPauseStore>} deps.pauseStore 暂停状态存储
@@ -286,7 +316,8 @@ export function createPauseGate({ ctx, pauseStore, pluginId = 'session-guard', m
     state.pendingPause.delete(sessionId)
     const current = currentPause(sessionId)
     if (!current.paused) return { kind: 'success', text: 'no paused task to resume' }
-    const followup = (blocks) => agent.followup(makeFollowupMessage({ content: blocks, source: { kind: 'plugin', plugin: pluginId } }))
+    // 0.1.5 compat：source 补 form: 'instructions'（0.1.5 ContextFormed 契约；旧版本忽略未知字段）
+    const followup = (blocks) => enqueueFollowup(agent, makeFollowupMessage({ content: blocks, source: { kind: 'plugin', plugin: pluginId, form: 'instructions' } }), ctx)
 
     if (current.forced) {
       const tool = current.interruptedTool

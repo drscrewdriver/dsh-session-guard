@@ -220,8 +220,12 @@ export function apply(ctx) {
   tick()
 
   // ── HTTP 路由 ──
+  // 0.1.5 compat：注册失败只记日志，不让 apply 抛错炸掉宿主插件加载（#5926 教训）。
+  // webServer.register 前缀路由 + SSE 在 0.1.5 契约不变（packages/host/webserver WebRoute）。
   if (ctx.webServer && typeof ctx.webServer.register === 'function') {
-    ctx.effect(() => ctx.webServer.register({
+    ctx.effect(() => {
+      try {
+        return ctx.webServer.register({
       kind: 'prefix',
       path: '/session-guard',
       handler: async (req, res) => {
@@ -400,6 +404,10 @@ export function apply(ctx) {
           res.end(JSON.stringify({ ok: false, error: String(e && e.message || e) }))
         }
       },
-    }), 'session-guard: routes')
+      })
+      } catch (e) {
+        ctx.logger?.error?.(`[session-guard] webServer.register failed (routes disabled): ${String(e && e.message || e)}`)
+      }
+    }, 'session-guard: routes')
   }
 }

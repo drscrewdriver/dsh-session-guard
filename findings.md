@@ -222,3 +222,35 @@ service = {
    `local-35b` 后重发即可正常跑（新请求走非官方路径）。两条路径都「不自动续跑、不挂死」。
 2. **目标从官方切到非官方时自动恢复**：只恢复 `pausedByPeak` 集合里的会话（本插件入峰时暂停的），
    绝不覆盖用户手动 `/pause`；受 `deferredResume` 约束；用 `queueMicrotask` 跳出事件派发避免重入。
+
+---
+
+# Findings（增补）— compat/0.1.5 适配调研（2026-09-13）
+
+## F1. 分支现状
+- 远程仅 `origin/main` 一个分支（SSH 通道 `git@github.com:drscrewdriver/dsh-session-guard.git` 已验证可用，fetch 正常）。
+- main HEAD = `5e46b89`（v0.2.0-beta.1），README 适配矩阵对 0.1.5 标注「接口仍在（**未验证**）」。
+
+## F2. webServer.register 前缀路由在 0.1.5 仍然存在（已核实）
+- `source-analysis/v0.1.5-rc.2/10-gui-frontend-backend.md`：`packages/host/webserver` 的 `WebRoute { kind: 'exact'|'prefix', path, handler }` 契约不变，最长前缀匹配，SSE（可持开响应）被明确支持且 gzip 自动跳过 SSE 流。
+- 结论：插件的 `/session-guard/*`（GET state/events/provider/settings/status + POST rpc）契约在 0.1.5 应保持可用；客户端 `fetch('/session-guard/...')` 不需要改 `/api` 前缀（`/api/endpoint` 变化只影响 DSH 自身 client API，不影响插件自注册路由）。
+- 风险（讨论区实证）：#5926/#5889 第三方插件注册 HTTP channel 时 `owner.webServer` 未声明会崩 connection —— 本插件 `inject` 已含 `'webServer'`，已满足；但注册处仍应 try/catch 防御。
+
+## F3. `kind: 'plugin'` 是 0.1.5 内置 source kind，但新增 `form` 语义字段
+- `source-analysis/v0.1.5-rc.2/04-llm-typer.md`：`MessageSourceMap.plugin = { kind: 'plugin'; plugin: string } & ContextFormed`，`form` ∈ instructions/directory/snapshot/notice/relay/recall。
+- 插件 `src/pause-gate.js` 的 followup 消息用 `source: { kind:'plugin', plugin: pluginId }`，缺 `form`。#6311 拒载的是「插件**自定义** kind」，`plugin` 是内置 kind 不受影响，但补 `form: 'instructions'` 更符合 0.1.5 契约（旧版本多一个未知字段无害）。
+
+## F4. Inbox 从服务改为 agent-loop 投影 —— `agent.followup` 是最大未验证点
+- 0.1.5 中 InboxState 是只读投影，「消息入队走 session 事件，不再直接操作 inbox」（plugin-migration-guide §三）。
+- 插件恢复续跑完全依赖 `agent.followup(msg)`（pause-gate.js 289 行等 6 处调用）。0.1.5 源码中该 API 是否保留**本地无法核实**（无 harness 源码 checkout，official-repo 只有 docs 镜像）。
+- 方案：运行时检测 + 双路径 —— `agent.followup` 为函数则原样调用；否则回退 `agent.send?.(...)` 或经 session 事件入队；两者皆无则记日志降级（不抛错）。
+
+## F5. 其余接口评估
+- `session/event` 的 `request/header` 主信号：README 已核到 0.1.5-alpha.1 行号未变，V3 surface 架构下 session/event 派发保持；保持现状 + 运行时防御（`ctx.on` 缺失时静默跳过，已有）。
+- `settings.register`：0.1.3+ 字符串命名空间，本插件 NS 已是字符串，`register` 保留（compatibility-guide §2.1 已核）。
+- `agent.cancel({kind:'user'},{keepInbox:true})`、`goals.pause`、`commands.register`、`timer.interval`：无 0.1.5 breaking 记录。
+- Node：0.1.5 宿主要求 Node ≥ 24（#6124）；插件 `engines.node >=20` 可不动，`engines.dsh` 现范围 `>=0.1.0-rc.7 <0.2.0-0` 已覆盖 0.1.5。
+
+## 风险
+- `agent.followup` 若在 0.1.5 被移除且无等价回退 → 高峰自动暂停后**会话无法自动恢复续跑**（核心功能退化）。回退路径必须实测。
+- SSE 长连接在 0.1.5 gzip/压缩路径上的行为已确认安全（跳过 SSE）。

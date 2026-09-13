@@ -24,12 +24,12 @@ function tmpEnv(t) {
   return createPauseStore()
 }
 
-/** 假 agent（记录 cancel/followup 调用）。 */
+/** 假 agent（记录 cancel/followup 调用）。默认 session 为 0.1.5 主路径形态（snapshotEvents()）。 */
 function fakeAgent(overrides = {}, calls) {
   return {
     id: 's1',
     status: 'running',
-    session: { events: [] },
+    session: { snapshotEvents: () => [] },
     cancel: (kind, opts) => { calls.push(['cancel', kind, opts]) },
     followup: (msg) => { calls.push(['followup', msg]) },
     ...overrides,
@@ -293,4 +293,66 @@ test('stepGate.release 抛错：暂停动作不受影响', (t) => {
   })
   assert.doesNotThrow(() => gate.pause('s1', { mode: 'force' }))
   assert.equal(pauseStore.get('s1').paused, true)
+})
+
+// ── 3.0.0（compat/0.1.5）：session 事件读取双路径（snapshotEvents 主 / events 回退）──
+
+test('0.1.5 主路径：仅提供 snapshotEvents() 时 resumeContent 正常取到', (t) => {
+  const calls = []
+  const agent = fakeAgent({
+    session: {
+      snapshotEvents: () => [
+        { type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: '继续任务' }] } },
+      ],
+    },
+  }, calls)
+  const { gate, pauseStore } = setup(t, { agent, calls })
+  const r = gate.pause('s1', { mode: 'force' })
+  assert.equal(r.kind, 'success')
+  const st = pauseStore.get('s1')
+  assert.deepEqual(st.resumeContent, [{ type: 'text', text: '继续任务' }])
+})
+
+test('回退路径：仅提供旧 events 数组时同样可读（防御 0.1.5 变体）', (t) => {
+  const calls = []
+  const agent = fakeAgent({
+    session: {
+      events: [
+        { type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: '旧数组回退' }] } },
+      ],
+    },
+  }, calls)
+  const { gate, pauseStore } = setup(t, { agent, calls })
+  const r = gate.pause('s1', { mode: 'force' })
+  assert.equal(r.kind, 'success')
+  const st = pauseStore.get('s1')
+  assert.deepEqual(st.resumeContent, [{ type: 'text', text: '旧数组回退' }])
+})
+
+test('fail-open：snapshotEvents 与 events 皆缺时暂停/恢复不抛且按未知结果处理', (t) => {
+  const calls = []
+  const agent = fakeAgent({ session: {} }, calls)
+  const { gate } = setup(t, { agent, calls })
+  gate.handleEvent({ id: 's1' }, { type: 'tool/call', data: { name: 'bash', arguments: '{"command":"rm x"}', callId: 'c1' } })
+  const r = gate.pause('s1', { mode: 'force' })
+  assert.equal(r.kind, 'success')
+  const r2 = gate.resume('s1', { confirm: true })
+  assert.equal(r2.kind, 'success')
+  // findToolOutcome 返回 null → 走「状态未知，重新执行」分支
+  assert.match(r2.text, /re-executing interrupted tool/)
+})
+
+test('0.1.5 主路径：snapshotEvents 里的 tool/result 驱动「已执行完成」恢复分支', (t) => {
+  const calls = []
+  const events = [
+    { type: 'tool/result', data: { message: { content: [{ type: 'tool-result', isError: false }], source: { callId: 'c1' } } } },
+  ]
+  const agent = fakeAgent({ session: { snapshotEvents: () => events } }, calls)
+  const { gate } = setup(t, { agent, calls })
+  gate.handleEvent({ id: 's1' }, { type: 'tool/call', data: { name: 'bash', arguments: '{}', callId: 'c1' } })
+  const r = gate.pause('s1', { mode: 'force' })
+  assert.equal(r.kind, 'success')
+  const r2 = gate.resume('s1', { confirm: true })
+  assert.equal(r2.kind, 'success')
+  assert.match(r2.text, /had actually completed/)
 })

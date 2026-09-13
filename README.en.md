@@ -30,30 +30,38 @@
 >
 > | DSH version | Load | Settings registration | Session events / gate | Client half |
 > | --- | --- | --- | --- | --- |
-> | 0.1.0-rc.7 ~ 0.1.1-rc.x | ✅ | `ctx.settings.register(ns, schema, { base })` | ✅ same shape | ✅ no platform value imports |
-> | 0.1.2-alpha.2+ / 0.1.2-rc.1 | ✅ | `register` still present (`installSection` added) | ✅ same shape | ✅ no platform value imports |
-> | 0.1.3+ / 0.1.5-rc.x | ✅ adapted | `register` unchanged (string namespaces) | ✅ | ✅ |
+> | 0.1.0-rc.7 ~ 0.1.1-rc.x | ✅ (2.x / 0.2.x line) | `ctx.settings.register(ns, schema, { base })` | ✅ same shape | ✅ no platform value imports |
+> | 0.1.2-alpha.2+ / 0.1.2-rc.1 | ✅ (2.x / 0.2.x line) | `register` still present (`installSection` added) | ✅ same shape | ✅ no platform value imports |
+> | **0.1.5-rc.2** | ✅ (**3.x dedicated line `compat/0.1.5`**) | `register` unchanged (string namespaces) | ✅ events read via `snapshotEvents()` dual path | ✅ |
 >
-> **0.1.5 adaptation (compat/0.1.5 branch, v0.2.0-beta.2)**:
+> **3.x is the 0.1.5 dedicated line**: engines/peers narrow to `>=0.1.5-rc.2 <0.2.0-0`;
+> 0.1.0-rc.7~0.1.2 hosts should stay on the 2.x / 0.2.x line (`main`).
+> **0.1.5 adaptation (compat/0.1.5 branch, v3.0.0)**:
 > ① dual-path resume enqueue — 0.1.5 turns Inbox into an agent-loop read-only projection;
 > if `agent.followup` is gone the plugin falls back to `agent.send`, and degrades to a warn
 > (never throws) when neither exists; ② resume messages now carry
 > `source.form: 'instructions'` (0.1.5 ContextFormed contract; older versions ignore it);
 > ③ `webServer.register` is wrapped in try/catch so a failed registration only logs instead
-> of breaking host loading. Verified that 0.1.5 `WebRoute` (exact/prefix + SSE) contract is
+> of breaking host loading; ④ 0.1.5 removes the `session.events` array accessor — events are
+> now read via `snapshotEvents()` (legacy array kept as fallback), affecting only the
+> `findToolOutcome` / `lastUserPrompt` helper paths.
+> Verified that 0.1.5 `WebRoute` (exact/prefix + SSE) contract is
 > unchanged — client `fetch('/session-guard/...')` needs no `/api` prefix.
-> One artifact covers both. `session/event`, `agent.cancel`, `goals.pause`,
+> The 2.x-line table (one artifact, both versions) is kept below. `session/event`, `agent.cancel`, `goals.pause`,
 > `agent.followup`, `commands.register`, `timer.interval`, `webServer.register`,
 > `agent/request`, `llm.listConfigurableProviders` and `settings.register/get`
 > are signature-identical between `dsh-v0.1.1-rc.2` and `dsh-v0.1.2-rc.1`
-> (verified through `0.1.5-alpha.1`). The one
+> (3.x verified against `dsh-v0.1.5-rc.2`). The one
 > seam that needs a dual read is the `tool/result` call id (`content[].toolCallId`
 > first, `source.callId` as fallback) — both forms appear in replay logs of both
 > versions. It now lives in `src/tool-call-id.js` with unit tests.
+> Since 0.1.5 the `session.events` array accessor is removed; 3.x reads events
+> through `snapshotEvents()` (with the legacy array as fallback), affecting only
+> the `findToolOutcome` / `lastUserPrompt` helper paths.
 > The `model/selection` event exists **only on 0.1.2+** and is feature-probed; the
 > settings surface uses only the `register` + `get` intersection (never
 > `installSection`, never the removed `installSettingsSection`). Drift guard:
-> `tools/check-api-drift.ps1`.
+> `tools/check-api-drift.ps1` (3.x defaults to asserting against `dsh-v0.1.5-rc.2`).
 
 > Automatically pause running sessions during peak pricing hours and resume during off-peak/weekend; pair with input-traffic's freeze button for **per-session** locking; backend **auto-retry** yields during freeze/gate. Core based on a custom session gate (`agent.cancel keepInbox + goals.pause + session/event safe boundary + followup resume`), no longer depending on dsh-task-control.
 

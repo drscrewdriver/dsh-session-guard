@@ -12,6 +12,7 @@
     - `agent/pre-step` waterfall + `PreStepDecision` (v0.2.0 step gate)
     - `session/event` `request/header`
     - `settings.register` and `settings.get(ns)`
+    - `session.snapshotEvents()` accessor (0.1.5: `session.events` removed)
     - `llm.listConfigurableProviders()`
     - `llm-deepseek` directory entry (`settingsNs: 'llm-deepseek'`, `settingsPath: []`)
     - pi-ai directory entry (`settingsPath: ['providers', <id>]`)
@@ -28,7 +29,7 @@
 [CmdletBinding()]
 param(
   [string]$Repo = 'E:\test\rewrite-agently\dsh-repo',
-  [string[]]$Tags = @('dsh-v0.1.1-rc.2', 'dsh-v0.1.2-rc.1', 'dsh-v0.1.3-alpha.2', 'dsh-v0.1.5-alpha.1'),
+  [string[]]$Tags = @('dsh-v0.1.5-rc.2'),
   [string]$PluginRoot = (Split-Path -Parent $PSScriptRoot)
 )
 
@@ -72,6 +73,7 @@ foreach ($tag in $Tags) {
   Assert-Interface $tag 'request/header session event' "request/header" 'packages/core/agent-loop/src/agent.ts'
   Assert-Interface $tag 'settings.register' "register<" 'packages/settings/settings/src/index.ts'
   Assert-Interface $tag 'settings.get(ns)' "get" 'packages/settings/settings/src/index.ts'
+  Assert-Interface $tag 'session.snapshotEvents() accessor' "snapshotEvents\(\)" 'packages/api/session-controller/src/commands.ts'
   Assert-Interface $tag 'llm.listConfigurableProviders' "listConfigurableProviders" 'packages/llm/llm/src/index.ts'
   Assert-Interface $tag 'llm-deepseek directory entry' "settingsPath: \[\]" 'packages/llm/llm-deepseek/src/index.ts'
   Assert-Interface $tag 'llm-deepseek registers directory' "registerConfigurableProviders" 'packages/llm/llm-deepseek/src/index.ts'

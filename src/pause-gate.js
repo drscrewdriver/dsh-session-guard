@@ -162,11 +162,31 @@ export function createPauseGate({ ctx, pauseStore, pluginId = 'session-guard', m
    * 两种形态在 DSH 0.1.1-rc.2 与 0.1.2-rc.1 的回放日志里都保留，勿改成单读。
    */
 
+  /**
+   * 读取会话事件数组。DSH 0.1.5 移除了 `session.events` 数组访问器，改为
+   * `snapshotEvents()`（compatibility-guide §20.3 实测表）；本专线以
+   * snapshotEvents() 为主，events 数组仅作回退防御，两者皆缺时返回 null
+   * （fail-open，与既有防御语义一致）。
+   */
+  function readSessionEvents(session) {
+    if (!session) return null
+    if (typeof session.snapshotEvents === 'function') {
+      try {
+        const events = session.snapshotEvents()
+        return Array.isArray(events) ? events : null
+      } catch {
+        return null
+      }
+    }
+    return Array.isArray(session.events) ? session.events : null
+  }
+
   /** 在 session log 查一个中断工具的实际结果（kernel 会 drain 已启动工具到 tool/result）。 */
   function findToolOutcome(agent, callId) {
-    if (!agent?.session?.events) return null
+    const events = readSessionEvents(agent?.session)
+    if (!events) return null
     let outcome = null
-    for (const event of agent.session.events) {
+    for (const event of events) {
       if (event.type === 'tool/result') {
         const message = event.data?.message ?? {}
         const block = (Array.isArray(message.content) ? message.content : []).find((b) => b?.type === 'tool-result')
@@ -192,9 +212,10 @@ export function createPauseGate({ ctx, pauseStore, pluginId = 'session-guard', m
   }
 
   function lastUserPrompt(agent) {
-    if (!agent?.session?.events) return null
-    for (let index = agent.session.events.length - 1; index >= 0; index -= 1) {
-      const event = agent.session.events[index]
+    const events = readSessionEvents(agent?.session)
+    if (!events) return null
+    for (let index = events.length - 1; index >= 0; index -= 1) {
+      const event = events[index]
       if (event.type !== 'user/message') continue
       if (event.data?.source?.kind !== 'user') continue
       return event.data.content ?? null

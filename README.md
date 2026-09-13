@@ -32,26 +32,31 @@
 >
 > | DSH 版本 | 加载 | 设置注册 | 会话事件 / 会话门 | 客户端半 |
 > | --- | --- | --- | --- | --- |
-> | 0.1.0-rc.7 ~ 0.1.1-rc.x | ✅ | `ctx.settings.register(ns, schema, { base })` | ✅ 形状一致 | ✅ 无平台值导入 |
-> | 0.1.2-alpha.2+ / 0.1.2-rc.1 | ✅ | `register` 仍保留（另加 `installSection`） | ✅ 形状一致 | ✅ 无平台值导入 |
-> | 0.1.3+ / 0.1.5-rc.x | ✅ 已适配 | `register` 仍在（字符串命名空间） | ✅ | ✅ |
+> | 0.1.0-rc.7 ~ 0.1.1-rc.x | ✅（2.x / 0.2.x 线） | `ctx.settings.register(ns, schema, { base })` | ✅ 形状一致 | ✅ 无平台值导入 |
+> | 0.1.2-alpha.2+ / 0.1.2-rc.1 | ✅（2.x / 0.2.x 线） | `register` 仍保留（另加 `installSection`） | ✅ 形状一致 | ✅ 无平台值导入 |
+> | **0.1.5-rc.2** | ✅（**3.x 专线 `compat/0.1.5`**） | `register` 仍在（字符串命名空间） | ✅ 事件经 `snapshotEvents()` 双路径读取 | ✅ |
 >
-> **0.1.5 适配（compat/0.1.5 分支，v0.2.0-beta.2）**：
+> **3.x 为 0.1.5 专线**：engines/peer 收窄为 `>=0.1.5-rc.2 <0.2.0-0`，0.1.0-rc.7~0.1.2 宿主请继续使用 2.x / 0.2.x 线（`main`）。
+> **0.1.5 适配（compat/0.1.5 分支，v3.0.0）**：
 > ① `agent.followup` 双路径——0.1.5 将 Inbox 改为 agent-loop 只读投影，若 `followup`
 > 不再存在则回退 `agent.send`，两者皆无时 warn 降级不抛错（恢复续跑的兜底）；
 > ② 恢复消息 `source` 补 `form: 'instructions'`（0.1.5 ContextFormed 契约，旧版本忽略）；
-> ③ `webServer.register` 包 try/catch，注册失败仅记日志不炸宿主加载。
+> ③ `webServer.register` 包 try/catch，注册失败仅记日志不炸宿主加载；
+> ④ 0.1.5 移除 `session.events` 数组访问器，事件读取改为 `snapshotEvents()` 主路径 +
+> 旧数组回退（仅影响 `findToolOutcome` / `lastUserPrompt` 两条辅助路径，事件类型匹配不变）。
 > 已核实 0.1.5 的 `WebRoute`（exact/prefix + SSE）契约不变，客户端
 > `fetch('/session-guard/...')` 无需改 `/api` 前缀。
-> 一份产物同时支持两版本。`session/event`、`agent.cancel`、`goals.pause`、
+> 2.x 线的旧表（一份产物双版本）保留如下。`session/event`、`agent.cancel`、`goals.pause`、
 > `agent.followup`、`commands.register`、`timer.interval`、`webServer.register`、
 > `agent/request`、`llm.listConfigurableProviders`、`settings.register/get` 在
-> `dsh-v0.1.1-rc.2` 与 `dsh-v0.1.2-rc.1` 之间签名一致（并已核到 `0.1.5-alpha.1`）；
+> `dsh-v0.1.1-rc.2` 与 `dsh-v0.1.2-rc.1` 之间签名一致（3.x 已核到 `dsh-v0.1.5-rc.2`）；
 > 唯一需要双读的是 `tool/result` 记录的调用 id 形态（`content[].toolCallId` 优先、
 > `source.callId` 回退），已抽到 `src/tool-call-id.js` 并配单测——两版本的回放日志都可能出现这两种形态。
+> 0.1.5 起 `session.events` 数组访问器被移除，3.x 经 `snapshotEvents()`（保留旧数组回退）读取，
+> 只影响 `findToolOutcome` / `lastUserPrompt` 两条辅助路径。
 > `model/selection` 事件**仅 0.1.2+**，只做切模型加速且必须特性探测；设置面只用
 > `register` + `get` 交集（不碰 `installSection` / 已移除的 `installSettingsSection`）。
-> 漂移守卫脚本：`tools/check-api-drift.ps1`（对四个 tag 断言必需接口存在）。
+> 漂移守卫脚本：`tools/check-api-drift.ps1`（3.x 默认对 `dsh-v0.1.5-rc.2` 断言必需接口存在）。
 
 > 高峰时段自动暂停运行中的会话、低峰/周末自动续跑；配合 input-traffic 的冻结按钮做到**会话级**锁定；后端**自动重试**在冻结/门控期间让路。核心基于**自研会话门**（`agent.cancel keepInbox + goals.pause + session/event 安全边界 + followup 续跑`），不再依赖 dsh-task-control。
 

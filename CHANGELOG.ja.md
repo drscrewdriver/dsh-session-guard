@@ -6,6 +6,31 @@
 - [日本語 changelog](./CHANGELOG.ja.md)
 - [한국어 changelog](./CHANGELOG.ko.md)
 
+## 3.0.0 — 2026-09-14
+
+### 変更
+
+- **DSH v0.1.5-rc.2 専用ライン（`compat/0.1.5`）。** `engines.dsh` と `dsh-client-*` の peer
+  範囲を `>=0.1.5-rc.2 <0.2.0-0` に狭めました（semver のプレリリース規則上、旧
+  `>=0.1.0-rc.7` は `0.1.5-rc.2` に一致しません）。`dsh.plugin.json` に `engines.dsh` を追加。
+  旧ホスト向けには `main` 上の 2.x / 0.2.x ラインが継続します。
+- **`session.events` → `snapshotEvents()`。** DSH 0.1.5 で `session.events` 配列アクセサが
+  削除されたため（compatibility-guide §20.3）、`pause-gate.js` はデュアルパスのヘルパーで
+  セッションイベントを読みます：まず `snapshotEvents()`、防御的に旧 `events` 配列へフォール
+  バック、どちらも無ければ `null`（fail-open）。対象は `findToolOutcome` と `lastUserPrompt`
+  のみで、イベント型のマッチングは不変です。
+
+### 変更なし
+
+- その他の接続面は一切変更なし：自前の webServer prefix ルート（`/session-guard/rpc`）、
+  `settings.register`、`settings.plugin.item` スロット、クライアント注入、
+  `llm.listConfigurableProviders()` は公開済み 0.1.5-rc.2 バンドルに対して検証済み
+  （`tools/check-api-drift.ps1`、必須アサーション 12/12）。
+
+### 未実施
+
+- 実機 DSH 0.1.5-rc.2 ホストでのライブスモーク（perm-gate の 0.1.5 ラインと同じ状態）。
+
 ## 0.2.0-beta.2 — 2026-09-13
 
 ### 修正（DSH 0.1.5 互換 — `compat/0.1.5` ブランチ）

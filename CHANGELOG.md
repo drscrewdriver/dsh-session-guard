@@ -6,6 +6,31 @@ All notable changes to `dsh-session-guard` are recorded here. Versions follow se
 - [日本語 changelog](./CHANGELOG.ja.md)
 - [한국어 changelog](./CHANGELOG.ko.md)
 
+## 3.0.0 — 2026-09-14
+
+### Changed
+
+- **DSH v0.1.5-rc.2 dedicated line (`compat/0.1.5`).** `engines.dsh` and the `dsh-client-*`
+  peer ranges narrow to `>=0.1.5-rc.2 <0.2.0-0` (strict-semver prerelease matching means the
+  old `>=0.1.0-rc.7` range never matches `0.1.5-rc.2`); `dsh.plugin.json` gains `engines.dsh`.
+  The 2.x / 0.2.x line on `main` keeps serving DSH 0.1.0-rc.7 … 0.1.2-rc.1.
+- **`session.events` → `snapshotEvents()`.** DSH 0.1.5 removed the `session.events` array
+  accessor (compatibility-guide §20.3). `pause-gate.js` now reads session events through a
+  dual-path helper: `snapshotEvents()` first, the legacy `events` array as a defensive
+  fallback, `null` (fail-open) when neither exists. Affects `findToolOutcome` and
+  `lastUserPrompt` only; event-type matching is unchanged.
+
+### Unchanged
+
+- Zero changes on every other integration seam: the self-held webServer prefix route
+  (`/session-guard/rpc`), `settings.register`, the `settings.plugin.item` card slot,
+  client injections, and `llm.listConfigurableProviders()` are all verified intact against
+  the published 0.1.5-rc.2 bundle (`tools/check-api-drift.ps1`, 12/12 required assertions).
+
+### Pending
+
+- Live smoke on a real DSH 0.1.5-rc.2 host (same status as the perm-gate 0.1.5 line).
+
 ## 0.2.0-beta.2 — 2026-09-13
 
 ### Fixed (DSH 0.1.5 compat — `compat/0.1.5` branch)

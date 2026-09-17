@@ -45,8 +45,10 @@
 ## 설치
 
 ```bash
-dsh plugin --profile web add github:<owner>/dsh-session-guard
+dsh plugin --profile web add github:drscrewdriver/dsh-session-guard#compat/0.1.5
 ```
+
+`compat/0.1.5`는 DSH `0.1.5-rc.x` 전용 라인(3.x)입니다. `main`은 계속 DSH `0.1.0-rc.7` – `0.1.2-rc.1`(2.x / 0.2.x)을 담당합니다.
 
 설치 후 dsh web을 재시작하고 페이지를 새로고침.
 

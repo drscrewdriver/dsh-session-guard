@@ -1,6 +1,6 @@
 {
   "name": "dsh-session-guard",
-  "version": "0.2.0-beta.2",
+  "version": "3.0.0",
   "type": "module",
   "description": "高峰自动会话门：周末模式 + 高峰自动暂停 + 官方源二维判定 + 会话级冻结 + 后端自动重试。",
   "keywords": [
@@ -18,9 +18,9 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/drscrewdriver/session-guard.git"
+    "url": "git+https://github.com/drscrewdriver/dsh-session-guard.git"
   },
-  "homepage": "https://github.com/drscrewdriver/session-guard",
+  "homepage": "https://github.com/drscrewdriver/dsh-session-guard",
   "main": "src/index.js",
   "exports": {
     ".": "./src/index.js",
@@ -65,16 +65,16 @@
   },
   "engines": {
     "node": ">=20",
-    "dsh": ">=0.1.0-rc.7 <0.2.0-0"
+    "dsh": ">=0.1.5-rc.2 <0.2.0-0"
   },
   "dependencies": {
     "@deepseek-ai/schemastery": "^3.18.1"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-client-locale": ">=0.1.0-rc.7 <0.2.0-0",
-    "@deepseek-ai/dsh-client-ui-settings": ">=0.1.0-rc.7 <0.2.0-0",
-    "@deepseek-ai/dsh-client-ui-slots": ">=0.1.0-rc.7 <0.2.0-0"
+    "@deepseek-ai/dsh-client-locale": ">=0.1.5-rc.2 <0.2.0-0",
+    "@deepseek-ai/dsh-client-ui-settings": ">=0.1.5-rc.2 <0.2.0-0",
+    "@deepseek-ai/dsh-client-ui-slots": ">=0.1.5-rc.2 <0.2.0-0"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/cordis": {

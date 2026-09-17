@@ -82,8 +82,11 @@ A cordis plugin assembled via the `dsh plugin` command and a bundle patch — no
 ## Installation
 
 ```bash
-dsh plugin --profile web add github:<owner>/dsh-session-guard
+dsh plugin --profile web add github:drscrewdriver/dsh-session-guard#compat/0.1.5
 ```
+
+`compat/0.1.5` is the DSH `0.1.5-rc.x` line (3.x); `main` keeps serving DSH `0.1.0-rc.7` – `0.1.2-rc.1`
+(2.x / 0.2.x).
 
 Restart dsh web and refresh the page after installation.
 

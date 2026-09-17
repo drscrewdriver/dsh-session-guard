@@ -22,8 +22,11 @@ dsh --version
 ## 1. インストール
 
 ```bash
-dsh plugin --profile web add github:drscrewdriver/dsh-session-guard
+dsh plugin --profile web add github:drscrewdriver/dsh-session-guard#compat/0.1.5#compat/0.1.5
 ```
+
+`compat/0.1.5` は DSH `0.1.5-rc.x` 専用ライン（3.x、`engines.dsh: >=0.1.5-rc.2 <0.2.0-0`）。`main` は
+引き続き DSH `0.1.0-rc.7` – `0.1.2-rc.1`（2.x / 0.2.x）を担当します。
 
 dsh web を再起動し、ページをリフレッシュ。
 
@@ -52,7 +55,7 @@ npm test
 
 ```bash
 dsh plugin --profile web remove dsh-session-guard
-dsh plugin --profile web add github:drscrewdriver/dsh-session-guard
+dsh plugin --profile web add github:drscrewdriver/dsh-session-guard#compat/0.1.5
 ```
 
 dsh web を再起動しページをリフレッシュ。設定は `$DSH_HOME/settings.yaml` の `session-guard`

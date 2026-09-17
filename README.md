@@ -86,8 +86,10 @@
 ## 安装
 
 ```bash
-dsh plugin --profile web add github:<owner>/dsh-session-guard
+dsh plugin --profile web add github:drscrewdriver/dsh-session-guard#compat/0.1.5
 ```
+
+`compat/0.1.5` 是 DSH `0.1.5-rc.x` 专线（3.x）；`main` 继续服务 DSH `0.1.0-rc.7` – `0.1.2-rc.1`（2.x / 0.2.x）。
 
 装后重启 dsh web 并刷新页面。
 

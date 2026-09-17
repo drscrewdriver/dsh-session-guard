@@ -22,8 +22,11 @@ dsh --version
 ## 1. 설치
 
 ```bash
-dsh plugin --profile web add github:drscrewdriver/dsh-session-guard
+dsh plugin --profile web add github:drscrewdriver/dsh-session-guard#compat/0.1.5#compat/0.1.5
 ```
+
+`compat/0.1.5`는 DSH `0.1.5-rc.x` 전용 라인(3.x, `engines.dsh: >=0.1.5-rc.2 <0.2.0-0`)입니다. `main`은
+계속 DSH `0.1.0-rc.7` – `0.1.2-rc.1`(2.x / 0.2.x)을 담당합니다.
 
 dsh web을 재시작하고 페이지를 새로고침.
 
@@ -52,7 +55,7 @@ npm test
 
 ```bash
 dsh plugin --profile web remove dsh-session-guard
-dsh plugin --profile web add github:drscrewdriver/dsh-session-guard
+dsh plugin --profile web add github:drscrewdriver/dsh-session-guard#compat/0.1.5
 ```
 
 dsh web을 재시작하고 페이지를 새로고침. 설정은 `$DSH_HOME/settings.yaml`의 `session-guard`

@@ -24,8 +24,11 @@ dsh --version
 ## 1. Install
 
 ```bash
-dsh plugin --profile web add github:drscrewdriver/dsh-session-guard
+dsh plugin --profile web add github:drscrewdriver/dsh-session-guard#compat/0.1.5
 ```
+
+`compat/0.1.5` is the DSH `0.1.5-rc.x` line (3.x, `engines.dsh: >=0.1.5-rc.2 <0.2.0-0`); `main` keeps
+serving DSH `0.1.0-rc.7` – `0.1.2-rc.1` (2.x / 0.2.x).
 
 Restart dsh web and refresh the page.
 
@@ -55,7 +58,7 @@ npm test
 
 ```bash
 dsh plugin --profile web remove dsh-session-guard
-dsh plugin --profile web add github:drscrewdriver/dsh-session-guard
+dsh plugin --profile web add github:drscrewdriver/dsh-session-guard#compat/0.1.5
 ```
 
 Restart dsh web and refresh the page. Settings live in `$DSH_HOME/settings.yaml` under the

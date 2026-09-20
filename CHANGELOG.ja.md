@@ -6,6 +6,34 @@
 - [日本語 changelog](./CHANGELOG.ja.md)
 - [한국어 changelog](./CHANGELOG.ko.md)
 
+## 0.3.1 — 2026-09-18
+
+### 修正
+
+- **リポジトリメタデータ**：`repository.url` / `homepage` を実在するリポジトリ
+  （`drscrewdriver/dsh-session-guard`。以前は存在しない `drscrewdriver/session-guard`）に修正。
+- **ホスト範囲をフィールドソースで宣言**：`@deepseek-ai/dsh-client-*` の peer 下限を
+  `>=0.1.0-rc.7` から `>=0.1.2-rc.1` に狭め、`engines.dsh` と一致させました。`dsh.plugin.json` に
+  対応する `engines.dsh`（`>=0.1.2-rc.1 <0.2.0-0`）を追加し、`version` をパッケージ版に再同期。
+  以前はマニフェスト版が `0.2.0-beta.1` のまま遅延し、ホスト範囲を宣言していませんでした。
+- **ドキュメント**：README/INSTALL（zh/en/ja/ko）が本ラインの識別情報（ブランチ `legacy/0.1.2`、
+  dist-tag `dsh-0.1.2`）を明記し、「1 つの成果物で両バージョン対応」という記述を削除。`0.1.5-rc.2`
+  の行は専用ラインへのポインタに置換。インストールコマンドの未置換オーナープレースホルダを除去。
+
+### 備考
+
+- **ソース変更なし**：`src/`、`lib/`、`tests/` は `0.2.0-beta.1` とバイト単位で同一。
+  `0.3.0` と `0.3.1` は同一ツリーのパッケージングのみの再リリースです。
+
+## 0.3.0 — 2026-09-18
+
+### 変更
+
+- **0.2.0-beta.1 ツリーのパッケージング再リリース**：`publishConfig`
+  （`registry: https://registry.npmjs.org`、`access: public`、`tag: dsh-0.1.2`）を追加し、
+  `engines.dsh` を `>=0.1.2-rc.1 <0.2.0-0` に狭めました（旧 `>=0.1.0-rc.7` 範囲は
+  strict-semver 照合では `0.1.2-rc.x` プレリリースに一致しません）。
+
 ## 0.2.0-beta.1 — 2026-09-10
 
 ### 追加

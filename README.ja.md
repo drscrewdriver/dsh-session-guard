@@ -26,6 +26,30 @@
 
 > **互換性について：** v0.1.1 には日本語（`ja`）と韓国語（`ko`）の辞書が含まれていますが、現在の公式 DSH リリースは `LocaleRuntime` 経由で `zh` と `en` のみを提供しています。純正 DSH で `ja` または `ko` を選択すると `locale "<id>" is not registered` で失敗します。公式 DSH が对应的 locale ID を追加するまで利用できません。上級ユーザーは DSH フォークを保守して更新してください。
 
+> **▼ DSH バージョン適合**
+>
+> | DSH バージョン | ロード | 設定登録 | セッションイベント / ゲート | クライアント側 |
+> | --- | --- | --- | --- | --- |
+> | 0.1.2-rc.1 ~ 0.1.4-beta.1 | ✅ 本ライン対応 | `ctx.settings.register(ns, schema, { base })` | ✅ 形状一致 | ✅ プラットフォーム値の import なし |
+> | 0.1.2-alpha.2+ / 0.1.2-rc.1 | ✅ 本ライン対応 | `register` は維持（`installSection` 追加） | ✅ 形状一致 | ✅ プラットフォーム値の import なし |
+> | 0.1.5-rc.2 | ➖ **本ライン対象外** | 下記の専用ラインを参照 | 同左 | 同左 |
+>
+> **本ラインの識別情報**：ブランチ `legacy/0.1.2`、npm バージョン `0.3.x`、dist-tag **`dsh-0.1.2`**、
+> ホスト範囲 `engines.dsh = >=0.1.2-rc.1 <0.2.0-0`。
+> **0.1.0-rc.7 ~ 0.1.1-rc.x は本ラインの対象外です**——`package.json` と `dsh.plugin.json` の
+> 両方で `engines.dsh` および `@deepseek-ai/dsh-client-*` の peer 下限を `>=0.1.2-rc.1` に固定しています。
+> これらの旧ホストは `0.1.2` 以下の過去バージョンを使用してください。
+> これらのフィールドソースの正規定義は
+> `mine-dsh-plugins/improve-dsh-plugins/DSH-PLUGIN-VERSION-DISTRIBUTION-STRATEGY.md` §2.2 にあります。
+>
+> **0.1.5-rc.2 は専用ラインに分離されました**：DSH 0.1.5 で `session.events` 配列アクセサが削除され
+> （イベントは `snapshotEvents()` 経由で読む必要があります）、また semver のプレリリース照合規則により
+> `engines.dsh` が `>=0.1.2-rc.1` と排他になります。
+> **0.1.5-rc.x ホストは `compat/0.1.5` ブランチ**（npm dist-tag **`dsh-0.1.5`**、バージョン `3.0.0`）**を使用してください**：
+> `dsh plugin --profile web add github:drscrewdriver/dsh-session-guard#compat/0.1.5`。
+> **「1 つの成果物で両バージョン対応」は 0.1.5 分離以降成立しません。**
+> ドリフトガード：`tools/check-api-drift.ps1`（本ラインは既定で 4 つの tag に対して必須 API の存在を検証）。
+
 > ピーク課金時間帯に実行中のセッションを自動一時停止し、オフピーク/週末に自動再開。input-traffic の凍結ボタンと連携して**セッション級**ロックを実現。バックエンド**自動リトライ**は凍結/ゲート期間中は譲歩。カスタムセッションゲート（`agent.cancel keepInbox + goals.pause + session/event 安全境界 + followup 再開`）に基づき、dsh-task-control に依存しません。
 
 `dsh plugin` コマンドで组装 + バンドルパッチで装配する cordis プラグイン。dsh ソース変更も PR も不要。
@@ -45,8 +69,19 @@
 ## インストール
 
 ```bash
-dsh plugin --profile web add github:<owner>/dsh-session-guard
+# DSH 0.1.2-rc.x ホスト（本ライン、dist-tag dsh-0.1.2）
+dsh plugin --profile web add dsh-session-guard@dsh-0.1.2
+
+# または git ブランチを直接指定
+dsh plugin --profile web add github:drscrewdriver/dsh-session-guard#legacy/0.1.2
+
+# DSH 0.1.5-rc.x ホストは専用ライン（dist-tag dsh-0.1.5）を使用
+dsh plugin --profile web add dsh-session-guard@dsh-0.1.5
 ```
+
+> ⚠️ **裸のパッケージ名 `dsh-session-guard` に依存しないでください**：npm の `latest` タグは
+> 排他的な 2 つのバージョンライン（`engines.dsh` が semver プレリリース照合で排他）を
+> 同時に提供できません。必ず dist-tag を明示してください。
 
 インストール後 dsh web を再起動し、ページをリフレッシュ。
 

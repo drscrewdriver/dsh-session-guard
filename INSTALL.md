@@ -24,8 +24,21 @@ dsh --version
 ## 1. Install
 
 ```bash
-dsh plugin --profile web add github:drscrewdriver/dsh-session-guard
+# DSH 0.1.2-rc.x hosts (this line, dist-tag dsh-0.1.2)
+dsh plugin --profile web add dsh-session-guard@dsh-0.1.2
+
+# or straight from the git branch
+dsh plugin --profile web add github:drscrewdriver/dsh-session-guard#legacy/0.1.2
 ```
+
+> **This line serves DSH `0.1.2-rc.1` … `0.1.4-beta.1`** only
+> (`engines.dsh = >=0.1.2-rc.1 <0.2.0-0` in both `package.json` and `dsh.plugin.json`).
+> DSH `0.1.0-rc.7` … `0.1.1-rc.x` are **not** in range — use a historical version ≤ `0.1.2`.
+> DSH `0.1.5-rc.x` is **not** in range — use the dedicated line
+> (`compat/0.1.5` / npm dist-tag `dsh-0.1.5`, version `3.0.0`).
+> Never rely on the bare package name: npm's `latest` tag cannot serve two mutually
+> exclusive lines. Field-source doctrine:
+> `mine-dsh-plugins/improve-dsh-plugins/DSH-PLUGIN-VERSION-DISTRIBUTION-STRATEGY.md` §2.2.
 
 Restart dsh web and refresh the page.
 
@@ -55,16 +68,17 @@ npm test
 
 ```bash
 dsh plugin --profile web remove dsh-session-guard
-dsh plugin --profile web add github:drscrewdriver/dsh-session-guard
+dsh plugin --profile web add dsh-session-guard@dsh-0.1.2
 ```
 
 Restart dsh web and refresh the page. Settings live in `$DSH_HOME/settings.yaml` under the
 `session-guard` namespace and survive the upgrade; new keys (`providerGuard`, `deferredMode`, …)
 fall back to their defaults until you touch them.
 
-From `0.1.3`/`0.1.4-beta.1` to `0.1.5-beta.1` the only behavior change is that peak hours now
-block **only** official-source targets by default. To restore the old blanket behavior set
-`providerGuard: false` (or `officialProviders` / `officialBaseURLs` to narrow the verdict).
+From **plugin** `0.1.3` / `0.1.4-beta.1` to **plugin** `0.1.5-beta.1` the only behavior change is
+that peak hours now block **only** official-source targets by default. To restore the old blanket
+behavior set `providerGuard: false` (or `officialProviders` / `officialBaseURLs` to narrow the verdict).
+(Those are plugin versions, not DSH versions — do not confuse them with the host ranges above.)
 
 ## 4. Troubleshooting
 

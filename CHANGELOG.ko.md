@@ -6,6 +6,34 @@
 - [日本語 changelog](./CHANGELOG.ja.md)
 - [한국어 changelog](./CHANGELOG.ko.md)
 
+## 0.3.1 — 2026-09-18
+
+### 수정
+
+- **저장소 메타데이터**: `repository.url` / `homepage`를 실제 저장소
+  (`drscrewdriver/dsh-session-guard`; 이전에는 존재하지 않는 `drscrewdriver/session-guard`)로 수정.
+- **호스트 범위를 필드 소스에서 선언**: `@deepseek-ai/dsh-client-*` peer 하한을
+  `>=0.1.0-rc.7`에서 `>=0.1.2-rc.1`로 좁혀 `engines.dsh`와 일치시켰습니다. `dsh.plugin.json`에
+  대응하는 `engines.dsh`(`>=0.1.2-rc.1 <0.2.0-0`)를 추가하고 `version`을 패키지 버전에 재동기화.
+  이전에는 매니페스트 버전이 `0.2.0-beta.1`로 지연되었고 호스트 범위를 선언하지 않았습니다.
+- **문서**: README/INSTALL(zh/en/ja/ko)이 본 라인 식별 정보(브랜치 `legacy/0.1.2`,
+  dist-tag `dsh-0.1.2`)를 명시하고 "하나의 산출물로 두 버전 지원" 서술을 삭제했습니다. `0.1.5-rc.2`
+  행은 전용 라인 포인터로 교체. 설치 명령의 미치환 오너 자리표시자를 제거.
+
+### 비고
+
+- **소스 변경 없음**: `src/`, `lib/`, `tests/`는 `0.2.0-beta.1`과 바이트 단위로 동일.
+  `0.3.0`과 `0.3.1`은 동일 트리의 패키징 전용 재릴리스입니다.
+
+## 0.3.0 — 2026-09-18
+
+### 변경
+
+- **0.2.0-beta.1 트리의 패키징 재릴리스**: `publishConfig`
+  (`registry: https://registry.npmjs.org`, `access: public`, `tag: dsh-0.1.2`)를 추가하고
+  `engines.dsh`를 `>=0.1.2-rc.1 <0.2.0-0`로 좁혔습니다(구 `>=0.1.0-rc.7` 범위는
+  strict-semver 매칭에서 `0.1.2-rc.x` 프리릴리스와 일치하지 않습니다).
+
 ## 0.2.0-beta.1 — 2026-09-10
 
 ### 추가

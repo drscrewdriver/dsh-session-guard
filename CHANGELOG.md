@@ -6,6 +6,35 @@ All notable changes to `dsh-session-guard` are recorded here. Versions follow se
 - [日本語 changelog](./CHANGELOG.ja.md)
 - [한국어 changelog](./CHANGELOG.ko.md)
 
+## 0.3.1 — 2026-09-18
+
+### Fixed
+
+- **Repository metadata.** `repository.url` / `homepage` now point at the real repo
+  (`drscrewdriver/dsh-session-guard`, previously the non-existent `drscrewdriver/session-guard`).
+- **Host range declared at its source.** The `@deepseek-ai/dsh-client-*` peer floors are narrowed
+  from `>=0.1.0-rc.7` to `>=0.1.2-rc.1` so they match `engines.dsh`; `dsh.plugin.json` gains the
+  matching `engines.dsh` (`>=0.1.2-rc.1 <0.2.0-0`) and its `version` is re-synced to the package
+  version. Previously the manifest version lagged at `0.2.0-beta.1` and declared no host range.
+- **Docs.** README/INSTALL (zh/en/ja/ko) now state this line's identity (branch `legacy/0.1.2`,
+  dist-tag `dsh-0.1.2`) and stop claiming "one artifact covers both versions"; the `0.1.5-rc.2`
+  row is replaced by a pointer to the dedicated line. The unfilled owner placeholder in the
+  install command is gone.
+
+### Notes
+
+- **No source changes.** `src/`, `lib/` and `tests/` are byte-identical to `0.2.0-beta.1`;
+  `0.3.0` and `0.3.1` are packaging-only re-releases of the same tree.
+
+## 0.3.0 — 2026-09-18
+
+### Changed
+
+- **Packaging re-release of the 0.2.0-beta.1 tree.** Adds `publishConfig`
+  (`registry: https://registry.npmjs.org`, `access: public`, `tag: dsh-0.1.2`) and narrows
+  `engines.dsh` to `>=0.1.2-rc.1 <0.2.0-0` (the old `>=0.1.0-rc.7` range never matched a
+  `0.1.2-rc.x` prerelease under strict-semver matching).
+
 ## 0.2.0-beta.1 — 2026-09-10
 
 ### Added

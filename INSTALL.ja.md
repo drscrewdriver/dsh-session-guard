@@ -22,8 +22,20 @@ dsh --version
 ## 1. インストール
 
 ```bash
-dsh plugin --profile web add github:drscrewdriver/dsh-session-guard
+# DSH 0.1.2-rc.x ホスト（本ライン、dist-tag dsh-0.1.2）
+dsh plugin --profile web add dsh-session-guard@dsh-0.1.2
+
+# または git ブランチを直接指定
+dsh plugin --profile web add github:drscrewdriver/dsh-session-guard#legacy/0.1.2
 ```
+
+> **本ラインは DSH `0.1.2-rc.1` … `0.1.4-beta.1` のみを対象とします**
+> （`package.json` と `dsh.plugin.json` の `engines.dsh` はいずれも `>=0.1.2-rc.1 <0.2.0-0`）。
+> DSH `0.1.0-rc.7` … `0.1.1-rc.x` は**対象外**——`0.1.2` 以下の過去バージョンを使用してください。
+> DSH `0.1.5-rc.x` も**対象外**——専用ライン（`compat/0.1.5` / npm dist-tag `dsh-0.1.5`、バージョン `3.0.0`）を使用してください。
+> 裸のパッケージ名に依存しないでください：npm の `latest` タグは排他的な 2 ラインを同時に提供できません。
+> フィールドソースの正規定義：
+> `mine-dsh-plugins/improve-dsh-plugins/DSH-PLUGIN-VERSION-DISTRIBUTION-STRATEGY.md` §2.2。
 
 dsh web を再起動し、ページをリフレッシュ。
 
@@ -52,7 +64,7 @@ npm test
 
 ```bash
 dsh plugin --profile web remove dsh-session-guard
-dsh plugin --profile web add github:drscrewdriver/dsh-session-guard
+dsh plugin --profile web add dsh-session-guard@dsh-0.1.2
 ```
 
 dsh web を再起動しページをリフレッシュ。設定は `$DSH_HOME/settings.yaml` の `session-guard`

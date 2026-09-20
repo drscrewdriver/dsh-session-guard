@@ -30,22 +30,38 @@
 >
 > | DSH version | Load | Settings registration | Session events / gate | Client half |
 > | --- | --- | --- | --- | --- |
-> | 0.1.0-rc.7 ~ 0.1.1-rc.x | ✅ | `ctx.settings.register(ns, schema, { base })` | ✅ same shape | ✅ no platform value imports |
-> | 0.1.2-alpha.2+ / 0.1.2-rc.1 | ✅ | `register` still present (`installSection` added) | ✅ same shape | ✅ no platform value imports |
-> | 0.1.3+ / 0.1.5-alpha.1 | APIs still present (unverified) | `register` unchanged | ✅ | ✅ |
+> | 0.1.2-rc.1 ~ 0.1.4-beta.1 | ✅ this line | `ctx.settings.register(ns, schema, { base })` | ✅ same shape | ✅ no platform value imports |
+> | 0.1.2-alpha.2+ / 0.1.2-rc.1 | ✅ this line | `register` still present (`installSection` added) | ✅ same shape | ✅ no platform value imports |
+> | 0.1.5-rc.2 | ➖ **not this line** | see the dedicated line | see the dedicated line | see the dedicated line |
 >
-> One artifact covers both. `session/event`, `agent.cancel`, `goals.pause`,
+> **This line's identity**: branch `legacy/0.1.2`, npm version `0.3.x`, dist-tag
+> **`dsh-0.1.2`**, host range `engines.dsh = >=0.1.2-rc.1 <0.2.0-0`.
+> **0.1.0-rc.7 ~ 0.1.1-rc.x are NOT in this line's range** — both `engines.dsh` and the
+> `@deepseek-ai/dsh-client-*` peer floors are pinned to `>=0.1.2-rc.1` in `package.json`
+> *and* `dsh.plugin.json`; those older hosts should use a historical version ≤ `0.1.2`.
+> The canonical definition of these field sources lives in
+> `mine-dsh-plugins/improve-dsh-plugins/DSH-PLUGIN-VERSION-DISTRIBUTION-STRATEGY.md` §2.2.
+>
+> **0.1.5-rc.2 is now a dedicated line.** DSH 0.1.5 removed the `session.events` array
+> accessor (events must be read through `snapshotEvents()`), and its `engines.dsh` is
+> mutually exclusive with `>=0.1.2-rc.1` under semver prerelease matching.
+> **0.1.5-rc.x hosts must use the `compat/0.1.5` branch** (npm dist-tag
+> **`dsh-0.1.5`**, version `3.0.0`):
+> `dsh plugin --profile web add github:drscrewdriver/dsh-session-guard#compat/0.1.5`.
+> **"One artifact covers both" has been false since the 0.1.5 split.**
+>
+> `session/event`, `agent.cancel`, `goals.pause`,
 > `agent.followup`, `commands.register`, `timer.interval`, `webServer.register`,
 > `agent/request`, `llm.listConfigurableProviders` and `settings.register/get`
-> are signature-identical between `dsh-v0.1.1-rc.2` and `dsh-v0.1.2-rc.1`
-> (verified through `0.1.5-alpha.1`). The one
+> are signature-identical between `dsh-v0.1.1-rc.2` and `dsh-v0.1.2-rc.1`.
+> The one
 > seam that needs a dual read is the `tool/result` call id (`content[].toolCallId`
 > first, `source.callId` as fallback) — both forms appear in replay logs of both
 > versions. It now lives in `src/tool-call-id.js` with unit tests.
 > The `model/selection` event exists **only on 0.1.2+** and is feature-probed; the
 > settings surface uses only the `register` + `get` intersection (never
 > `installSection`, never the removed `installSettingsSection`). Drift guard:
-> `tools/check-api-drift.ps1`.
+> `tools/check-api-drift.ps1` (this line asserts against four tags by default).
 
 > Automatically pause running sessions during peak pricing hours and resume during off-peak/weekend; pair with input-traffic's freeze button for **per-session** locking; backend **auto-retry** yields during freeze/gate. Core based on a custom session gate (`agent.cancel keepInbox + goals.pause + session/event safe boundary + followup resume`), no longer depending on dsh-task-control.
 
@@ -66,8 +82,19 @@ A cordis plugin assembled via the `dsh plugin` command and a bundle patch — no
 ## Installation
 
 ```bash
-dsh plugin --profile web add github:<owner>/dsh-session-guard
+# DSH 0.1.2-rc.x hosts (this line, dist-tag dsh-0.1.2)
+dsh plugin --profile web add dsh-session-guard@dsh-0.1.2
+
+# or straight from the git branch
+dsh plugin --profile web add github:drscrewdriver/dsh-session-guard#legacy/0.1.2
+
+# DSH 0.1.5-rc.x hosts must use the dedicated line (dist-tag dsh-0.1.5)
+dsh plugin --profile web add dsh-session-guard@dsh-0.1.5
 ```
+
+> ⚠️ **Do not rely on the bare package name `dsh-session-guard`**: npm's `latest`
+> tag cannot serve two mutually exclusive version lines (their `engines.dsh` ranges
+> are exclusive under semver prerelease matching) — always pin the dist-tag explicitly.
 
 Restart dsh web and refresh the page after installation.
 

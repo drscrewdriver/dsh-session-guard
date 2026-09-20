@@ -22,8 +22,21 @@ dsh --version
 ## 1. 安装
 
 ```bash
-dsh plugin --profile web add github:drscrewdriver/dsh-session-guard
+# DSH 0.1.2-rc.x 宿主（本线，dist-tag dsh-0.1.2）
+dsh plugin --profile web add dsh-session-guard@dsh-0.1.2
+
+# 或直接走 git 分支
+dsh plugin --profile web add github:drscrewdriver/dsh-session-guard#legacy/0.1.2
 ```
+
+> **本线只服务 DSH `0.1.2-rc.1` … `0.1.4-beta.1`**（`package.json` 与 `dsh.plugin.json`
+> 的 `engines.dsh` 均为 `>=0.1.2-rc.1 <0.2.0-0`）。
+> DSH `0.1.0-rc.7` … `0.1.1-rc.x` **不在范围内** —— 请使用 ≤ `0.1.2` 的历史版本。
+> DSH `0.1.5-rc.x` **不在范围内** —— 请改用专线
+> （`compat/0.1.5` / npm dist-tag `dsh-0.1.5`，版本 `3.0.0`）。
+> 不要依赖裸包名：npm 的 `latest` 标签无法同时服务两条互斥版本线。
+> 字段源头定义见
+> `mine-dsh-plugins/improve-dsh-plugins/DSH-PLUGIN-VERSION-DISTRIBUTION-STRATEGY.md` §2.2。
 
 重启 dsh web 并刷新页面。
 
@@ -52,7 +65,7 @@ npm test
 
 ```bash
 dsh plugin --profile web remove dsh-session-guard
-dsh plugin --profile web add github:drscrewdriver/dsh-session-guard
+dsh plugin --profile web add dsh-session-guard@dsh-0.1.2
 ```
 
 重启 dsh web 并刷新页面。设置在 `$DSH_HOME/settings.yaml` 的 `session-guard` 命名空间下，升级不会丢；

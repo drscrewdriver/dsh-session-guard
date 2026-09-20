@@ -32,19 +32,31 @@
 >
 > | DSH 版本 | 加载 | 设置注册 | 会话事件 / 会话门 | 客户端半 |
 > | --- | --- | --- | --- | --- |
-> | 0.1.0-rc.7 ~ 0.1.1-rc.x | ✅ | `ctx.settings.register(ns, schema, { base })` | ✅ 形状一致 | ✅ 无平台值导入 |
-> | 0.1.2-alpha.2+ / 0.1.2-rc.1 | ✅ | `register` 仍保留（另加 `installSection`） | ✅ 形状一致 | ✅ 无平台值导入 |
-> | 0.1.3+ / 0.1.5-alpha.1 | 接口仍在（未验证） | `register` 仍在（行号未变） | ✅ | ✅ |
+> | 0.1.2-rc.1 ~ 0.1.4-beta.1 | ✅ 本线支持 | `ctx.settings.register(ns, schema, { base })` | ✅ 形状一致 | ✅ 无平台值导入 |
+> | 0.1.2-alpha.2+ / 0.1.2-rc.1 | ✅ 本线支持 | `register` 仍保留（另加 `installSection`） | ✅ 形状一致 | ✅ 无平台值导入 |
+> | 0.1.5-rc.2 | ➖ **不在本线** | 见下方专线 | 见下方专线 | 见下方专线 |
 >
-> 一份产物同时支持两版本。`session/event`、`agent.cancel`、`goals.pause`、
+> **本线身份**：分支 `legacy/0.1.2`，npm 版本 `0.3.x`，dist-tag **`dsh-0.1.2`**，
+> 宿主范围 `engines.dsh = >=0.1.2-rc.1 <0.2.0-0`。**0.1.0-rc.7 ~ 0.1.1-rc.x 不在本线范围内**
+> （本线 `package.json` / `dsh.plugin.json` 的 `engines.dsh` 与 `@deepseek-ai/dsh-client-*`
+> peer 下界统一为 `>=0.1.2-rc.1`；这些老宿主请使用 ≤ `0.1.2` 的历史版本）。
+> `0.1.0`/`0.1.1` 字段源头的定义见 `mine-dsh-plugins/improve-dsh-plugins/DSH-PLUGIN-VERSION-DISTRIBUTION-STRATEGY.md` §2.2。
+>
+> **0.1.5-rc.2 已拆为专线**：DSH 0.1.5 起 `session.events` 数组访问器被移除，
+> 事件需经 `snapshotEvents()` 读取，且 `engines.dsh` 按 semver 预发布规则与 `>=0.1.2-rc.1` 互斥。
+> 因此 **0.1.5-rc.x 宿主请改用 `compat/0.1.5` 分支**（npm dist-tag **`dsh-0.1.5`**，版本 `3.0.0`）：
+> `dsh plugin --profile web add github:drscrewdriver/dsh-session-guard#compat/0.1.5`。
+> **「一份产物同时支持两版本」自 0.1.5 拆线起不再成立。**
+>
+> `session/event`、`agent.cancel`、`goals.pause`、
 > `agent.followup`、`commands.register`、`timer.interval`、`webServer.register`、
 > `agent/request`、`llm.listConfigurableProviders`、`settings.register/get` 在
-> `dsh-v0.1.1-rc.2` 与 `dsh-v0.1.2-rc.1` 之间签名一致（并已核到 `0.1.5-alpha.1`）；
+> `dsh-v0.1.1-rc.2` 与 `dsh-v0.1.2-rc.1` 之间签名一致；
 > 唯一需要双读的是 `tool/result` 记录的调用 id 形态（`content[].toolCallId` 优先、
 > `source.callId` 回退），已抽到 `src/tool-call-id.js` 并配单测——两版本的回放日志都可能出现这两种形态。
 > `model/selection` 事件**仅 0.1.2+**，只做切模型加速且必须特性探测；设置面只用
 > `register` + `get` 交集（不碰 `installSection` / 已移除的 `installSettingsSection`）。
-> 漂移守卫脚本：`tools/check-api-drift.ps1`（对四个 tag 断言必需接口存在）。
+> 漂移守卫脚本：`tools/check-api-drift.ps1`（本线默认对四个 tag 断言必需接口存在）。
 
 > 高峰时段自动暂停运行中的会话、低峰/周末自动续跑；配合 input-traffic 的冻结按钮做到**会话级**锁定；后端**自动重试**在冻结/门控期间让路。核心基于**自研会话门**（`agent.cancel keepInbox + goals.pause + session/event 安全边界 + followup 续跑`），不再依赖 dsh-task-control。
 
@@ -74,8 +86,18 @@
 ## 安装
 
 ```bash
-dsh plugin --profile web add github:<owner>/dsh-session-guard
+# 0.1.2-rc.x 宿主（本线，dist-tag dsh-0.1.2）
+dsh plugin --profile web add dsh-session-guard@dsh-0.1.2
+
+# 或直接走 git 分支
+dsh plugin --profile web add github:drscrewdriver/dsh-session-guard#legacy/0.1.2
+
+# 0.1.5-rc.x 宿主请改用专线（dist-tag dsh-0.1.5）
+dsh plugin --profile web add dsh-session-guard@dsh-0.1.5
 ```
+
+> ⚠️ **不要依赖裸包名 `dsh-session-guard`**：npm `latest` 标签无法同时服务两条
+> 互斥版本线（`engines.dsh` 按 semver 预发布规则互斥），必须显式指定 dist-tag。
 
 装后重启 dsh web 并刷新页面。
 

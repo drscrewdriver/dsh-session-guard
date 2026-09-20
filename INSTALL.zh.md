@@ -22,11 +22,20 @@ dsh --version
 ## 1. 安装
 
 ```bash
-dsh plugin --profile web add github:drscrewdriver/dsh-session-guard#compat/0.1.5#compat/0.1.5
+dsh plugin --profile web add dsh-session-guard@dsh-0.1.5
+
+# 或直接走 git 分支
+dsh plugin --profile web add github:drscrewdriver/dsh-session-guard#compat/0.1.5
 ```
 
-`compat/0.1.5` 是 DSH `0.1.5-rc.x` 专线（3.x，`engines.dsh: >=0.1.5-rc.2 <0.2.0-0`）；`main` 继续服务
-DSH `0.1.0-rc.7` – `0.1.2-rc.1`（2.x / 0.2.x）。
+`compat/0.1.5` 是 DSH `0.1.5-rc.x` 专线：npm 包版本号 **`3.0.0`**，dist-tag **`dsh-0.1.5`**，
+`package.json` 与 `dsh.plugin.json` 的 `engines.dsh` 均为 `>=0.1.5-rc.2 <0.2.0-0`。
+
+DSH `0.1.2-rc.x` 宿主请改用 **`legacy/0.1.2`** 分支（npm dist-tag `dsh-0.1.2`，版本 `0.3.1`）。
+`main` 已冻结在 `0.2.0-beta.1`，**不再是 0.1.2 线的发布分支**。
+
+> ⚠️ 不要依赖裸包名 `dsh-session-guard`：npm 的 `latest` 标签无法同时服务两条互斥版本线
+> （两条线的 `engines.dsh` 按 semver 预发布规则互斥），必须显式指定 dist-tag。
 
 重启 dsh web 并刷新页面。
 

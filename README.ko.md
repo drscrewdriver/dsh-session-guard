@@ -26,6 +26,29 @@
 
 > **호환성 참고:** v0.1.1에는 일본어(`ja`)와 한국어(`ko`) 사전이 포함되어 있지만, 현재 공식 DSH 릴리스는 `LocaleRuntime`을 통해 `zh`와 `en`만 제공합니다. 순정 DSH에서 `ja` 또는 `ko`를 선택하면 `locale "<id>" is not registered` 오류가 발생합니다. 공식 DSH가 해당 locale ID를 추가할 때까지 사용할 수 없습니다. 고급 사용자는 DSH 포크를 유지하면서 업데이트하세요.
 
+> **▼ DSH 버전 적합성**
+>
+> | DSH 버전 | 로드 | 설정 등록 | 세션 이벤트 / 게이트 | 클라이언트 측 |
+> | --- | --- | --- | --- | --- |
+> | 0.1.0-rc.7 ~ 0.1.1-rc.x | ➖ 본 라인 대상 아님(`legacy/0.1.2` 이전 역사 버전) | `ctx.settings.register(ns, schema, { base })` | ✅ 형태 동일 | ✅ 플랫폼 값 import 없음 |
+> | 0.1.2-alpha.2+ / 0.1.2-rc.1 | ➖ 본 라인 대상 아님 → `legacy/0.1.2`(npm `@dsh-0.1.2`) | `register` 유지(`installSection` 추가) | ✅ 형태 동일 | ✅ 플랫폼 값 import 없음 |
+> | **0.1.5-rc.2** | ✅(**본 라인**, dist-tag `dsh-0.1.5`) | `register` 유지(문자열 네임스페이스) | ✅ 이벤트는 `snapshotEvents()` 이중 경로로 읽음 | ✅ |
+>
+> **본 라인 식별 정보**: 브랜치 `compat/0.1.5`, npm 버전 **`3.0.0`**(semver),
+> dist-tag **`dsh-0.1.5`**. `package.json`과 `dsh.plugin.json`의 `engines.dsh`, 그리고
+> 3개의 `@deepseek-ai/dsh-client-*` peer 하한은 모두 `>=0.1.5-rc.2 <0.2.0-0`로 통일되어 있습니다.
+> 과거 README는 "2.x / 3.x"를 **라인 호칭**으로 사용했지만, 이는 서술 관습이며
+> **레지스트리에서 받을 수 있는 버전 번호가 아닙니다**. npm 버전 `0.3.1`(0.1.2 라인)과
+> `3.0.0`(0.1.5 라인)을 기준으로 하세요.
+>
+> **다른 라인의 낙점**: DSH `0.1.2-rc.x` 호스트는 브랜치 **`legacy/0.1.2`**(npm dist-tag
+> `dsh-0.1.2`, 버전 `0.3.1`)를 사용하세요. **`main`은 `0.2.0-beta.1`에서 동결되었고
+> 0.1.2 라인의 릴리스 브랜치가 아닙니다.** DSH `0.1.0-rc.7` ~ `0.1.1-rc.x` 호스트는
+> `0.1.2` 이하의 역사 버전을 사용하세요. 필드 소스 정식 정의:
+> `mine-dsh-plugins/improve-dsh-plugins/DSH-PLUGIN-VERSION-DISTRIBUTION-STRATEGY.md` §2.2.
+>
+> 드리프트 가드: `tools/check-api-drift.ps1`(본 라인은 기본적으로 `dsh-v0.1.5-rc.2`에 대해 필수 API 존재를 검증).
+
 > 피크 과금 시간대에 실행 중인 세션을 자동 일시정지하고 오피크/주말에 자동 재개; input-traffic의 동결 버튼과 페어링하여 **세션급** 잠금 구현; 백엔드 **자동 재시도**는 동결/게이트 기간 중 양보. 커스텀 세션 게이트(`agent.cancel keepInbox + goals.pause + session/event 안전 경계 + followup 재개`) 기반, dsh-task-control 의존성 제거.
 
 `dsh plugin` 명령으로 조립 + 번들 패치로 장착하는 cordis 플러그인. dsh 소스 변경이나 PR 필요 없음.
@@ -45,10 +68,23 @@
 ## 설치
 
 ```bash
+# DSH 0.1.5-rc.x 호스트(본 라인, dist-tag dsh-0.1.5)
+dsh plugin --profile web add dsh-session-guard@dsh-0.1.5
+
+# 또는 git 브랜치 직접 지정
 dsh plugin --profile web add github:drscrewdriver/dsh-session-guard#compat/0.1.5
+
+# DSH 0.1.2-rc.x 호스트는 0.1.2 라인 사용
+dsh plugin --profile web add dsh-session-guard@dsh-0.1.2
 ```
 
-`compat/0.1.5`는 DSH `0.1.5-rc.x` 전용 라인(3.x)입니다. `main`은 계속 DSH `0.1.0-rc.7` – `0.1.2-rc.1`(2.x / 0.2.x)을 담당합니다.
+`compat/0.1.5`는 DSH `0.1.5-rc.x` 전용 라인이며 npm 버전은 **`3.0.0`**입니다. DSH `0.1.2-rc.x`
+호스트는 **`legacy/0.1.2`** 브랜치(npm dist-tag `dsh-0.1.2`, 버전 `0.3.1`)를 사용하세요.
+**`main`은 `0.2.0-beta.1`에서 동결되었고 0.1.2 라인의 릴리스 브랜치가 아닙니다.**
+
+> ⚠️ 맨 패키지명 `dsh-session-guard`에 의존하지 마세요: npm `latest` 태그는
+> 상호 배타적인 두 버전 라인(`engines.dsh`가 semver 프리릴리스 매칭상 배타)을
+> 동시에 제공할 수 없습니다. 반드시 dist-tag를 명시하세요.
 
 설치 후 dsh web을 재시작하고 페이지를 새로고침.
 

@@ -6,6 +6,25 @@ All notable changes to `dsh-session-guard` are recorded here. Versions follow se
 - [日本語 changelog](./CHANGELOG.ja.md)
 - [한국어 changelog](./CHANGELOG.ko.md)
 
+## 0.4.0 — 2026-09-18 (mis-versioned; superseded by 3.0.0)
+
+### Fixed
+
+- **Version identity.** This line was published as `0.4.0` while `dsh.plugin.json` and this
+  changelog already said `3.0.0` — one artifact with two version numbers. `package.json` is now
+  `3.0.0`, so the package version, the manifest version and the changelog agree. `0.4.0` is kept
+  here as a historical record because npm versions are immutable; `dist-tag dsh-0.1.5` should be
+  repointed to `3.0.0` once it is published.
+- **Docs.** README/INSTALL (zh/en/ja/ko) no longer describe the sibling line as living on `main`.
+  The 0.1.2 line's release branch is **`legacy/0.1.2`** (npm dist-tag `dsh-0.1.2`, version `0.3.1`);
+  `main` is frozen at `0.2.0-beta.1`. The duplicated branch fragment in the INSTALL.zh/ja/ko install
+  command is fixed, explicit dist-tag install commands are documented, and "2.x / 3.x" is
+  now marked as a **line nickname** rather than a version number.
+
+### Notes
+
+- **No source changes** relative to `3.0.0`; `0.4.0` is a packaging-only publish of the same tree.
+
 ## 3.0.0 — 2026-09-14
 
 ### Changed

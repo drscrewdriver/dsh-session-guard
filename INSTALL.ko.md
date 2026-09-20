@@ -22,11 +22,22 @@ dsh --version
 ## 1. 설치
 
 ```bash
-dsh plugin --profile web add github:drscrewdriver/dsh-session-guard#compat/0.1.5#compat/0.1.5
+dsh plugin --profile web add dsh-session-guard@dsh-0.1.5
+
+# 또는 git 브랜치 직접 지정
+dsh plugin --profile web add github:drscrewdriver/dsh-session-guard#compat/0.1.5
 ```
 
-`compat/0.1.5`는 DSH `0.1.5-rc.x` 전용 라인(3.x, `engines.dsh: >=0.1.5-rc.2 <0.2.0-0`)입니다. `main`은
-계속 DSH `0.1.0-rc.7` – `0.1.2-rc.1`(2.x / 0.2.x)을 담당합니다.
+`compat/0.1.5`는 DSH `0.1.5-rc.x` 전용 라인입니다: npm 패키지 버전 **`3.0.0`**,
+dist-tag **`dsh-0.1.5`**, `package.json`과 `dsh.plugin.json`의 `engines.dsh` 모두
+`>=0.1.5-rc.2 <0.2.0-0`.
+
+DSH `0.1.2-rc.x` 호스트는 **`legacy/0.1.2`** 브랜치(npm dist-tag `dsh-0.1.2`, 버전 `0.3.1`)를
+사용하세요. `main`은 `0.2.0-beta.1`에서 동결되었고 **0.1.2 라인의 릴리스 브랜치가 아닙니다**.
+
+> ⚠️ 맨 패키지명 `dsh-session-guard`에 의존하지 마세요: npm `latest` 태그는
+> 상호 배타적인 두 버전 라인(`engines.dsh`가 semver 프리릴리스 매칭상 배타)을
+> 동시에 제공할 수 없습니다. 반드시 dist-tag를 명시하세요.
 
 dsh web을 재시작하고 페이지를 새로고침.
 

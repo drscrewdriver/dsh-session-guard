@@ -32,12 +32,23 @@
 >
 > | DSH 版本 | 加载 | 设置注册 | 会话事件 / 会话门 | 客户端半 |
 > | --- | --- | --- | --- | --- |
-> | 0.1.0-rc.7 ~ 0.1.1-rc.x | ✅（2.x / 0.2.x 线） | `ctx.settings.register(ns, schema, { base })` | ✅ 形状一致 | ✅ 无平台值导入 |
-> | 0.1.2-alpha.2+ / 0.1.2-rc.1 | ✅（2.x / 0.2.x 线） | `register` 仍保留（另加 `installSection`） | ✅ 形状一致 | ✅ 无平台值导入 |
-> | **0.1.5-rc.2** | ✅（**3.x 专线 `compat/0.1.5`**） | `register` 仍在（字符串命名空间） | ✅ 事件经 `snapshotEvents()` 双路径读取 | ✅ |
+> | 0.1.0-rc.7 ~ 0.1.1-rc.x | ➖ 不在本线（`legacy/0.1.2` 之前的历史版本） | `ctx.settings.register(ns, schema, { base })` | ✅ 形状一致 | ✅ 无平台值导入 |
+> | 0.1.2-alpha.2+ / 0.1.2-rc.1 | ➖ 不在本线 → 用 `legacy/0.1.2`（npm `@dsh-0.1.2`） | `register` 仍保留（另加 `installSection`） | ✅ 形状一致 | ✅ 无平台值导入 |
+> | **0.1.5-rc.2** | ✅（**本线**，dist-tag `dsh-0.1.5`） | `register` 仍在（字符串命名空间） | ✅ 事件经 `snapshotEvents()` 双路径读取 | ✅ |
 >
-> **3.x 为 0.1.5 专线**：engines/peer 收窄为 `>=0.1.5-rc.2 <0.2.0-0`，0.1.0-rc.7~0.1.2 宿主请继续使用 2.x / 0.2.x 线（`main`）。
-> **0.1.5 适配（compat/0.1.5 分支，v3.0.0）**：
+> **本线身份**：分支 `compat/0.1.5`，npm 版本号 **`3.0.0`**（semver），dist-tag **`dsh-0.1.5`**。
+> `package.json` 与 `dsh.plugin.json` 的 `engines.dsh` 与三个 `@deepseek-ai/dsh-client-*`
+> peer 下界统一为 `>=0.1.5-rc.2 <0.2.0-0`。
+> 历史上 README 曾用「2.x / 3.x」当**线代号**，那是叙述习惯，**不是注册表里可拉取的版本号** ——
+> 请一律以 npm 版本号 `0.3.1`（0.1.2 线）与 `3.0.0`（0.1.5 线）为准。
+>
+> **其它线的落点**：DSH `0.1.2-rc.x` 宿主请使用分支 **`legacy/0.1.2`**（npm dist-tag
+> `dsh-0.1.2`，版本 `0.3.1`）。**`main` 已冻结在 `0.2.0-beta.1`，不是 0.1.2 线的发布分支。**
+> DSH `0.1.0-rc.7` ~ `0.1.1-rc.x` 宿主请使用 ≤ `0.1.2` 的历史版本。
+> 字段源头定义见
+> `mine-dsh-plugins/improve-dsh-plugins/DSH-PLUGIN-VERSION-DISTRIBUTION-STRATEGY.md` §2.2。
+>
+> **0.1.5 适配（compat/0.1.5 分支，npm 3.0.0）**：
 > ① `agent.followup` 双路径——0.1.5 将 Inbox 改为 agent-loop 只读投影，若 `followup`
 > 不再存在则回退 `agent.send`，两者皆无时 warn 降级不抛错（恢复续跑的兜底）；
 > ② 恢复消息 `source` 补 `form: 'instructions'`（0.1.5 ContextFormed 契约，旧版本忽略）；
@@ -46,17 +57,18 @@
 > 旧数组回退（仅影响 `findToolOutcome` / `lastUserPrompt` 两条辅助路径，事件类型匹配不变）。
 > 已核实 0.1.5 的 `WebRoute`（exact/prefix + SSE）契约不变，客户端
 > `fetch('/session-guard/...')` 无需改 `/api` 前缀。
-> 2.x 线的旧表（一份产物双版本）保留如下。`session/event`、`agent.cancel`、`goals.pause`、
+> 下面这张兼容表跨 0.1.1 / 0.1.2 两代 API，本线只认领 0.1.5 那一行。
+> `session/event`、`agent.cancel`、`goals.pause`、
 > `agent.followup`、`commands.register`、`timer.interval`、`webServer.register`、
 > `agent/request`、`llm.listConfigurableProviders`、`settings.register/get` 在
-> `dsh-v0.1.1-rc.2` 与 `dsh-v0.1.2-rc.1` 之间签名一致（3.x 已核到 `dsh-v0.1.5-rc.2`）；
+> `dsh-v0.1.1-rc.2` 与 `dsh-v0.1.2-rc.1` 之间签名一致（本线已核到 `dsh-v0.1.5-rc.2`）；
 > 唯一需要双读的是 `tool/result` 记录的调用 id 形态（`content[].toolCallId` 优先、
 > `source.callId` 回退），已抽到 `src/tool-call-id.js` 并配单测——两版本的回放日志都可能出现这两种形态。
-> 0.1.5 起 `session.events` 数组访问器被移除，3.x 经 `snapshotEvents()`（保留旧数组回退）读取，
+> 0.1.5 起 `session.events` 数组访问器被移除，本线经 `snapshotEvents()`（保留旧数组回退）读取，
 > 只影响 `findToolOutcome` / `lastUserPrompt` 两条辅助路径。
 > `model/selection` 事件**仅 0.1.2+**，只做切模型加速且必须特性探测；设置面只用
 > `register` + `get` 交集（不碰 `installSection` / 已移除的 `installSettingsSection`）。
-> 漂移守卫脚本：`tools/check-api-drift.ps1`（3.x 默认对 `dsh-v0.1.5-rc.2` 断言必需接口存在）。
+> 漂移守卫脚本：`tools/check-api-drift.ps1`（本线默认对 `dsh-v0.1.5-rc.2` 断言必需接口存在）。
 
 > 高峰时段自动暂停运行中的会话、低峰/周末自动续跑；配合 input-traffic 的冻结按钮做到**会话级**锁定；后端**自动重试**在冻结/门控期间让路。核心基于**自研会话门**（`agent.cancel keepInbox + goals.pause + session/event 安全边界 + followup 续跑`），不再依赖 dsh-task-control。
 
@@ -86,10 +98,22 @@
 ## 安装
 
 ```bash
+# DSH 0.1.5-rc.x 宿主（本线，dist-tag dsh-0.1.5）
+dsh plugin --profile web add dsh-session-guard@dsh-0.1.5
+
+# 或直接走 git 分支
 dsh plugin --profile web add github:drscrewdriver/dsh-session-guard#compat/0.1.5
+
+# DSH 0.1.2-rc.x 宿主请改用 0.1.2 线
+dsh plugin --profile web add dsh-session-guard@dsh-0.1.2
 ```
 
-`compat/0.1.5` 是 DSH `0.1.5-rc.x` 专线（3.x）；`main` 继续服务 DSH `0.1.0-rc.7` – `0.1.2-rc.1`（2.x / 0.2.x）。
+`compat/0.1.5` 是 DSH `0.1.5-rc.x` 专线，npm 版本号 **`3.0.0`**；DSH `0.1.2-rc.x` 宿主请改用
+分支 **`legacy/0.1.2`**（npm dist-tag `dsh-0.1.2`，版本 `0.3.1`）。**`main` 已冻结在 `0.2.0-beta.1`，
+不是 0.1.2 线的发布分支。**
+
+> ⚠️ 不要依赖裸包名 `dsh-session-guard`：npm 的 `latest` 标签无法同时服务两条互斥版本线
+> （两条线的 `engines.dsh` 按 semver 预发布规则互斥），必须显式指定 dist-tag。
 
 装后重启 dsh web 并刷新页面。
 

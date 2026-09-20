@@ -24,11 +24,23 @@ dsh --version
 ## 1. Install
 
 ```bash
+dsh plugin --profile web add dsh-session-guard@dsh-0.1.5
+
+# or straight from the git branch
 dsh plugin --profile web add github:drscrewdriver/dsh-session-guard#compat/0.1.5
 ```
 
-`compat/0.1.5` is the DSH `0.1.5-rc.x` line (3.x, `engines.dsh: >=0.1.5-rc.2 <0.2.0-0`); `main` keeps
-serving DSH `0.1.0-rc.7` – `0.1.2-rc.1` (2.x / 0.2.x).
+`compat/0.1.5` is the DSH `0.1.5-rc.x` line: npm package version **`3.0.0`**, dist-tag
+**`dsh-0.1.5`**, with `engines.dsh = >=0.1.5-rc.2 <0.2.0-0` in **both** `package.json` and
+`dsh.plugin.json`.
+
+DSH `0.1.2-rc.x` hosts should use the **`legacy/0.1.2`** branch (npm dist-tag `dsh-0.1.2`,
+version `0.3.1`). **`main` is frozen at `0.2.0-beta.1` and is no longer the 0.1.2 line's
+release branch.**
+
+> ⚠️ Do not rely on the bare package name `dsh-session-guard`: npm's `latest` tag cannot
+> serve two mutually exclusive version lines (their `engines.dsh` ranges are exclusive under
+> semver prerelease matching) — always pin the dist-tag explicitly.
 
 Restart dsh web and refresh the page.
 
@@ -58,16 +70,17 @@ npm test
 
 ```bash
 dsh plugin --profile web remove dsh-session-guard
-dsh plugin --profile web add github:drscrewdriver/dsh-session-guard#compat/0.1.5
+dsh plugin --profile web add dsh-session-guard@dsh-0.1.5
 ```
 
 Restart dsh web and refresh the page. Settings live in `$DSH_HOME/settings.yaml` under the
 `session-guard` namespace and survive the upgrade; new keys (`providerGuard`, `deferredMode`, …)
 fall back to their defaults until you touch them.
 
-From `0.1.3`/`0.1.4-beta.1` to `0.1.5-beta.1` the only behavior change is that peak hours now
+From **plugin** `0.1.3` / `0.1.4-beta.1` to **plugin** `0.1.5-beta.1` the only behavior change is that peak hours now
 block **only** official-source targets by default. To restore the old blanket behavior set
 `providerGuard: false` (or `officialProviders` / `officialBaseURLs` to narrow the verdict).
+(Those are plugin versions, not DSH versions — do not confuse them with the host ranges above.)
 
 ## 4. Troubleshooting
 

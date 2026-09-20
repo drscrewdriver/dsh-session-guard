@@ -82,11 +82,23 @@ A cordis plugin assembled via the `dsh plugin` command and a bundle patch — no
 ## Installation
 
 ```bash
+# DSH 0.1.5-rc.x hosts (this line, dist-tag dsh-0.1.5)
+dsh plugin --profile web add dsh-session-guard@dsh-0.1.5
+
+# or straight from the git branch
 dsh plugin --profile web add github:drscrewdriver/dsh-session-guard#compat/0.1.5
+
+# DSH 0.1.2-rc.x hosts must use the 0.1.2 line instead
+dsh plugin --profile web add dsh-session-guard@dsh-0.1.2
 ```
 
-`compat/0.1.5` is the DSH `0.1.5-rc.x` line (3.x); `main` keeps serving DSH `0.1.0-rc.7` – `0.1.2-rc.1`
-(2.x / 0.2.x).
+`compat/0.1.5` is the DSH `0.1.5-rc.x` line, npm version **`3.0.0`**. DSH `0.1.2-rc.x` hosts must
+use the **`legacy/0.1.2`** branch (npm dist-tag `dsh-0.1.2`, version `0.3.1`). **`main` is frozen at
+`0.2.0-beta.1` and is no longer the 0.1.2 line's release branch.**
+
+> ⚠️ Do not rely on the bare package name `dsh-session-guard`: npm's `latest` tag cannot serve two
+> mutually exclusive version lines (their `engines.dsh` ranges are exclusive under semver
+> prerelease matching) — always pin the dist-tag explicitly.
 
 Restart dsh web and refresh the page after installation.
 

@@ -22,11 +22,22 @@ dsh --version
 ## 1. インストール
 
 ```bash
-dsh plugin --profile web add github:drscrewdriver/dsh-session-guard#compat/0.1.5#compat/0.1.5
+dsh plugin --profile web add dsh-session-guard@dsh-0.1.5
+
+# または git ブランチを直接指定
+dsh plugin --profile web add github:drscrewdriver/dsh-session-guard#compat/0.1.5
 ```
 
-`compat/0.1.5` は DSH `0.1.5-rc.x` 専用ライン（3.x、`engines.dsh: >=0.1.5-rc.2 <0.2.0-0`）。`main` は
-引き続き DSH `0.1.0-rc.7` – `0.1.2-rc.1`（2.x / 0.2.x）を担当します。
+`compat/0.1.5` は DSH `0.1.5-rc.x` 専用ラインです：npm パッケージバージョン **`3.0.0`**、
+dist-tag **`dsh-0.1.5`**、`package.json` と `dsh.plugin.json` の `engines.dsh` はいずれも
+`>=0.1.5-rc.2 <0.2.0-0`。
+
+DSH `0.1.2-rc.x` ホストは **`legacy/0.1.2`** ブランチ（npm dist-tag `dsh-0.1.2`、バージョン `0.3.1`）
+を使用してください。`main` は `0.2.0-beta.1` で凍結済みで、**0.1.2 ラインのリリースブランチではありません**。
+
+> ⚠️ 裸のパッケージ名 `dsh-session-guard` に依存しないでください：npm の `latest` タグは
+> 排他的な 2 つのバージョンライン（`engines.dsh` が semver プレリリース照合で排他）を
+> 同時に提供できません。必ず dist-tag を明示してください。
 
 dsh web を再起動し、ページをリフレッシュ。
 

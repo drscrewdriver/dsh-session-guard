@@ -14,7 +14,7 @@
  */
 import { StatusBadge } from './status-badge'
 import { SessionGuardCard } from './settings-card'
-import { PauseButton } from './pause-button'
+import { FreeRunButton } from './free-run-button'
 
 /** 客户端所需服务：slots（状态徽标 + 设置卡片）+ locale + settingsScope（设置卡片绑定）。 */
 export const inject = ['slots', 'locale', 'settingsScope']
@@ -36,14 +36,14 @@ interface ClientCtx {
 const NS = 'session-guard'
 
 export function apply(ctx: ClientCtx) {
-  // 暂停会话按钮（v0.2.0）：step 级门控的状态显示 + 手动解除。
+  // 「畅跑」按钮（v0.3.0）：单会话限时无视峰谷 + 多任务管理弹层。
   // order 20 < input-traffic 冻结按钮的 30 → 排在左侧，两者并列互不取代（ADR-001/002）。
   ctx.slots.inject('conversation.input.right', () => ctx.slots.register({
     name: 'conversation.input.right',
-    id: 'session-guard-pause',
+    id: 'session-guard-free-run',
     order: 20,
     locale: 'session-guard',
-  }, PauseButton))
+  }, FreeRunButton))
 
   // 状态徽标：输入区右侧，纯展示。
   ctx.slots.inject('conversation.input.right', () => ctx.slots.register({

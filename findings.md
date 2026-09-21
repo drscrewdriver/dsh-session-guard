@@ -88,6 +88,12 @@ service = {
 - 高峰：09:00–12:00 / 14:00–18:00（左闭右开，12:00 属谷时）。
 - 谷时 = 峰时补集 + 周末全天（当周末模式开启）。
 
+> **v0.3.0 补注（本节时效性）**：以上是 DeepSeek **官方计费口径**，仍作为出厂默认值，但
+> 「峰谷时段硬编码在插件里」的说法自 v0.3.0 起已不成立——峰谷/周末策略改由
+> `config/session-guard.json` 描述（`peakPolicy.peakWindows` / `weekendPolicy`），并支持多窗口、
+> 跨午夜（归属起始日）、按 `days` 限定，窗口判定时区可用 `peakPolicy.timezone` 覆盖。详见
+> README「可配置峰谷策略」与 CHANGELOG 0.3.0。
+
 ## 4. 依赖探测结论
 - `ctx.get('taskControl')`：dsh-task-control 安装后提供，用于**会话门**（首选路径）。
 - `input-traffic` 的 freeze：纯客户端，浏览器半可调用；作为**回退路径**（无会话门时只锁队列）。

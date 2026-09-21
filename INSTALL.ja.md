@@ -35,7 +35,18 @@ dsh web を再起動し、ページをリフレッシュ。
 `offPeakAutoResume`、`weekendMode`、`deferredResume`、`queueFallback`、`retryEnabled`；
 テキスト/リスト項目：`officialProviders`、`officialBaseURLs`、`deferredResumeText`。
 
+0.3.0 以降、峰谷/週末ポリシーは JSON ファイルでも設定できます（解決順：
+`$DSH_SESSION_GUARD_CONFIG` → `$DSH_HOME/config/session-guard.json` →
+`<cwd>/config/session-guard.json` → `<plugin>/config/session-guard.json`）。設定 UI で明示した値が
+引き続き優先されます。再起動なしの再読み込みは
+`POST /session-guard/rpc {"action":"reloadConfig"}`。詳細は
+[README.ja.md](./README.ja.md) の「設定可能な峰谷ポリシー」を参照。
+
 セッション UI のステータスバッジを確認——現在のフェーズ（`高峰·拦官方` / `高峰·全部暂停` / `谷时` / `周末`）を表示。
+その隣の「畅跑」ボタン（order 20、input-traffic の凍結ボタンの左）は文言が「畅跑」（タスクが 2 つ以上なら
+`畅跑 ×N`）に固定され、**クリックは常に畅跑タスク管理パネルを開きます**。そこで**単一セッション**の時間限定
+峰谷免除を新規作成・一時停止 / 再開・削除できます（一時停止はセッション級スイッチではなくタスクごと）。
+詳細は [README.ja.md](./README.ja.md) の「畅跑（free-run）」を参照。
 
 特定ルートの公式ソース判定を確認（host ルート、再起動不要）：
 

@@ -45,7 +45,9 @@
 ## 설치
 
 ```bash
-dsh plugin --profile web add github:<owner>/dsh-session-guard
+# npm (recommended; dsh-0.1.5 for DSH 0.1.5, dsh-0.1.2 for DSH 0.1.2)
+dsh plugin --profile web add dsh-session-guard@dsh-0.1.5
+# GitHub (alternative, builds from source): dsh plugin --profile web add github:drscrewdriver/dsh-session-guard
 ```
 
 설치 후 dsh web을 재시작하고 페이지를 새로고침.

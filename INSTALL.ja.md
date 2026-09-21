@@ -22,7 +22,9 @@ dsh --version
 ## 1. インストール
 
 ```bash
-dsh plugin --profile web add github:drscrewdriver/dsh-session-guard
+# npm (recommended; dsh-0.1.5 for DSH 0.1.5, dsh-0.1.2 for DSH 0.1.2)
+dsh plugin --profile web add dsh-session-guard@dsh-0.1.5
+# GitHub (alternative, builds from source): dsh plugin --profile web add github:drscrewdriver/dsh-session-guard
 ```
 
 dsh web を再起動し、ページをリフレッシュ。
@@ -52,7 +54,9 @@ npm test
 
 ```bash
 dsh plugin --profile web remove dsh-session-guard
-dsh plugin --profile web add github:drscrewdriver/dsh-session-guard
+# npm (recommended; dsh-0.1.5 for DSH 0.1.5, dsh-0.1.2 for DSH 0.1.2)
+dsh plugin --profile web add dsh-session-guard@dsh-0.1.5
+# GitHub (alternative, builds from source): dsh plugin --profile web add github:drscrewdriver/dsh-session-guard
 ```
 
 dsh web を再起動しページをリフレッシュ。設定は `$DSH_HOME/settings.yaml` の `session-guard`

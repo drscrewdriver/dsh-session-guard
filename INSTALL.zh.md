@@ -22,7 +22,9 @@ dsh --version
 ## 1. 安装
 
 ```bash
-dsh plugin --profile web add github:drscrewdriver/dsh-session-guard
+# npm (recommended; dsh-0.1.5 for DSH 0.1.5, dsh-0.1.2 for DSH 0.1.2)
+dsh plugin --profile web add dsh-session-guard@dsh-0.1.5
+# GitHub (alternative, builds from source): dsh plugin --profile web add github:drscrewdriver/dsh-session-guard
 ```
 
 重启 dsh web 并刷新页面。
@@ -52,7 +54,9 @@ npm test
 
 ```bash
 dsh plugin --profile web remove dsh-session-guard
-dsh plugin --profile web add github:drscrewdriver/dsh-session-guard
+# npm (recommended; dsh-0.1.5 for DSH 0.1.5, dsh-0.1.2 for DSH 0.1.2)
+dsh plugin --profile web add dsh-session-guard@dsh-0.1.5
+# GitHub (alternative, builds from source): dsh plugin --profile web add github:drscrewdriver/dsh-session-guard
 ```
 
 重启 dsh web 并刷新页面。设置在 `$DSH_HOME/settings.yaml` 的 `session-guard` 命名空间下，升级不会丢；

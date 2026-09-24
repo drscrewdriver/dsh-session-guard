@@ -1,6 +1,8 @@
 <p align="center">
   <strong>高峰自动会话门：周末模式 + 高峰自动暂停 + 官方源二维判定 + 会话级冻结 + 后端自动重试</strong>
 </p>
+![高峰处理](assets/stop-peek.png)
+![高峰处理](assets/高峰低峰周末提醒-周末状态.png)
 <img width="832" height="182" alt="00c4b89a-b026-4bf1-a358-a068e80d2da7" src="https://github.com/user-attachments/assets/31a8836f-0fe0-4043-948a-f0865bb1b3bb" />
 
 <p align="center">

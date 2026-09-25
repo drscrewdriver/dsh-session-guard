@@ -1,10 +1,8 @@
 {
   "name": "dsh-session-guard",
-  "version": "3.0.1",
+  "version": "0.4.0",
   "publishConfig": {
-    "registry": "https://registry.npmjs.org",
-    "access": "public",
-    "tag": "dsh-0.1.5"
+    "tag": "dsh-0.1.7"
   },
   "type": "module",
   "description": "高峰自动会话门：周末模式 + 高峰自动暂停 + 官方源二维判定 + 会话级冻结 + 后端自动重试。",
@@ -73,14 +71,14 @@
     "dsh": ">=0.1.5-rc.2 <0.2.0-0"
   },
   "dependencies": {
-    "@deepseek-ai/schemastery": "^3.18.1"
+    "@deepseek-ai/schemastery": "^3.18.4"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-client-locale": ">=0.1.5-rc.2 <0.2.0-0",
-    "@deepseek-ai/dsh-client-ui-renderer": ">=0.1.5-rc.2 <0.2.0-0",
-    "@deepseek-ai/dsh-client-ui-settings": ">=0.1.5-rc.2 <0.2.0-0",
-    "@deepseek-ai/dsh-client-ui-slots": ">=0.1.5-rc.2 <0.2.0-0"
+    "@deepseek-ai/dsh-client-locale": ">=0.1.7-rc.1 <0.2.0-0",
+    "@deepseek-ai/dsh-client-ui-renderer": ">=0.1.7-rc.1 <0.2.0-0",
+    "@deepseek-ai/dsh-client-ui-settings": ">=0.1.7-rc.1 <0.2.0-0",
+    "@deepseek-ai/dsh-client-ui-slots": ">=0.1.7-rc.1 <0.2.0-0"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/cordis": {

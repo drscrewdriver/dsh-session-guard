@@ -19,7 +19,6 @@ function fakeCtx() {
   const routes = []
   const provided = []
   const ctx = {
-    settings: { get: () => ({}), register: () => ({ get: () => ({}), watch: () => () => {} }) },
     agents: { get: () => undefined, roots: () => [], list: () => [] },
     timer: { interval: () => ({ unref() {} }) },
     webServer: { register: (def) => { routes.push(def); return () => {} } },
@@ -51,7 +50,7 @@ test('apply()：契约（name/inject）与关键接线', (t) => {
   withTmpState(t)
   const { ctx, listeners, provided, routes } = fakeCtx()
   assert.equal(name, 'session-guard')
-  assert.deepEqual(inject, ['agents', 'webServer', 'settings', 'timer', 'commands', 'goals'])
+  assert.deepEqual(inject, ['agents', 'webServer', 'timer', 'commands', 'goals'])
   assert.doesNotThrow(() => apply(ctx))
   // 冗余端口 + 三个 waterfall 监听（session/event、agent/request、agent/pre-step）
   assert.deepEqual(provided.map(([k]) => k), ['sessionGuard'])

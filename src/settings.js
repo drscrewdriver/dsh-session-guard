@@ -54,33 +54,34 @@ export const DEFAULT_SETTINGS = Object.freeze({
  * - 枚举用 z.union([z.const(...)])；默认值用字段级 .default()。
  */
 export const SettingsSchema = z.object({
-  enabled: z.boolean().default(DEFAULT_SETTINGS.enabled),
-  offPeakAutoResume: z.boolean().default(DEFAULT_SETTINGS.offPeakAutoResume),
-  weekendMode: z.boolean().default(DEFAULT_SETTINGS.weekendMode),
-  timezone: z.string().default(DEFAULT_SETTINGS.timezone),
+  enabled: z.boolean().default(DEFAULT_SETTINGS.enabled).volatile(),
+  offPeakAutoResume: z.boolean().default(DEFAULT_SETTINGS.offPeakAutoResume).volatile(),
+  weekendMode: z.boolean().default(DEFAULT_SETTINGS.weekendMode).volatile(),
+  timezone: z.string().default(DEFAULT_SETTINGS.timezone).volatile(),
   peakWindows: z
     .array(z.object({ start: z.string(), end: z.string() }))
-    .default(DEFAULT_SETTINGS.peakWindows),
-  pauseMode: z.union([z.const('safe'), z.const('force')]).default(DEFAULT_SETTINGS.pauseMode),
-  pauseReason: z.union([z.const('wait'), z.const('stop')]).default(DEFAULT_SETTINGS.pauseReason),
-  stepLevelPause: z.boolean().default(DEFAULT_SETTINGS.stepLevelPause),
-  stepGateTimeoutMs: z.number().min(0).default(DEFAULT_SETTINGS.stepGateTimeoutMs),
-  queueFallback: z.boolean().default(DEFAULT_SETTINGS.queueFallback),
-  retryEnabled: z.boolean().default(DEFAULT_SETTINGS.retryEnabled),
-  retryText: z.string().default(DEFAULT_SETTINGS.retryText),
-  retryGraceMs: z.number().min(0).default(DEFAULT_SETTINGS.retryGraceMs),
-  retryCooldownMs: z.number().min(0).default(DEFAULT_SETTINGS.retryCooldownMs),
-  retryBackoffFactor: z.number().min(1).default(DEFAULT_SETTINGS.retryBackoffFactor),
-  retryBackoffMaxMs: z.number().min(0).default(DEFAULT_SETTINGS.retryBackoffMaxMs),
-  retryMaxConsecutive: z.number().min(0).default(DEFAULT_SETTINGS.retryMaxConsecutive),
-  providerGuard: z.boolean().default(DEFAULT_SETTINGS.providerGuard),
-  officialProviders: z.array(z.string()).default(DEFAULT_SETTINGS.officialProviders),
-  officialBaseURLs: z.array(z.string()).default(DEFAULT_SETTINGS.officialBaseURLs),
-  deferredResume: z.boolean().default(DEFAULT_SETTINGS.deferredResume),
-  deferredResumeText: z.string().default(DEFAULT_SETTINGS.deferredResumeText),
-  deferredMode: z.union([z.const('hold'), z.const('error')]).default(DEFAULT_SETTINGS.deferredMode),
-  deferredMaxHoldMs: z.number().min(0).default(DEFAULT_SETTINGS.deferredMaxHoldMs),
-  guardSubagents: z.boolean().default(DEFAULT_SETTINGS.guardSubagents),
+    .default(DEFAULT_SETTINGS.peakWindows)
+    .volatile(),
+  pauseMode: z.union([z.const('safe'), z.const('force')]).default(DEFAULT_SETTINGS.pauseMode).volatile(),
+  pauseReason: z.union([z.const('wait'), z.const('stop')]).default(DEFAULT_SETTINGS.pauseReason).volatile(),
+  stepLevelPause: z.boolean().default(DEFAULT_SETTINGS.stepLevelPause).volatile(),
+  stepGateTimeoutMs: z.number().min(0).default(DEFAULT_SETTINGS.stepGateTimeoutMs).volatile(),
+  queueFallback: z.boolean().default(DEFAULT_SETTINGS.queueFallback).volatile(),
+  retryEnabled: z.boolean().default(DEFAULT_SETTINGS.retryEnabled).volatile(),
+  retryText: z.string().default(DEFAULT_SETTINGS.retryText).volatile(),
+  retryGraceMs: z.number().min(0).default(DEFAULT_SETTINGS.retryGraceMs).volatile(),
+  retryCooldownMs: z.number().min(0).default(DEFAULT_SETTINGS.retryCooldownMs).volatile(),
+  retryBackoffFactor: z.number().min(1).default(DEFAULT_SETTINGS.retryBackoffFactor).volatile(),
+  retryBackoffMaxMs: z.number().min(0).default(DEFAULT_SETTINGS.retryBackoffMaxMs).volatile(),
+  retryMaxConsecutive: z.number().min(0).default(DEFAULT_SETTINGS.retryMaxConsecutive).volatile(),
+  providerGuard: z.boolean().default(DEFAULT_SETTINGS.providerGuard).volatile(),
+  officialProviders: z.array(z.string()).default(DEFAULT_SETTINGS.officialProviders).volatile(),
+  officialBaseURLs: z.array(z.string()).default(DEFAULT_SETTINGS.officialBaseURLs).volatile(),
+  deferredResume: z.boolean().default(DEFAULT_SETTINGS.deferredResume).volatile(),
+  deferredResumeText: z.string().default(DEFAULT_SETTINGS.deferredResumeText).volatile(),
+  deferredMode: z.union([z.const('hold'), z.const('error')]).default(DEFAULT_SETTINGS.deferredMode).volatile(),
+  deferredMaxHoldMs: z.number().min(0).default(DEFAULT_SETTINGS.deferredMaxHoldMs).volatile(),
+  guardSubagents: z.boolean().default(DEFAULT_SETTINGS.guardSubagents).volatile(),
 })
 
 /**
@@ -88,31 +89,6 @@ export const SettingsSchema = z.object({
  * 插件不 value-import `@deepseek-ai/dsh-settings`，只通过这些形状在注入面调用。
  */
 
-/** @typedef {{ get(): unknown; watch(cb: () => void): () => void }} SettingsScopeLike */
-/** @typedef {{ register(ns: string, schema: unknown, options?: { base?: unknown }): SettingsScopeLike }} SettingsServiceLike */
-/** @typedef {{ inject(deps: readonly string[], fn: (s: { settings: SettingsServiceLike; effect(cb: () => (() => void) | void, label?: string): void }) => void): void }} SettingsAwareCtx */
+// 0.1.7：设置面改声明式 —— SettingsSchema 的 volatile 字段即自动表单，
+// 不再有任何 register 调用；运行时经 apply 的组合条目（live ref）读取。
 
-/**
- * 注册 设置 → 插件 → session-guard 子板块（简单开关）。
- * - 走 `settings` 注入面，`base` 层叠组合配置；对 runtime 调用方经 `ctx.settings.get(NS)` 读取。
- * - 任何失败（settings 服务缺失 / 注入异常）→ 返回 false，静默降级用默认配置。
- * @param {object} ctx - host context（应含 cordis `settings` 注入面）。
- * @returns {boolean} 注册成功 true；设置服务不可用时 false（fail-open）。
- */
-export function registerSettings(ctx) {
-  try {
-    // 本插件顶层 `inject` 已声明 `settings`（见 src/index.js 的
-    // `export const inject`），所以 apply 时 `ctx.settings` 已是完整
-    // SettingsProvider（带 .register），直接注册即可 —— 无需再 `ctx.inject`
-    // 二次动态注入（对已在 fiber 上解析的服务做二次注入，回调作为异步插件
-    // apply 排队，`registerSettings` 同步返回 true 会掩盖实际操作未生效）。
-    // 与 dsh-thinking-levels / dsh-context 的区别仅在于它们顶层未声明
-    // settings，才必须动态注入；这里已声明，直接用最可靠。
-    const svc = /** @type {{ register(ns: string, schema: unknown, options?: { base?: unknown }): unknown }} */ (ctx.settings)
-    // base 用副本：DEFAULT_SETTINGS 被 Object.freeze，直接当 base 可能被写。
-    svc.register(NS, SettingsSchema, { base: { ...DEFAULT_SETTINGS } })
-    return true
-  } catch {
-    return false
-  }
-}

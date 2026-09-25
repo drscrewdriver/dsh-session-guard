@@ -23,21 +23,36 @@ import { createStepGate } from './step-gate.js'
 import { detectTaskControl } from './detect.js'
 import { makeIsRoot } from './request-guard.js'
 import { createWiring } from './wiring.js'
-import { NS, DEFAULT_SETTINGS, SettingsSchema, registerSettings } from './settings.js'
+import { NS, DEFAULT_SETTINGS, SettingsSchema } from './settings.js'
+
+// 0.1.7：声明式设置 —— volatile 字段即自动表单。
+export const Config = SettingsSchema
 
 export const name = 'session-guard'
-export const inject = ['agents', 'webServer', 'settings', 'timer', 'commands', 'goals']
+export const inject = ['agents', 'webServer', 'timer', 'commands', 'goals']
 
 export { NS, DEFAULT_SETTINGS }
 
-export function apply(ctx) {
+/** 0.1.7：volatile 字段解引出普通值的助手。 */
+function readVolatileValue(value) {
+  return value !== null && typeof value === 'object' && typeof value.get === 'function' ? value.get() : value
+}
+
+export function apply(ctx, config = {}) {
   const store = createStore()
   let lastState = null
 
   /** 读实时设置（settings 服务不可用时回退默认）。 */
+  /** 组合条目快照：volatile 字段解引，供默认值合并。 */
+  function resolveEntryConfig() {
+    const out = {}
+    for (const key of Object.keys(DEFAULT_SETTINGS)) out[key] = readVolatileValue(config[key])
+    return out
+  }
+
   function readCfg() {
     try {
-      const v = ctx.settings.get(NS)
+      const v = resolveEntryConfig()
       return v && typeof v === 'object' ? { ...DEFAULT_SETTINGS, ...v } : { ...DEFAULT_SETTINGS }
     } catch {
       return { ...DEFAULT_SETTINGS }
@@ -178,9 +193,9 @@ export function apply(ctx) {
     },
   })
 
-  // ── 设置子板块（设置 → 插件 → session-guard，简单开关）──
-  // fail-open：原生设置栈可用才注册，缺失则静默降级用默认配置（永不因设置依赖而崩）。
-  void registerSettings(ctx)
+  // ── 设置子板块 ──
+  // 0.1.7：设置表单由 Config 的 volatile 字段自动生成，无注册调用；
+  // 配置经 apply 的组合条目读取（readCfg → resolveEntryConfig）。
 
   // ── 状态机驱动（30s tick）──
   // 入峰：只暂停「最近目标为官方或 unknown」的 running 会话（providerGuard 关闭时退回全部）；

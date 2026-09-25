@@ -1,6 +1,6 @@
 {
   "name": "dsh-session-guard",
-  "version": "3.1.0",
+  "version": "3.1.1",
   "publishConfig": {
     "tag": "dsh-0.1.7"
   },
@@ -68,17 +68,17 @@
   },
   "engines": {
     "node": ">=20",
-    "dsh": ">=0.1.5-rc.2 <0.2.0-0"
+    "dsh": ">=0.1.7-rc.1 <0.1.8-0"
   },
   "dependencies": {
     "@deepseek-ai/schemastery": "^3.18.4"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-client-locale": ">=0.1.7-rc.1 <0.2.0-0",
-    "@deepseek-ai/dsh-client-ui-renderer": ">=0.1.7-rc.1 <0.2.0-0",
-    "@deepseek-ai/dsh-client-ui-settings": ">=0.1.7-rc.1 <0.2.0-0",
-    "@deepseek-ai/dsh-client-ui-slots": ">=0.1.7-rc.1 <0.2.0-0"
+    "@deepseek-ai/dsh-client-locale": ">=0.1.7-rc.1 <0.1.8-0",
+    "@deepseek-ai/dsh-client-ui-renderer": ">=0.1.7-rc.1 <0.1.8-0",
+    "@deepseek-ai/dsh-client-ui-settings": ">=0.1.7-rc.1 <0.1.8-0",
+    "@deepseek-ai/dsh-client-ui-slots": ">=0.1.7-rc.1 <0.1.8-0"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/cordis": {

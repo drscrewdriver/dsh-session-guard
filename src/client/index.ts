@@ -63,6 +63,7 @@ export function apply(ctx: ClientCtx) {
     name: 'dsh-family.tab',
     id: 'session-guard',
     order: 20,
+    label: '会话守护门禁',
     locale: 'session-guard',
     inject: () => ({ scope: ctx.configForms.get<Record<string, unknown>>('session-guard') }),
   }, SessionGuardCard))

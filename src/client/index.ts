@@ -13,17 +13,31 @@
  */
 import { StatusBadge } from './status-badge'
 import { PauseButton } from './pause-button'
+import { SessionGuardCard } from './settings-card'
 
-/** 客户端所需服务：slots（状态徽标）+ locale。 */
-export const inject = ['slots', 'locale']
+// 起子插件族共用 tab（dsh-thinking-levels 注册并声明该子席位）；本插件只贡献
+// 卡片，不注册任何设置席位。thinking-levels 缺席时 inject 静默等待（不阻塞
+// 客户端半），设置卡缺席，其余功能不受影响。
+declare module '@deepseek-ai/dsh-client-ui-slots' {
+  interface SlotMap {
+    'dsh-family.tab': { kind: 'list'; scope: 'root' }
+  }
+}
+
+/** 客户端所需服务：slots（状态徽标）+ locale + configForms（共用 tab 设置卡）。 */
+export const inject = ['slots', 'locale', 'configForms']
 
 /** 轻量 ctx 类型（仅本客户端用到的方法；构建时类型被剥离）。 */
 interface SlotsFace {
   inject: (_name: string, _fn: () => unknown) => () => void
   register: (_options: Record<string, unknown>, _component: unknown) => () => void
 }
+interface ConfigFormsFace {
+  get: <T>(_entryId: string) => import('./scope-face').SettingsScope<T>
+}
 interface ClientCtx {
   slots: SlotsFace
+  configForms: ConfigFormsFace
 }
 
 export function apply(ctx: ClientCtx) {
@@ -43,4 +57,13 @@ export function apply(ctx: ClientCtx) {
     order: 40,
     locale: 'session-guard',
   }, StatusBadge))
+
+  // 插件族共用 tab 贡献卡：读写本插件 entry（`session-guard`）的 volatile 配置。
+  ctx.slots.inject('dsh-family.tab', () => ctx.slots.register({
+    name: 'dsh-family.tab',
+    id: 'session-guard',
+    order: 20,
+    locale: 'session-guard',
+    inject: () => ({ scope: ctx.configForms.get<Record<string, unknown>>('session-guard') }),
+  }, SessionGuardCard))
 }

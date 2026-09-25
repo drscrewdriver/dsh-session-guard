@@ -4,7 +4,7 @@
   "main": "./src/index.js",
   "description": "高峰自动会话门：step 级门控 + 周末模式 + 高峰自动暂停 + 官方源二维判定 + 会话级冻结 + 后端自动重试。",
   "engines": {
-    "dsh": ">=0.1.0-rc.7 <0.2.0-0"
+    "dsh": ">=0.1.0-rc.7 <0.1.2-0"
   },
   "contributes": {
     "tools": [],

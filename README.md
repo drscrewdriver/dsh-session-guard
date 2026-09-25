@@ -34,13 +34,14 @@
 > | --- | --- | --- | --- | --- |
 > | 0.1.0-rc.7 ~ 0.1.1-rc.x | ➖ 不在本线（`legacy/0.1.2` 之前的历史版本） | `ctx.settings.register(ns, schema, { base })` | ✅ 形状一致 | ✅ 无平台值导入 |
 > | 0.1.2-alpha.2+ / 0.1.2-rc.1 | ➖ 不在本线 → 用 `legacy/0.1.2`（npm `@dsh-0.1.2`） | `register` 仍保留（另加 `installSection`） | ✅ 形状一致 | ✅ 无平台值导入 |
-> | **0.1.5-rc.2** | ✅（**本线**，dist-tag `dsh-0.1.5`） | `register` 仍在（字符串命名空间） | ✅ 事件经 `snapshotEvents()` 双路径读取 | ✅ |
+> | **0.1.7-rc.1+** | ✅（**本线**，dist-tag `dsh-0.1.7`） | 声明式：Config `.volatile()` 字段由宿主投影成表单，`register` 已删除 | ✅ 事件经 `snapshotEvents()` 双路径读取 | ✅ 客户端设置卡改 `configForms` |
+> | 0.1.5-rc.2 | ✅（`compat/0.1.5` 分支，dist-tag `dsh-0.1.5`） | `register` 仍在（字符串命名空间） | ✅ 事件经 `snapshotEvents()` 双路径读取 | ✅ |
 >
-> **本线身份**：分支 `compat/0.1.5`，npm 版本号 **`3.0.0`**（semver），dist-tag **`dsh-0.1.5`**。
+> **本线身份**：分支 `compat/0.1.7`，npm 版本号 **`3.1.0`**（semver），dist-tag **`dsh-0.1.7`**。
 > `package.json` 与 `dsh.plugin.json` 的 `engines.dsh` 与三个 `@deepseek-ai/dsh-client-*`
-> peer 下界统一为 `>=0.1.5-rc.2 <0.2.0-0`。
+> peer 线统一为 `>=0.1.7-rc.1 <0.2.0-0`。
 > 历史上 README 曾用「2.x / 3.x」当**线代号**，那是叙述习惯，**不是注册表里可拉取的版本号** ——
-> 请一律以 npm 版本号 `0.3.1`（0.1.2 线）与 `3.0.0`（0.1.5 线）为准。
+> 请一律以 npm 版本号 `0.3.1`（0.1.2 线）、`3.0.0`/`3.0.1`（0.1.5 线）与 `3.1.0`（0.1.7 线）为准。
 >
 > **其它线的落点**：DSH `0.1.2-rc.x` 宿主请使用分支 **`legacy/0.1.2`**（npm dist-tag
 > `dsh-0.1.2`，版本 `0.3.1`）。**`main` 已冻结在 `0.2.0-beta.1`，不是 0.1.2 线的发布分支。**

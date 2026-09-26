@@ -39,7 +39,7 @@ const BASE_CFG = {
 
 const silent = { info() {}, warn() {}, error() {} }
 
-function harness({ cfg = {}, agents, classify, now = PEAK_NOW, isRoot } = {}) {
+function harness({ cfg = {}, agents, classify, now = PEAK_NOW, isRoot, isFreeRunActive } = {}) {
   let listener = null
   const ctx = {
     on: (name, fn) => {
@@ -67,6 +67,7 @@ function harness({ cfg = {}, agents, classify, now = PEAK_NOW, isRoot } = {}) {
     logger: silent,
     clock: now,
     isRoot,
+    isFreeRunActive,
   })
   const off = guard.install()
   return {
@@ -92,6 +93,36 @@ async function assertPending(p) {
 }
 
 // ── task_11：hold 路径 ──
+
+test('畅跑生效中的会话：峰内请求也直接放行（不 hold）', async () => {
+  const h = harness({ isFreeRunActive: (id) => id === 's1' })
+  const r = await h.call(PAYLOAD)
+  assert.deepEqual(r, CONFIG, '畅跑会话的请求必须原样放行（config 未被篡改）')
+  assert.equal(h.deferrals.size(), 0, '不应留下挂起记录')
+  assert.equal(h.guard.stats().pass, 1, '应计为 pass')
+})
+
+test('畅跑只豁免该会话：其他会话照常被 hold', async () => {
+  const h = harness({ isFreeRunActive: (id) => id === 'other' })
+  const p = h.call(PAYLOAD)
+  await assertPending(p)
+  assert.equal(h.deferrals.size(), 1, '非畅跑会话仍应被挂起')
+  h.deferrals.releaseAll('test')
+  assert.deepEqual(await p, CONFIG)
+})
+
+test('畅跑判定回调抛异常 → 退回常规判定（fail-closed 到既有行为）', async () => {
+  const h = harness({
+    isFreeRunActive: () => {
+      throw new Error('boom')
+    },
+  })
+  const p = h.call(PAYLOAD)
+  await assertPending(p)
+  assert.equal(h.deferrals.size(), 1, '异常时仍按峰谷规则 hold')
+  h.deferrals.releaseAll('test')
+  assert.deepEqual(await p, CONFIG)
+})
 
 test('高峰 + 官方 → 请求不发出（promise 挂起），且不抛错', async () => {
   const h = harness()

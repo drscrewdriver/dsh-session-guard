@@ -4,7 +4,7 @@
  * 状态：NORMAL ↔ PAUSED_PEAK。
  * 副作用（暂停/恢复具体会话）由 host 的 tick 执行，这里只做判定与迁移检测。
  */
-import { shouldPause } from './time.js'
+import { shouldPause } from './time-policy.js'
 
 export const STATES = {
   NORMAL: 'NORMAL',

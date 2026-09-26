@@ -14,7 +14,8 @@ import { createProviderDirectory } from './provider-directory.js'
 import { createDeferrals } from './deferrals.js'
 import { createRequestGuard } from './request-guard.js'
 import { createTargets, UNKNOWN } from './targets.js'
-import { msUntilOffPeak, shouldPause } from './time.js'
+import { msUntilOffPeak, shouldPause } from './time-policy.js'
+import { PAUSED_REASON_PEAK } from './pause-gate.js'
 
 /**
  * @param {object} deps
@@ -27,6 +28,7 @@ import { msUntilOffPeak, shouldPause } from './time.js'
  * @param {typeof setTimeout} [deps.setTimer]
  * @param {typeof clearTimeout} [deps.clearTimer]
  * @param {boolean} [deps.unrefTimers]
+ * @param {(sessionId:string, date:Date)=>boolean} [deps.isFreeRunActive] 畅跑生效中的会话不拦（v0.3.0）
  */
 export function createWiring({
   ctx,
@@ -38,6 +40,7 @@ export function createWiring({
   setTimer = setTimeout,
   clearTimer = clearTimeout,
   unrefTimers = true,
+  isFreeRunActive,
 }) {
   const warn = (m) => logger?.warn?.(`[session-guard] ${m}`)
   const targets = createTargets()
@@ -133,14 +136,26 @@ export function createWiring({
     pausedByPeak.delete(sessionId)
     logger?.info?.(`[session-guard] target switched to non-official "${rec.provider}" (matchedBy=${cls.matchedBy}) — auto-resuming ${sessionId}`)
     queueMicrotask(() => {
-      Promise.resolve(gate.resume(sessionId, { choice: 'rerun' })).catch((e) => {
+      Promise.resolve(gate.resume(sessionId, { choice: 'rerun', auto: true })).catch((e) => {
         warn(`auto-resume failed for ${sessionId}: ${String(e && e.message || e)}`)
       })
     })
   }
 
-  /** 该会话是否应因高峰被暂停（官方 / unknown 才停；已知非官方放行）。 */
+  /** 该会话此刻是否处于畅跑豁免中（唯一的畅跑判定入口）。 */
+  function freeRunAllows(sessionId) {
+    if (typeof isFreeRunActive !== 'function') return false
+    try {
+      return isFreeRunActive(sessionId, clock()) === true
+    } catch {
+      return false // 判定异常 → 退回常规峰谷判定（fail-closed 到既有行为）
+    }
+  }
+
+  /** 该会话是否应因高峰被暂停（官方 / unknown 才停；已知非官方、畅跑生效中放行）。 */
   function shouldPauseSession(cfg, sessionId) {
+    // 畅跑（单会话限时豁免）优先级最高：窗口内一律不拦。
+    if (freeRunAllows(sessionId)) return false
     if (cfg.providerGuard !== true) return true // 退回现有纯时间判定：全部暂停
     const provider = targets.providerOf(sessionId)
     if (provider === UNKNOWN) return true // 未知保守处理
@@ -148,7 +163,7 @@ export function createWiring({
     return cls.official
   }
 
-  /** 入峰：暂停 running 会话（跳过已 hold / 已暂停 / 目标非官方）。 */
+  /** 入峰：暂停 running 会话（跳过已 hold / 目标非官方 / 畅跑生效中）。 */
   async function onEnterPeak(cfg) {
     const agents = ctx && ctx.agents
     if (!agents) return { paused: [], skipped: [] }
@@ -160,6 +175,11 @@ export function createWiring({
     for (const agent of Array.isArray(roots) ? roots : []) {
       const id = String((agent && agent.id) ?? '')
       if (id === '' || !agent || agent.status !== 'running') continue
+      // 畅跑生效中：单独报原因，便于排查「为什么这个会话没被拦」。
+      if (freeRunAllows(id)) {
+        skipped.push({ sessionId: id, why: 'free-run' })
+        continue
+      }
       // 互斥铁律：请求已被 hold 的会话，请求级挂起本身就是暂停，绝不再调 pauseGate
       if (deferrals.has(id)) {
         skipped.push({ sessionId: id, why: 'held' })
@@ -176,7 +196,7 @@ export function createWiring({
         continue
       }
       try {
-        const r = await gate.stopNextTurn(id, { mode: cfg.pauseMode, reason: cfg.pauseReason })
+        const r = await gate.stopNextTurn(id, { mode: cfg.pauseMode, reason: cfg.pauseReason, pausedReason: PAUSED_REASON_PEAK })
         if (!r || r.ok !== false) pausedByPeak.add(id)
         paused.push({ sessionId: id, via: r && r.via, ok: r && r.ok })
       } catch (e) {
@@ -246,7 +266,8 @@ export function createWiring({
       const id = String((agent && agent.id) ?? '')
       if (id === '') continue
       try {
-        await gate.resume(id, { choice: 'rerun' })
+        // auto:true → 只放行峰谷策略暂停的会话，用户手动 /pause 的不动（spec §五）。
+        await gate.resume(id, { choice: 'rerun', auto: true })
       } catch (e) {
         warn(`resume failed for ${id}: ${String(e && e.message || e)}`)
       }

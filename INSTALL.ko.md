@@ -35,7 +35,18 @@ dsh web을 재시작하고 페이지를 새로고침.
 `offPeakAutoResume`, `weekendMode`, `deferredResume`, `queueFallback`, `retryEnabled`;
 텍스트/목록 항목: `officialProviders`, `officialBaseURLs`, `deferredResumeText`.
 
+0.3.0부터 피크/주말 정책은 JSON 파일로도 설정할 수 있습니다(해석 순서:
+`$DSH_SESSION_GUARD_CONFIG` → `$DSH_HOME/config/session-guard.json` →
+`<cwd>/config/session-guard.json` → `<plugin>/config/session-guard.json`). 설정 UI에서 명시한 값이
+여전히 우선합니다. 재시작 없는 재로드는
+`POST /session-guard/rpc {"action":"reloadConfig"}`. 자세한 내용은
+[README.ko.md](./README.ko.md)의 "설정 가능한 피크 정책"을 참고하세요.
+
 세션 UI의 상태 배지 확인—현재 단계(`高峰·拦官方` / `高峰·全部暂停` / `谷时` / `周末`) 표시.
+옆의 "畅跑" 버튼(order 20, input-traffic 동결 버튼 왼쪽)은 문구가 "畅跑"(작업이 2개 이상이면 `畅跑 ×N`)로
+고정되며, **클릭은 항상 畅跑 작업 관리 패널을 엽니다**. 거기서 **단일 세션**의 시간 한정 피크 면제를
+새로 만들거나 일시정지 / 재개 / 삭제할 수 있습니다(일시정지는 세션급 스위치가 아니라 작업별).
+자세한 내용은 [README.ko.md](./README.ko.md)의 "畅跑(free-run)"을 참고하세요.
 
 특정 라우트의 공식 소스 판정 확인(host 라우트, 재시작 불필요):
 

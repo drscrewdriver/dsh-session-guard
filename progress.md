@@ -54,3 +54,13 @@
 | node --test tests/ 目录参数失败(Windows) | 用 glob | `node --test "tests/*.test.mjs"` |
 | bridge 测试被残留 ~/.dsh/session-guard/s1.json 污染 | 加临时目录隔离 | tmpStore(t) |
 | D1 测试用例 UTC/北京边界算错 | 改用 08-21T16:30Z（北京周六00:30=UTC周五） | 修正用例 |
+
+## v0.3.0（文档更新）
+- 峰谷策略改为**可配置**（`config/session-guard.json`，四级解析顺序，settings UI 仍优先，
+  损坏 fail-open，`reloadConfig` 热重载）+ 新增 `TimePolicyResolver` 三模式
+  （OFF_PEAK / PEAK / NORMAL）+ 高峰前提醒与倒计时询问。
+- 注意：上面 P2–P4 与「待接入真实 DSH 环境」等条目记录的是当时（固定 09:00–12:00 /
+  14:00–18:00 北京时间、硬编码）的实现状态，属于历史记录，**未回改**。
+- 本次改动**只落在文档**（CHANGELOG 中/日/韩、README 中/英/日/韩、INSTALL 四语、findings.md、
+  progress.md）。注意：工作区里同时存在**功能实现本身**的未提交改动（`src/`、`tests/`、
+  `config/`、`lib/`、`package.json` 等），那些不是本次文档更新产生的。

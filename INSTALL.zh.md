@@ -35,7 +35,16 @@ dsh plugin --profile web add dsh-session-guard@dsh-0.1.5
 `offPeakAutoResume`、`weekendMode`、`deferredResume`、`queueFallback`、`retryEnabled`；
 文本/列表项：`officialProviders`、`officialBaseURLs`、`deferredResumeText`。
 
+0.3.0 起峰谷/周末策略也可用 JSON 文件配置（解析顺序：`$DSH_SESSION_GUARD_CONFIG` →
+`$DSH_HOME/config/session-guard.json` → `<cwd>/config/session-guard.json` →
+`<plugin>/config/session-guard.json`）。设置界面里显式设过的值仍然优先；改完可用
+`POST /session-guard/rpc {"action":"reloadConfig"}` 热重载，无需重启。详见
+[README.md](./README.md) 的「可配置峰谷策略」。
+
 检查会话界面中的状态徽标——显示当前阶段（`高峰·拦官方` / `高峰·全部暂停` / `谷时` / `周末`）。
+旁边的「畅跑」按钮（order 20，在 input-traffic 冻结按钮左侧）文案固定为「畅跑」（多于一个任务时为
+`畅跑 ×N`），**点击永远打开畅跑任务管理面板**，在其中新建、暂停 / 恢复或删除**单个会话**的限时峰谷豁免
+（暂停按任务逐个生效，不是会话级开关）。详见 [README.md](./README.md) 的「畅跑（free-run）」。
 
 查看某个路由的官方源判定（host 路由，无需重启）：
 

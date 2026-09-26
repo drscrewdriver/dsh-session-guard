@@ -51,12 +51,16 @@
 
 A cordis plugin assembled via the `dsh plugin` command and a bundle patch — no dsh source changes, no PR required.
 
-> 💡 **Why recommended**: DeepSeek moved to **peak/off-peak billing** on 2026-08-17 — the peak window (Beijing time 09:00-12:00, 14:00-18:00) costs **2×** the off-peak rate. This plugin auto-pauses running sessions during peak and auto-resumes off-peak, saving up to **50%** on long-running sessions; manual freeze (via input-traffic button) provides per-session precision.
+> 💡 **Why recommended**: DeepSeek moved to **peak/off-peak billing** on 2026-08-17 — the peak window (09:00-12:00, 14:00-18:00 Beijing time by default) costs **2×** the off-peak rate. This plugin auto-pauses running sessions during peak and auto-resumes off-peak, saving up to **50%** on long-running sessions; manual freeze (via input-traffic button) provides per-session precision.
+
+> ⚙️ **Since v0.3.0 the peak policy is configurable**: windows, timezone, weekday scoping and the weekend rule all come from `config/session-guard.json` — nothing is hardcoded any more. There is also **free-run**, a per-session time-boxed exemption from peak pausing (see "Free-run" below).
 
 ## Features
 
-- **Weekend mode**: detects weekends (timezone-correct via `Intl.DateTimeFormat`, no裸 `getUTCDay()` Beijing-boundary 8-hour bug) → weekends ignore peak/off-peak, run freely.
-- **Peak auto-pause (global)**: on peak entry (and not weekend), auto-pauses all running root sessions; off-peak auto-resumes all — **global switch, no manual action needed**.
+- **Configurable peak policy (v0.3.0)**: the peak/weekend policy lives in `config/session-guard.json` (four-step resolution order; values set in the Settings UI still win). Three modes `OFF_PEAK / PEAK / NORMAL`, multiple windows, cross-midnight and weekday-limited windows; a malformed file fails open, `reloadConfig` hot-reloads.
+- **Free-run (per-session)**: one "free-run" button in the composer schedules one or more time-boxed windows for **a single session** — inside a window peak is ignored and the session runs at full speed, and the window ends automatically, returning the session to the normal peak verdict. The schedule is persisted, so a restart does not lose it.
+- **Weekend mode**: detects weekends (timezone-correct via `Intl.DateTimeFormat`, no bare `getUTCDay()` Beijing-boundary 8-hour bug) → weekends ignore peak/off-peak, run freely.
+- **Peak auto-pause (global)**: on peak entry (and not weekend), auto-pauses all running root sessions; off-peak auto-resumes the sessions it paused (never a manual `/pause`) — **global switch, no manual action needed**.
 - **Official-source guard (`providerGuard`)**: during peak hours only requests whose target is a DeepSeek official source are blocked; local/third-party providers (e.g. `local-35b`) keep running. Verdict order = explicit id list → `baseURL` endpoint → catalog default endpoint → builtin id.
 - **Request-level backstop + deferral queue**: sessions started after peak entry, or switched to an official source mid-session, are caught by the `agent/request` guard (default `hold`: the request is suspended without an error and released off-peak).
 - **Per-session freeze / resume**: `sessionGuard` redundant port + `POST /session-guard/rpc`, input-traffic freeze button per-session passthrough; also provides `/pause /resume /cancel` manual commands.
@@ -89,8 +93,8 @@ Restart dsh web and refresh the page after installation.
 
 Additional configuration:
 
-- `timezone` (default Asia/Shanghai) — used for **weekend detection** and badge display; **does not affect peak/off-peak detection** (always Beijing time);
-- `peakWindows` (default 09:00–12:00 / 14:00–18:00) — peak windows in Beijing time (UTC+8), matching DeepSeek's official billing;
+- `timezone` (default Asia/Shanghai) — an IANA name that drives **all** time decisions (weekday / weekend / peak-window matching); `peakPolicy.timezone` overrides the peak-window evaluation alone (see "Configurable peak policy" below);
+- `peakWindows` / `peakPolicy` (default 09:00–12:00 / 14:00–18:00, weekdays) — the authoritative source for windows and the weekend rule is now the config file `config/session-guard.json`; values set in the Settings UI remain the highest priority;
 - `pauseMode` (`safe`/`force`), `pauseReason` (`wait`/`stop`);
 - `stepGateTimeoutMs` (default 300000) — step-gate hold timeout; on expiry the gate is released and the session **escalates to a turn-level pause** (anti-deadlock, and no "one step per 5 minutes" token drip);
 - Official-source guard: `officialProviders` (extra official provider ids, comma separated, highest priority), `officialBaseURLs` (official endpoint hosts, default `api.deepseek.com`);
@@ -102,29 +106,164 @@ Additional configuration:
 ### Peak auto-gate (global)
 
 - **Peak entry** (and not weekend): with `stepLevelPause` on, the running turn is **no longer interrupted** — the session runs to the next `agent/pre-step` boundary where the step gate holds it (see below); with it off, calls `gate.stopNextTurn` on all running root sessions (custom session gate truly pauses, or falls back to lock-wait queue per `queueFallback`);
-- **Off-peak / weekend**: first `releaseAll` the held steps (the turn just continues in place), then `gate.resume` **all** sessions — controlled by `offPeakAutoResume`;
-- **Peak timezone**: hardcoded to Beijing time (`Asia/Shanghai`), matching DeepSeek's official billing basis — not affected by the `timezone` setting;
+- **Off-peak / weekend**: first `releaseAll` the held steps (the turn just continues in place), then `gate.resume` the sessions **this guard paused** — controlled by `offPeakAutoResume`. Release runs with `auto: true`, so a session you paused manually with `/pause` is left alone;
+- **Peak timezone**: decided by config — `peakPolicy.timezone` (falling back to `timezone`) drives peak-window evaluation, defaulting to `Asia/Shanghai`, matching DeepSeek's official billing basis. The v0.2.0 "always Beijing time" is no longer hardcoded (see "Configurable peak policy" below);
 - State machine: single-instance `NORMAL ↔ PAUSED_PEAK` (`scheduler.js`), driven by a single 30s tick.
 
 ### Step-level gate (v0.2.0, the token saver)
 
 Hooks the `agent/pre-step` waterfall and holds the turn **before the next step's model request happens**.
 
-- **Hold conditions** (all required): `enabled` + `stepLevelPause` + `step > 1` + peak (Beijing time, not weekend) + official target provider (`providerGuard`; all providers when off) + the session is not request-held + not manually bypassed this peak window;
+- **Hold conditions** (all required): `enabled` + `stepLevelPause` + `step > 1` + peak (per the configured peak timezone, Beijing by default; not weekend) + official target provider (`providerGuard`; all providers when off) + the session is not request-held + not manually bypassed this peak window;
 - **Why `step > 1`**: the first step of a turn is covered by the request-level guard, so the two gates never overlap;
-- **Release paths**: ① the "⏸ paused (resume)" button / `POST /session-guard/rpc {action:'stepResume'}` / `/resume` → lets the current step through and **stops gating this session for the rest of the peak window**; ② off-peak → release all, the turn continues in place (**no followup needed**); ③ freeze button / `/pause` / `/cancel` → release the gate and move to a turn-level pause; ④ `signal` abort → release;
+- **Release paths**: ① `POST /session-guard/rpc {action:'stepResume'}` / `/resume` / the `stepResume` port method → lets the current step through and **stops gating this session for the rest of the peak window**; ② off-peak → release all, the turn continues in place (**no followup needed**); ③ freeze button / `/pause` / `/cancel` → release the gate and move to a turn-level pause; ④ `signal` abort → release;
 - **Timeout escalation**: holding longer than `stepGateTimeoutMs` (default 5 min) releases the gate and **escalates to a turn-level force pause**, resumed off-peak (no deadlock, no token drip);
 - **State**: `GET /session-guard/state?session=<id>` returns `paused: { step, turn }` and `stepGate: { held, since, bypass }`; the service port's `paused` **stays boolean** for compatibility, with `pausedStep` for the step gate;
 - **Not persisted**: the hold is an in-process promise; a restart drops it (no ghost state).
 
-#### Pause / resume session button (provided by session-guard)
+### Configurable peak policy (v0.3.0: `config/session-guard.json`)
 
-The "Pause session" button in the composer's right row (slot `conversation.input.right`, id `session-guard-pause`, order 20, left of input-traffic's "❄ Freeze & append"):
+The peak/weekend policy is **no longer hardcoded** — changing peak hours, the timezone, the weekday scoping or the weekend rule is a config-file edit only. Day to day you edit the **user-level** copy; then `POST /session-guard/rpc {"action":"reloadConfig"}` applies it without a restart.
 
-- not paused → "Pause session", **clickable**: calls `stepPause` and pauses the session **before the next step's model request** (the current step is not interrupted; step 1 is held too, regardless of peak/provider);
-- paused → "Resume session", calls `stepResume`: lets the current step through and stops gating this session for the rest of the peak window;
-- **push updates**: `GET /session-guard/events?session=<id>` (SSE) pushes step-gate state changes **immediately** — when peak auto-holds, the button flips to "Resume session" without waiting for a poll; a 10s `/session-guard/state` poll remains as a fallback (SSE down → still converges);
-- styled to match input-traffic's button in the same row (24px height / 6px radius / 12px font / same CSS tokens), with hover and paused states.
+Resolution order (**first hit wins**):
+
+| # | Path | Level |
+|---|---|---|
+| 1 | `$DSH_SESSION_GUARD_CONFIG` | explicit path |
+| 2 | `$DSH_HOME/config/session-guard.json` | user level (**the normal place to edit**) |
+| 3 | `<cwd>/config/session-guard.json` | project level |
+| 4 | `<plugin>/config/session-guard.json` | bundled default (shipped in the package) |
+
+- The file is the **default layer** for the cordis `settings` namespace: values explicitly set in the Settings UI (Settings → Plugins → session-guard) **still win**; if the `settings` service is unavailable the file values apply directly. `reloadConfig` reads the settings service's **raw user layer**, so a reload changes every key you have **not** personally overridden in the panel — panel edits keep winning over the file;
+- **Values are validated; a bad value can never quietly break the guard**: an unreadable file, invalid JSON, a non-array/invalid `peakWindows`, or an out-of-range scalar is recorded in `errors` and the **affected key keeps its default** — the plugin never silently ends up with "no peak windows" or a non-functional guard. An explicit `"peakWindows": []` is still honoured as the deliberate "no peak windows" intent;
+- **A malformed file never blocks startup (fail open)**: errors are collected, logged as warnings (at startup and again on `reloadConfig`) and the built-in defaults are used — `GET /session-guard/settings` and `GET /session-guard/diag` expose the cause under `configFile.errors`. Even when file values cannot pass the settings schema, the settings panel **is still registered using the built-in defaults** (never silently removed); the bad values are ignored and a warning is logged.
+
+```json
+{
+  "enabled": true,
+  "timezone": "Asia/Shanghai",
+  "peakPolicy": {
+    "timezone": "Asia/Shanghai",
+    "peakWindows": [
+      { "name": "morning",   "start": "09:00", "end": "12:00", "days": ["mon","tue","wed","thu","fri"] },
+      { "name": "afternoon", "start": "14:00", "end": "18:00", "days": ["mon","tue","wed","thu","fri"] }
+    ]
+  },
+  "weekendPolicy": { "enabled": true, "days": ["sat","sun"], "mode": "offPeak" }
+}
+```
+
+| Field | Default | Meaning |
+|---|---|---|
+| `enabled` | `true` | master switch |
+| `timezone` | `Asia/Shanghai` | IANA name driving **every** decision: weekday, weekend and window matching; **validated against the IANA database**, so an invalid or misspelled zone (e.g. `"Asia/Shangai"`) is rejected and the default kept (aliases such as `Asia/Calcutta` are accepted) |
+| `peakPolicy.timezone` | omitted | overrides **only** the peak-window evaluation — pin peaks to the DeepSeek billing timezone (e.g. `Asia/Shanghai`) while the weekend still follows `timezone`; when omitted it follows `timezone`. Also IANA-validated |
+| `peakPolicy.peakWindows[].name` | — | window name (appears in the `/peak` response) |
+| `peakPolicy.peakWindows[].start` / `end` | — | `HH:MM`, half-open `[start, end)` |
+| `peakPolicy.peakWindows[].days` | omitted/empty = every day | `mon`…`sun`; `start > end` means the window **crosses midnight** and belongs to its **start day** (a `fri` 22:00–06:00 window covers Saturday 01:00) |
+| `weekendPolicy.enabled` | `true` | weekend rule switch |
+| `weekendPolicy.days` | `["sat","sun"]` | which weekdays count as weekend |
+| `weekendPolicy.mode` | `"offPeak"` | currently only `"offPeak"` (the whole weekend is off-peak); an unrecognised `mode` is **rejected with a warning and the weekend rule is disabled** rather than silently accepted |
+
+`peakWindows` supports **multiple** windows. The default behaviour matches v0.2.0: `timezone` defaults to `Asia/Shanghai` and the bundled config omits `peakPolicy.timezone` (which then follows `timezone`), so both resolve to `Asia/Shanghai`; the weekday-scoped windows sit on top of the default weekend rule. The legacy settings shape `peakWindows: [{start,end}]` + `weekendMode: true/false` still works (no `days` = every day).
+
+#### Three modes and their priority (`TimePolicyResolver`)
+
+| Priority | Condition | Mode |
+|---|---|---|
+| 1 | today is a weekend day (per `weekendPolicy`) | **OFF_PEAK** — the whole day, regardless of peak windows |
+| 2 | otherwise a peak window matches | **PEAK** |
+| 3 | otherwise | **NORMAL** (weekday off-peak) |
+
+v0.2.0's two-value verdict is preserved for compatibility: `pause === (mode === PEAK)`, and `reason` keeps its old values `'disabled' | 'weekend' | 'peak' | 'off-peak'` (the legacy `phase` field of `/status` is kept for existing badges too).
+
+#### Free-run (v0.3.0)
+
+The "free-run" button in the composer's right row (slot `conversation.input.right`, id `session-guard-free-run`, order 20, left of input-traffic's "❄ Freeze & append") schedules **time-boxed exemptions from peak pausing** for **one session**.
+
+**Button**:
+
+- The label is **fixed**: `畅跑`, or `畅跑 ×N` when there is more than one task — the text no longer encodes state;
+- **Clicking always opens the free-run task-management panel** (it never performs an action directly); whether free-run is currently in effect is shown by the button's **highlight colour** and by the hover tooltip;
+- The tooltip also **lists every task with its time range and status**, and states that clicking opens the management panel.
+
+**Panel layout (one popup, no additional UI surface)**:
+
+- Three text buttons in a toolbar at the top:
+  1. `新建畅跑任务` — toggles an inline form (开始 / 结束, each a native date picker + hour select, **hour granularity**: the start hour H means `H:00` and the end hour H means `H:59`, so the end hour is **fully included**) with `确定` / `取消`;
+  2. `暂停全部任务` — pauses every not-yet-ended task; when all not-yet-ended tasks are already paused the label flips to `恢复全部任务`; disabled when there is no task to act on;
+  3. `删除全部任务` — deletes all tasks; disabled when there are no tasks.
+- Two icon buttons per task row on the right:
+  1. `⏸` / `▶` — pause / resume **that single task** (the icon and tooltip flip with the task's state); disabled for tasks that have already ended;
+  2. `×` — delete that task.
+- Each row also shows the time range and a status tag: `进行中` / `已暂停` / `待开始` / `已结束`;
+- The panel header shows the title, the timezone the times are interpreted in, and a small `×` to close. Clicking outside, or pressing Esc, also closes it.
+
+Semantics, stated precisely:
+
+- **Per-session**: only the session whose button was used is exempt; every other session is paused during peak as usual;
+- **Pausing is per task**, not per session: there is no longer a session-level enable/disable switch. Pausing one task leaves the others working normally;
+- **When free-run is in effect**: exactly when **at least one not-paused task covers the current moment**. A paused task simply does not participate;
+- Tasks are **absolute start/end instants**, half-open `[from, to)`, with **hour precision and an inclusive end hour**: the start hour H is `H:00` and the end hour H is `H:59`, so "开始 12 时 → 结束 14 时" = `12:00 → 14:59` (hours 12, 13 and 14) and "开始 12 时 → 结束 12 时" covers just that one hour; "结束 23 时" = `23:59`, making the last hour of the day (23:00–24:00) selectable; the host's window stays half-open `[from, to)` — the picker simply hands it the `:59`; the form's values are interpreted in the configured `timezone` (the panel labels it — the same zone used for `peakWindows` and the weekend rule);
+- `from` may be **soon or far in the future**; a `from` earlier than now is clamped to now, so "start right away" works;
+- **One-shot**: each task ends automatically at `to` and stops matching — that is its normal lifecycle, **not a configuration error**, so it is **not reported as an error**; the user can add new tasks any time;
+- **Automatic merging only happens between windows with the same paused state**: overlapping or adjacent windows (adjacent = "run straight through") with the **same paused state** are merged; a paused window and an enabled window that overlap are both kept (the enabled one still takes effect over the time it covers); up to **8** tasks after merging, beyond which adding fails with a clear error;
+- A paused task produces **no automatic transition** (it will not start by itself); it only takes effect again when the user presses `▶` / `恢复全部任务`;
+- Tasks are **persisted** (a per-session JSON file in the plugin's own state directory), because `from` may be in the future and a dsh restart must not lose the schedule;
+- While free-run is in effect the session is not held anywhere: the automatic turn-level/step-gate pause skips it, and a request that would otherwise be held at `agent/request` is let through (the plugin added a per-session `release` to let an already-held request proceed);
+- When free-run stops applying (all covering tasks paused, or a task's window ends while still in peak), the session is **suspended again** and resumes automatically at the next off-peak — i.e. exactly "the session is suspended automatically and continues automatically in the valley";
+- It does not affect `providerGuard`, the manual `/pause` command, the weekend rule, or the global peak state machine (`GET /session-guard/status` stays global — free-run is a per-session concept and does not change the global badge).
+
+#### Pause / resume semantics (since v0.3.0)
+
+- `pause` reuses the existing session gate: it saves the pause snapshot, waits for a safe boundary, and now also records `pausedReason` — peak-policy pauses use `"peak_window"`, an explicit `/pause` uses `"manual"`;
+- Automatic release (peak exit, weekend, target switching away from an official provider) passes `auto: true`, so it **only resumes sessions the guard paused**: **a session the user paused manually is left alone**. A manual `/resume` **always works**;
+- Resume happens when the mode is no longer PEAK — covering both OFF_PEAK (weekend) and NORMAL (weekday valley);
+- `GET /session-guard/state` now returns `paused.reason`.
+
+#### Route deltas
+
+- `GET /session-guard/peak` — **new**: live mode (PEAK/OFF_PEAK/NORMAL), active window name, minutes until peak, next peak, ms until off-peak, the normalized policy;
+- `GET /session-guard/status` — adds `mode` / `reason` / `windowName` / `minutesUntilPeak` / `peakTimezone` / `weekendDays` / the resolved `configFile` path, and **no longer reports `billingTimezone`**;
+- `GET /session-guard/settings` — adds `configFile: {path, candidates, errors}`;
+- `GET /session-guard/diag` — adds `configFile` and a `freeRun` block (`{tracked, active, persisted, root}`);
+- `GET /session-guard/events` (SSE) — only `step` events (step-gate state changes pushed immediately);
+- `GET /session-guard/state?session=<id>` — adds a `freeRun` object: `{ state, active, available, timezone, windows: [{id, from, to, fromInput, toInput, fromDisplay, toDisplay, paused, status}], activeId, msRemaining, nextStartMs, nextStartDisplay }` — note the new `active` boolean (replacing the removed `enabled` boolean), and that each window now carries `paused` while its `status` can be `active` / `paused` / `scheduled` / `ended`;
+- `POST /session-guard/rpc` — adds the plugin-level action `reloadConfig` (which **does not need a `sessionId`**) and the session-level free-run actions `freeRunAdd {sessionId, from, to}` (create a task; merges with same-state overlapping/adjacent tasks), `freeRunRemove {sessionId, id}` (delete one task), `freeRunPause {sessionId, id}` / `freeRunResume {sessionId, id}` (pause / resume **one** task), `freeRunPauseAll {sessionId}` / `freeRunResumeAll {sessionId}` (pause / resume every not-yet-ended task — the toolbar's second button) and `freeRunClear {sessionId}` (delete all tasks — the toolbar's third button). The old session-level `freeRunSuspend` / `freeRunResume` actions (which took no `id`) are **removed**. Invalid input (and an unknown task `id`) returns `{ok:false, error}` explaining why (e.g. `to` must be later than `from`).
+
+#### The default peak definition, and "Chinese statutory holidays are NOT recognised" (important limitation)
+
+**The shipped default peak definition**, in one sentence: timezone `Asia/Shanghai` (Beijing time); **peak** = Monday–Friday
+`09:00–12:00` and `14:00–18:00` (scoped by `peakWindows[].days: [mon…fri]`); **everything else is idle** (including weekends
+— but **not** statutory holidays, see the next paragraph). Changing hours, timezone or the weekend rule is a config-file edit
+only — see the tables above.
+
+**The plugin does not recognise Chinese statutory holidays.** There is no holiday calendar: a statutory holiday that falls
+on a weekday is treated as an **ordinary weekday**, so if it lands inside a peak window it **is** peak and the guard **will
+pause** the session (e.g. 10:00 on a weekday inside the National Day, Dragon Boat, Mid-Autumn or Spring Festival holiday is
+PEAK). This is a **deliberate scope decision** — holiday calendars, like 调休 (make-up workdays), task scheduling and
+multi-session management, are explicitly out of scope.
+
+**Weekends, by contrast, are unconditionally idle — including 调休 make-up workdays**: a Saturday designated a working day
+by the State Council is still `OFF_PEAK` and is never treated as peak.
+
+**"Idle" means "not paused"**, and it covers two internal modes: `OFF_PEAK` (weekend, all day) and `NORMAL` (weekdays
+outside the peak windows). Only `PEAK` triggers pausing — stated once so the three-mode vocabulary is not confusing.
+
+**There is currently no per-date configuration** — `peakWindows[].days` is day-of-week granularity only, so a single
+specific date **cannot** be excluded by editing the config file (a value like `"2026-10-01"` is not recognised). The
+practical options today are to turn the guard off for that day (`enabled` in `config/session-guard.json`, or the Settings
+panel) or accept that the session will be paused during that day's peak windows.
+
+> If holiday support is ever wanted, the natural shape given the existing architecture would be a
+> `holidays: ["YYYY-MM-DD", …]` list in `config/session-guard.json` evaluated in the configured timezone — **not implemented today**.
+
+#### Behaviour changes and limitations (stated honestly)
+
+- **Default peak windows now carry `days: ["mon"…"fri"]`**: combined with the default weekend rule the effective behaviour is unchanged, but if you disable the weekend rule **and** keep the shipped default windows, Saturday/Sunday are no longer peaks — widen `days` (or omit it) if you want weekend peaks;
+- **Peak windows are now evaluated in the configured timezone**: a user who explicitly sets `timezone` to a non-Beijing zone will see peaks move (that is the point of the feature); pin `peakPolicy.timezone: "Asia/Shanghai"` to keep billing-aligned peaks. With the default `timezone` this is a no-op;
+- **Automatic off-peak release no longer overrides a manual `/pause`**;
+- **Explicitly NOT implemented**: holiday calendars (see "Chinese statutory holidays are NOT recognised" above), make-up workdays, task scheduling, multi-session management.
 
 ### Session locking (freeze)
 
@@ -152,7 +291,7 @@ A **read-only** status badge is rendered on the right side of the composer input
 | `off-peak` | 谷时 | `sg-off` | Off-peak hours, sessions running normally |
 | `weekend` | 周末 | `sg-weekend` | Weekend (when weekend mode is on), ignore peak/off-peak |
 
-- **Polling**: requests `GET /session-guard/status` every 15 seconds for `phase`, `providerGuard`, `held`, `deferred`;
+- **Polling**: requests `GET /session-guard/status` every 15 seconds for `phase`, `providerGuard`, `held`, `deferred` (since v0.3.0 `/status` also reports `mode` / `reason` / `windowName` / `minutesUntilPeak` / `peakTimezone` / `weekendDays` / `configFile`; `phase` is kept for compatibility);
 - **Fail-open**: route unreachable, network error, or `enabled` off → badge silently hidden, no session affected;
 - **Independent of input-traffic**: the badge is rendered by session-guard's client code alone — **input-traffic is not required**. input-traffic only provides the freeze button, which is unrelated to the badge;
 - **Tooltip**: hovering shows `phase · timezone · weekend mode · verdict scope · held/deferred counts`.
@@ -194,10 +333,10 @@ During peak hours the plugin does not blanket-pause sessions: it first decides w
 
 ### Timezone handling
 
-- **Peak/off-peak detection**: always uses **Beijing time (UTC+8)** via `BILLING_TIMEZONE = 'Asia/Shanghai'`, matching DeepSeek's official billing basis. This is **hardcoded** and not affected by the `timezone` setting;
-- **Weekend detection**: uses the user-configured `timezone` (e.g. `Asia/Tokyo`, `Asia/Seoul`), because "weekend" is a local concept;
+- **Peak/off-peak detection**: `timezone` (default `Asia/Shanghai`) drives **all** decisions — weekday, weekend and peak-window matching. Since v0.3.0 this is **not hardcoded**: `peakPolicy.timezone` optionally pins peak evaluation to the DeepSeek billing zone while the weekend follows the local `timezone`;
+- **Weekend detection**: uses the configured `timezone` (e.g. `Asia/Tokyo`, `Asia/Seoul`), because "weekend" is a local concept;
 - `Intl.DateTimeFormat` is used for timezone projection — invalid IANA timezone names throw `RangeError`, caught by fail-open and falling back to `Asia/Shanghai`;
-- Peak windows are **left-closed, right-open** `[start, end)`, supporting cross-midnight windows (e.g. `22:00–06:00`);
+- Peak windows are **left-closed, right-open** `[start, end)`, supporting cross-midnight windows (e.g. `22:00–06:00`, which belong to their **start day**);
 - The `timezone` setting works identically across all UI languages (zh/en/ja/ko) — IANA timezone names are locale-independent.
 
 ### Division of labour with input-traffic: one "stops", one "orders"
@@ -240,7 +379,7 @@ user input ──(input-traffic picks the tier)──▶ next-step / next-turn p
 
 **No crossing over**: input-traffic does not listen to `agent/pre-step` / `agent/request` (the only exception is the "interrupt" tier's explicit `cancel()`, which the user asked for); this plugin never rewrites `next-step` / `next-turn` content or order.
 
-Buttons: this plugin's "Pause session / Resume session" (order 20) and input-traffic's "❄ Freeze & append / Resume & append" (order 30) sit side by side and replace neither — the former owns the step gate, the latter owns queue detach + turn-level freeze.
+Buttons: this plugin's "free-run" (order 20) and input-traffic's "❄ Freeze & append / Resume & append" (order 30) sit side by side and replace neither — the former schedules a time-boxed peak exemption for one session, the latter owns queue detach + turn-level freeze.
 
 ## Redundant port `sessionGuard`
 
@@ -258,22 +397,25 @@ Buttons: this plugin's "Pause session / Resume session" (order 20) and input-tra
 
 ## HTTP routes
 
-- `GET /session-guard/state?session=<id>` — session state (`paused: { step, turn, manual }` / `stepGate` / last target / held / deferred)
-- `GET /session-guard/events?session=<id>` — **SSE**: pushes step-gate state changes immediately (drives the button)
-- `GET /session-guard/settings` — settings + taskControl availability
-- `GET /session-guard/status` — global current phase (status badge polling; includes `stepHeld`)
+- `GET /session-guard/state?session=<id>` — session state (`paused: { step, turn, manual, reason }` / `stepGate` / `freeRun` / last target / held / deferred)
+- `GET /session-guard/peak` — **live peak policy** (`mode` / `windowName` / `minutesUntilPeak` / next peak / `msUntilOffPeak` / normalized policy)
+- `GET /session-guard/events?session=<id>` — **SSE**: only `step` events; step-gate state changes are pushed immediately
+- `GET /session-guard/settings` — settings + taskControl availability + `configFile: {path, candidates, errors}`
+- `GET /session-guard/status` — global current phase (status badge polling; includes `mode` / `reason` / `windowName` / `minutesUntilPeak` / `peakTimezone` / `weekendDays` / `stepHeld` / `configFile`)
 - `GET /session-guard/provider?provider=<id>` — official-source verdict diagnostics (`official` / `matchedBy` / `endpoint`)
-- `GET /session-guard/diag` — runtime diagnostics (includes `stepGate`)
-- `POST /session-guard/rpc` — `{ action: stopNextTurn|resume|lockQueue|unlockQueue|stepPause|stepResume|state, sessionId }`
+- `GET /session-guard/diag` — runtime diagnostics (includes `stepGate` / `configFile` / `freeRun`)
+- `POST /session-guard/rpc` — `{ action: stopNextTurn|resume|lockQueue|unlockQueue|stepPause|stepResume|state|reloadConfig|freeRunAdd|freeRunRemove|freeRunPause|freeRunResume|freeRunPauseAll|freeRunResumeAll|freeRunClear, sessionId }` (`reloadConfig` needs no `sessionId`; `freeRunRemove` / `freeRunPause` / `freeRunResume` also take a task `id`)
 
 ## State storage
 
 Per-session JSON: `$DSH_HOME/.dsh/session-guard/<sessionId>.json` (atomic write; `DSH_SESSION_GUARD_STATE_DIR` override).
 
+Free-run schedules are stored separately, one JSON per session: `$DSH_HOME/.dsh/session-guard/free-run/<sessionId>.json` (atomic write; `DSH_SESSION_GUARD_FREE_RUN_DIR` override) — `from` may be in the future, so a restart must not lose the schedule.
+
 ## Tests
 
 ```bash
-npm test   # node --test tests/*.test.mjs (timezone/weekend/state-machine/session-gate/bridge/retry)
+npm test   # node --test "tests/*.test.mjs" (390 passing: timezone/peak-policy/config-file/weekend/state-machine/gate/free-run/bridge/retry)
 ```
 
 ## Modules
@@ -281,6 +423,7 @@ npm test   # node --test tests/*.test.mjs (timezone/weekend/state-machine/sessio
 | File | Responsibility |
 |---|---|
 | `src/time.js` | Peak/weekend detection (timezone-correct) + `msUntilOffPeak` (exact release timing) |
+| **Time policy resolver (`TimePolicyResolver`)** | **v0.3.0: three-mode verdict (OFF_PEAK / PEAK / NORMAL) + config-file parsing and normalization (`peakPolicy` / `weekendPolicy`)** |
 | `src/scheduler.js` | Pure state machine NORMAL ↔ PAUSED_PEAK |
 | `src/provider.js` | Official-source verdict (pure: endpoint normalization + decision matrix) |
 | `src/provider-directory.js` | Endpoint directory (`llm.listConfigurableProviders` + `settings.get`, full degradation) |
@@ -291,6 +434,7 @@ npm test   # node --test tests/*.test.mjs (timezone/weekend/state-machine/sessio
 | `src/wiring.js` | Wiring/orchestration (peak-entry filter / step-gate wiring / off-peak release / exact timer / dispose) |
 | `src/pause-gate.js` | Custom session gate engine (releases the step gate before pausing) |
 | `src/pause-store.js` | Custom pause state persistence |
+| `src/free-run.js` | **Free-run model + store (v0.3.0)**: window normalization / overlapping-and-adjacent merge / cap of 8 / five derived states / per-session persistence |
 | `src/gate.js` | Session gate driver (custom true pause / fallback lock queue, fail-open) |
 | `src/bridge.js` | `sessionGuard` redundant port |
 | `src/retry.js` | Backend auto-retry (classification/backoff/freeze yield; short-circuits only the exact `PEAK_DEFERRED` code) |
@@ -298,7 +442,7 @@ npm test   # node --test tests/*.test.mjs (timezone/weekend/state-machine/sessio
 | `src/store.js` | Per-session persistent state |
 | `src/settings.js` | Settings sub-panel (schemastery schema + fail-open registration) |
 | `src/index.js` | Host apply (settings/routes/tick/provide service/retry + request guard wiring) |
-| `src/client/` | Browser half (status badge + settings card + four-language dictionaries) |
+| `src/client/` | Browser half (**free-run button** `free-run-button.tsx` + its text projection `free-run-button-text.ts` + status badge + settings card + four-language dictionaries) |
 
 ## License
 

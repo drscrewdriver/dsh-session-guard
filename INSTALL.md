@@ -37,8 +37,18 @@ Open **Settings → Plugins → session-guard**. Toggles: `enabled`, `providerGu
 `offPeakAutoResume`, `weekendMode`, `deferredResume`, `queueFallback`, `retryEnabled`; text/list
 fields: `officialProviders`, `officialBaseURLs`, `deferredResumeText`.
 
+Since 0.3.0 the peak/weekend policy can also be configured with a JSON file (resolution order:
+`$DSH_SESSION_GUARD_CONFIG` → `$DSH_HOME/config/session-guard.json` → `<cwd>/config/session-guard.json`
+→ `<plugin>/config/session-guard.json`). Values set in the Settings UI still win; reload without a
+restart via `POST /session-guard/rpc {"action":"reloadConfig"}`. See "Configurable peak policy" in
+[README.en.md](./README.en.md).
+
 Check the status badge in the session UI — it shows the current phase (`高峰·拦官方` / `高峰·全部暂停`
-/ `谷时` / `周末`).
+/ `谷时` / `周末`). Next to it (order 20, left of input-traffic's freeze button) is the **free-run**
+button: its label is fixed to `畅跑` (or `畅跑 ×N` with more than one task) and clicking it **always
+opens the free-run task-management panel**, where you create, pause/resume or delete per-session,
+time-boxed exemptions from peak pausing (pausing is per task, not per session — see "Free-run" in
+[README.en.md](./README.en.md)).
 
 Check the official-source verdict for one route (host route, no restart needed):
 

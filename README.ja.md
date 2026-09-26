@@ -30,12 +30,16 @@
 
 `dsh plugin` コマンドで组装 + バンドルパッチで装配する cordis プラグイン。dsh ソース変更も PR も不要。
 
-> 💡 **推奨理由**：DeepSeek は 2026-08-17 から**峰谷課金**を開始しました。ピーク時間帯の単価はオフピークの 2 倍。本プラグインはピーク時に実行セッションを自動一時停止、オフピーク時に自動再開し、長時間セッションの費用を最大 **50%** 削減。手動凍結（input-traffic ボタン経由）でセッションごとの精密制御が可能。
+> 💡 **推奨理由**：DeepSeek は 2026-08-17 から**峰谷課金**を開始しました。ピーク時間帯（既定では北京時間 09:00-12:00、14:00-18:00）の単価はオフピークの 2 倍。本プラグインはピーク時に実行セッションを自動一時停止、オフピーク時に自動再開し、長時間セッションの費用を最大 **50%** 削減。手動凍結（input-traffic ボタン経由）でセッションごとの精密制御が可能。
+
+> ⚙️ **v0.3.0 から峰谷ポリシーは設定可能**：時間帯・タイムゾーン・曜日限定・週末ルールはすべて `config/session-guard.json` で決まり、ハードコードはありません。さらに**畅跑（フリーラン）**——単一セッションを時間限定でピーク一時停止から免除する機能も追加（下記「畅跑（free-run）」参照）。
 
 ## 機能
 
+- **設定可能な峰谷ポリシー（v0.3.0）**：峰谷/週末ポリシーは `config/session-guard.json` で定義（4 段階の解決順、設定 UI で明示した値が優先）。3 モード `OFF_PEAK / PEAK / NORMAL`、複数ウィンドウ・深夜跨ぎ・曜日限定に対応。壊れたファイルは fail-open、`reloadConfig` でホットリロード。
+- **畅跑（フリーラン）**：コンポーザーに 1 つの「畅跑」ボタン。**単一セッション**に 1 つ以上の時間限定ウィンドウを排定し、ウィンドウ内は峰谷を無視して通常どおり実行、到点で自動終了して通常の峰谷判定に戻ります。排期は永続化されるため再起動でも失われません。
 - **週末モード**：`Intl.DateTimeFormat` で週末を正しく識別（タイムゾーン正確）→ 週末は峰谷を無視して自由実行。
-- **ピーク自動一時停止（グローバル）**：ピーク入場時（かつ非週末）、全 running ルートセッションを自動一時停止。退峰時自動再開——**グローバルスイッチ、手動不要**。
+- **ピーク自動一時停止（グローバル）**：ピーク入場時（かつ非週末）、全 running ルートセッションを自動一時停止。退峰時は**本プラグインが停止したセッションだけ**を自動再開（手動 `/pause` は対象外）——**グローバルスイッチ、手動不要**。
 - **公式ソース二次判定（`providerGuard`）**：ピーク時は**リクエスト先が DeepSeek 公式ソースの場合のみ**遮断。ローカル/第三者 provider（例 `local-35b`）は通常どおり実行。判定順 = 明示 id リスト → `baseURL` エンドポイント → catalog 既定エンドポイント → 内蔵 id。
 - **リクエスト級バックストップ + 延後キュー**：ピーク入場後に起動したセッション、途中で公式ソースへ切り替えたセッションは `agent/request` ガードが捕捉（既定 `hold`：リクエストを保留しエラーなし、退峰時に自動解放）。
 - **セッション級凍結/再開**：`sessionGuard` 冗余ポート + `POST /session-guard/rpc`、input-traffic 凍結ボタンでセッションごと透伝。`/pause /resume /cancel` 手動コマンドも提供。
@@ -68,8 +72,8 @@ dsh plugin --profile web add dsh-session-guard@dsh-0.1.5
 
 追加設定：
 
-- `timezone`（デフォルト Asia/Shanghai）——**週末判定**とバッジ表示に使用。**峰谷判定には影響しない**（峰谷は常に北京時間）；
-- `peakWindows`（デフォルト 09:00–12:00 / 14:00–18:00）——北京時間（UTC+8）の峰谷ウィンドウ。DeepSeek 公式課金と一致；
+- `timezone`（デフォルト Asia/Shanghai）——IANA 名で**すべての**時間判定（曜日 / 週末 / ウィンドウ一致）を駆動。`peakPolicy.timezone` はピークウィンドウ判定のみ上書き（下記「設定可能な峰谷ポリシー」参照）；
+- `peakWindows` / `peakPolicy`（デフォルト 09:00–12:00 / 14:00–18:00、平日）——ウィンドウと週末ルールの権威ある情報源は設定ファイル `config/session-guard.json`。設定 UI で明示した値が最優先である点は変わりません；
 - `pauseMode`（`safe`/`force`）、`pauseReason`（`wait`/`stop`）；
 - `stepGateTimeoutMs`（既定 300000）——step ゲートの保留タイムアウト。期限切れでゲートを解放し**ターン級一時停止へ昇格**（デッドロック回避、「5 分ごとに 1 step」のトークン滴漏も回避）；
 - 公式ソース判定：`officialProviders`（公式 provider id を追加、カンマ区切り、最優先）、`officialBaseURLs`（公式エンドポイント host、既定 `api.deepseek.com`）；
@@ -81,29 +85,165 @@ dsh plugin --profile web add dsh-session-guard@dsh-0.1.5
 ### ピーク自動ゲート（グローバル）
 
 - **ピーク入り**（かつ非週末）：`stepLevelPause` が有効なら**ターンを即中断しない**——セッションは次の `agent/pre-step` 境界まで走り、そこで step ゲートが閉じます（下記）。無効なら全 running ルートセッションに `gate.stopNextTurn`（カスタムセッションゲート、`queueFallback` でロック待機キューにフォールバック）；
-- **退峰 / 週末**：まず保留中の step を `releaseAll` で解放（ターンはその場で継続）、次に `gate.resume` **全**セッション（`offPeakAutoResume` で制御）；
-- **峰谷タイムゾーン**：常に北京時間（`Asia/Shanghai`）を使用。DeepSeek 公式課金基準に一致。`timezone` 設定の影響を受けません；
+- **退峰 / 週末**：まず保留中の step を `releaseAll` で解放（ターンはその場で継続）、次に `gate.resume` で**本プラグインが停止したセッション**を再開（`offPeakAutoResume` で制御）。解放は `auto: true` で呼ばれるため、手動 `/pause` したセッションはそのまま残ります；
+- **峰谷タイムゾーン**：設定で決まります——`peakPolicy.timezone`（省略時は `timezone` に従う）がピークウィンドウ判定を駆動し、既定は `Asia/Shanghai`（DeepSeek 公式課金基準と一致）。v0.2.0 の「常に北京時間」はもはやハードコードではありません（下記「設定可能な峰谷ポリシー」参照）；
 - 状態機械：単一インスタンス `NORMAL ↔ PAUSED_PEAK`（`scheduler.js`）、単一 30s tick で駆動。
 
 ### step 級ゲート（v0.2.0、節約の要）
 
 `agent/pre-step` waterfall に接続し、**次の step のモデルリクエストが発生する前**にターンを保留します。
 
-- **ゲート条件**（すべて満たす）：`enabled` + `stepLevelPause` + `step > 1` + ピーク（北京時間、非週末）+ 対象 provider が公式（`providerGuard`、オフなら全部）+ リクエスト級 hold されていない + このピーク期間で手動スキップされていない；
+- **ゲート条件**（すべて満たす）：`enabled` + `stepLevelPause` + `step > 1` + ピーク（設定された峰谷タイムゾーン、既定は北京時間、非週末）+ 対象 provider が公式（`providerGuard`、オフなら全部）+ リクエスト級 hold されていない + このピーク期間で手動スキップされていない；
 - **`step > 1` の理由**：ターン最初の step はリクエスト級ガードが担当するため、二重ゲートにならない；
-- **解放経路**：①「⏸ 一時停止中（再開）」ボタン / `POST /session-guard/rpc {action:'stepResume'}` / `/resume` → 現在の step を通し、**このピーク期間はもうゲートしない**；② 退峰 → 全解放、ターンはその場で継続（**followup 不要**）；③ 凍結ボタン / `/pause` / `/cancel` → ゲート解放してターン級一時停止へ；④ `signal` abort → 解放；
+- **解放経路**：① `POST /session-guard/rpc {action:'stepResume'}` / `/resume` / 冗余ポート `stepResume` → 現在の step を通し、**このピーク期間はもうゲートしない**；② 退峰 → 全解放、ターンはその場で継続（**followup 不要**）；③ 凍結ボタン / `/pause` / `/cancel` → ゲート解放してターン級一時停止へ；④ `signal` abort → 解放；
 - **タイムアウト昇格**：`stepGateTimeoutMs`（既定 5 分）超過でゲート解放 + **ターン級 force 一時停止へ昇格**、退峰で復帰（デッドロックなし・トークン滴漏なし）；
 - **状態**：`GET /session-guard/state?session=<id>` が `paused: { step, turn }` と `stepGate: { held, since, bypass }` を返す。サービス側 `state().paused` は**互換のため真偽値のまま**、step 状態は `pausedStep`；
 - **永続化しない**：保留はプロセス内 Promise、再起動で消滅（幽霊状態を避ける）。
 
-#### 「一時停止 / 再開」ボタン（session-guard が提供）
+### 設定可能な峰谷ポリシー（v0.3.0：`config/session-guard.json`）
 
-コンポーザー右側の「一時停止」ボタン（slot `conversation.input.right`、id `session-guard-pause`、order 20 — input-traffic の「❄ 凍結して追加」の左）：
+峰谷/週末ポリシーは**もはやハードコードされていません**——ピーク時間帯、タイムゾーン、曜日限定、週末ルールの変更は設定ファイルの編集だけで完結します。日常的には**ユーザー級**のファイルを編集し、`POST /session-guard/rpc {"action":"reloadConfig"}` で再起動なしに反映できます。
 
-- 未一時停止 → 「一時停止」、**クリック可**：`stepPause` を呼び、**次の step のモデルリクエスト前**にセッションを停止（現在の step は中断しない。step 1 も対象で、峰谷 / provider の制限を受けない）；
-- 一時停止中 → 「再開」、`stepResume` を呼び現在の step を放行、このピーク期間はもうゲートしない；
-- **イベント push**：`GET /session-guard/events?session=<id>`（SSE）が step ゲート状態の変化を**即時**通知——ピークで自動的に閉じたらボタンは即「再開」に変わります。10 秒ごとの `/session-guard/state` ポーリングはフォールバック（SSE 不通でも収束）；
-- 同じ行の input-traffic ボタンと見た目を揃えています（高さ 24px / 角丸 6px / 12px フォント / 同じ CSS トークン）。
+解決順（**最初にヒットしたものが有効**）：
+
+| # | パス | 階層 |
+|---|---|---|
+| 1 | `$DSH_SESSION_GUARD_CONFIG` | 明示パス |
+| 2 | `$DSH_HOME/config/session-guard.json` | ユーザー級（**通常はここを編集**） |
+| 3 | `<cwd>/config/session-guard.json` | プロジェクト級 |
+| 4 | `<plugin>/config/session-guard.json` | パッケージ同梱の既定値 |
+
+- このファイルは cordis `settings` 名前空間の**既定レイヤー**です：設定 UI（設定 → プラグイン → session-guard）で明示した値が**優先**され、`settings` サービスが利用できない場合はファイル値がそのまま使われます。`reloadConfig` は設定サービスの**生のユーザー層**を読むため、再読み込みで変わるのはあなたが**画面で自分で上書きしていない**キーだけです——画面で変更した値は引き続きファイルより優先されます；
+- **値は検証されます。不正値がガードを黙って壊すことはありません**：読めないファイル、不正な JSON、配列でない/不正な `peakWindows`、範囲外のスカラーは `errors` に記録され、**該当キーは既定値を保ちます**——「峰ウィンドウが無い」状態や機能しないガードに静かに落ちることはありません。明示的な `"peakWindows": []` は意図的な「峰ウィンドウ無し」として尊重されます；
+- **壊れたファイルが起動を止めることはありません（fail-open）**：エラーは収集され warning として記録され（起動時と `reloadConfig` 時の両方）、内蔵既定値へフォールバックします——原因は `GET /session-guard/settings` と `GET /session-guard/diag` の `configFile.errors` で確認できます。ファイル値が設定 schema を通らない場合でも、設定パネルは**内蔵既定値で登録されます**（黙って消えることはありません）。不正値は無視され warning が記録されます。
+
+```json
+{
+  "enabled": true,
+  "timezone": "Asia/Shanghai",
+  "peakPolicy": {
+    "timezone": "Asia/Shanghai",
+    "peakWindows": [
+      { "name": "morning",   "start": "09:00", "end": "12:00", "days": ["mon","tue","wed","thu","fri"] },
+      { "name": "afternoon", "start": "14:00", "end": "18:00", "days": ["mon","tue","wed","thu","fri"] }
+    ]
+  },
+  "weekendPolicy": { "enabled": true, "days": ["sat","sun"], "mode": "offPeak" }
+}
+```
+
+| フィールド | 既定 | 説明 |
+|---|---|---|
+| `enabled` | `true` | 全体スイッチ |
+| `timezone` | `Asia/Shanghai` | IANA 名。**すべての**判定（曜日・週末・ウィンドウ一致）を駆動。**IANA データベースで検証**され、無効・綴り間違い（例 `"Asia/Shangai"`）は拒否されて既定値が保たれます（`Asia/Calcutta` などの別名は可） |
+| `peakPolicy.timezone` | 省略 | **ピークウィンドウ判定のみ**上書き——ピークを DeepSeek 課金タイムゾーン（例 `Asia/Shanghai`）に固定しつつ、週末は `timezone` に従わせる。省略時は `timezone` に従う。こちらも IANA 検証あり |
+| `peakPolicy.peakWindows[].name` | — | ウィンドウ名（`/peak` の応答に表示） |
+| `peakPolicy.peakWindows[].start` / `end` | — | `HH:MM`、**左閉右開** `[start, end)` |
+| `peakPolicy.peakWindows[].days` | 省略/空 = 毎日 | `mon`…`sun`。`start > end` は**深夜跨ぎ**で**開始日**に帰属（`fri` 22:00–06:00 は土曜 01:00 もカバー） |
+| `weekendPolicy.enabled` | `true` | 週末ルールのスイッチ |
+| `weekendPolicy.days` | `["sat","sun"]` | どの曜日を週末とするか |
+| `weekendPolicy.mode` | `"offPeak"` | 現在は `"offPeak"` のみ（週末全体をオフピーク扱い）。認識できない `mode` は**警告を記録して週末ルールを無効化**し、黙って受け入れません |
+
+`peakWindows` は**複数**のウィンドウに対応します。既定の挙動は v0.2.0 と同一です：`timezone` の既定は `Asia/Shanghai`、同梱の既定設定は `peakPolicy.timezone` を書いていないため（その場合は `timezone` に従う）結果も `Asia/Shanghai` となり、曜日限定ウィンドウに既定の週末ルールが重なります。旧設定形状 `peakWindows: [{start,end}]` + `weekendMode: true/false` も引き続き動作します（`days` なし = 毎日）。
+
+#### 3 つのモードと優先順位（`TimePolicyResolver`）
+
+| 優先 | 条件 | モード |
+|---|---|---|
+| 1 | 当日が週末日（`weekendPolicy` 準拠） | **OFF_PEAK**——終日、峰谷ウィンドウを無視 |
+| 2 | そうでなく峰谷ウィンドウに一致 | **PEAK** |
+| 3 | それ以外 | **NORMAL**（平日の谷時） |
+
+v0.2.0 の 2 値判定は互換のため維持します：`pause === (mode === PEAK)`、`reason` は従来の `'disabled' | 'weekend' | 'peak' | 'off-peak'`（`/status` の旧 `phase` フィールドも既存バッジ用に維持）。
+
+#### 畅跑（free-run、v0.3.0）
+
+コンポーザー右側の「畅跑」ボタン（slot `conversation.input.right`、id `session-guard-free-run`、order 20 — input-traffic の「❄ 凍結して追加」の左）が、**単一セッション**に**時間限定の峰谷免除**タスクを排定します。
+
+**ボタン**：
+
+- 文言は**固定**：`畅跑`、タスクが 2 つ以上なら `畅跑 ×N`——文言で状態を表すことはもうありません；
+- **クリックは常に「畅跑タスク管理」パネルを開きます**（直接アクションを実行することはありません）。現在生效しているかどうかはボタンの**ハイライト色**とホバー表示で示されます；
+- ホバー表示は**各タスクの時間範囲と状態を一覧**し、クリックで管理パネルが開くことも示します。
+
+**パネル構成（ポップアップ 1 つだけ、追加の UI 表面なし）**：
+
+- 上部ツールバーの 3 つのテキストボタン：
+  1. `新建畅跑任务`——インラインフォーム（`开始` / `结束`、それぞれネイティブの日付ピッカー + 時間セレクト、**時間粒度**：開始時間 H = `H:00`、終了時間 H = `H:59`、つまり**終了時間の 1 時間全体が含まれます**）を開閉。`确定` / `取消` 付き；
+  2. `暂停全部任务`——まだ終了していないタスクをすべて一時停止。まだ終了していないタスクがすべて一時停止済みなら文言が `恢复全部任务` に反転。操作対象のタスクがないときは無効；
+  3. `删除全部任务`——すべてのタスクを削除。タスクがないときは無効。
+- 各タスク行の右側に 2 つのアイコンボタン：
+  1. `⏸` / `▶`——**その 1 つのタスク**を一時停止 / 再開（アイコンとヒントはタスクの状態で反転）。すでに終了したタスクでは無効；
+  2. `×`——そのタスクを削除。
+- 各行には時間範囲と状態タグ `进行中` / `已暂停` / `待开始` / `已结束` も表示されます；
+- パネルヘッダーにはタイトル、時刻を解釈するタイムゾーン、閉じるための小さな `×` が表示されます。外側をクリックするか Esc でも閉じられます。
+
+セマンティクス（正確に）：
+
+- **単一セッション**：そのボタンを使ったセッションだけが免除され、他のセッションはピーク時に通常どおり一時停止します；
+- **一時停止の粒度は「タスクごと」**で、セッション単位ではありません：セッション級の有効/無効スイッチはもうありません。1 つのタスクを一時停止しても、他のタスクは通常どおり動作します；
+- **生效判定**：**未一時停止のタスクが 1 つ以上、現在の時刻をカバーしている**ときだけ畅跑が生效します。一時停止中のタスクは判定に参加しません；
+- タスクは**絶対起止時刻**、半開区間 `[from, to)`、**時間精度で終了時間は丸ごと含まれます**：開始時間 H は `H:00`、終了時間 H は `H:59`（「開始 12 時 → 終了 14 時」= `12:00 → 14:59` で 12・13・14 時の 3 時間、「開始 12 時 → 終了 12 時」はちょうどその 1 時間だけ、「終了 23 時」= `23:59` となり一日の最後の 1 時間 23:00–24:00 も選べます）；ホスト側のウィンドウは半開区間 `[from, to)` のままで、ピッカーが `:59` を渡すだけです。フォームの値は設定された `timezone` で解釈されます（パネルがそのタイムゾーンを表示。`peakWindows` と週末ルールと同じタイムゾーン）；
+- `from` は**すぐ**でも**ずっと先**でも構いません。現在時刻より前の `from` は現在時刻にクランプされるため「すぐ開始」が使えます；
+- **一回限り**：各タスクは `to` で自動終了し、単にマッチしなくなります——これは正常なライフサイクルであり、**設定エラーではない**ため、**エラーとして報告されません**。ユーザーはいつでも新しいタスクを追加できます；
+- **自動マージは同じ一時停止状態のウィンドウ間でのみ発生します**：重複または隣接（隣接 = そのまま続けて走る）し、かつ**一時停止状態が同じ**ウィンドウがマージされます。一時停止ウィンドウと有効ウィンドウが重なっても両方とも保持されます（有効なウィンドウはそのカバーする時間で引き続き生效します）。マージ後は最大 **8** タスクで、それを超える追加は明確なエラーで失敗します；
+- 一時停止中のタスクは**自動状態遷移を起こしません**（自分から開始しません）。ユーザーが `▶` / `恢复全部任务` を押したときにだけ再び生效します；
+- タスクは**永続化**されます（プラグイン自身の状態ディレクトリ配下に 1 セッション 1 JSON）。`from` が将来になり得るため、dsh の再起動で排期を失ってはいけません；
+- 畅跑が生效している間、そのセッションはどこにも保留されません：自動のターン級 / step ゲート一時停止はスキップし、本来 `agent/request` で保留されるリクエストも通します（そのために**セッション単位の `release`** を追加し、すでに保留中のリクエストを進めます）；
+- 畅跑が適用されなくなったとき（現在をカバーする全タスクが一時停止された、またはタスクのウィンドウがピーク内で終了した）、セッションは**再び一時停止**され、次のオフピークで自動的に再開します——つまり「セッションは自動的に一時停止し、谷時に自動で継続する」そのものです；
+- `providerGuard`、手動 `/pause`、週末ルール、グローバルな峰谷状態機械には影響しません（`GET /session-guard/status` はグローバルのまま——畅跑はセッション級の概念で、グローバルバッジは変わりません）。
+
+#### 一時停止 / 再開のセマンティクス（v0.3.0 以降）
+
+- `pause` は既存のセッションゲートを再利用します：一時停止スナップショットを保存し、安全境界を待ち、**`pausedReason` も記録**します——峰谷ポリシーによる停止は `"peak_window"`、明示的な `/pause` は `"manual"`；
+- 自動解放（退峰・週末・非公式 provider への切り替え）は `auto: true` で呼ばれるため、**本プラグインが停止したセッションのみ**を再開します：**ユーザーが手動 `/pause` したセッションはそのまま**です。手動 `/resume` は**常に有効**；
+- 復帰はモードが**もはや PEAK でないとき**に発生——OFF_PEAK（週末）と NORMAL（平日谷時）の両方をカバー；
+- `GET /session-guard/state` は `paused.reason` を返すようになりました。
+
+#### ルートの差分
+
+- `GET /session-guard/peak`——**新規**：リアルタイムモード（PEAK/OFF_PEAK/NORMAL）、一致したウィンドウ名、ピークまでの分数、次のピーク、退峰までの ms、正規化されたポリシー；
+- `GET /session-guard/status`——`mode` / `reason` / `windowName` / `minutesUntilPeak` / `peakTimezone` / `weekendDays` / 解決された `configFile` パスを追加し、**`billingTimezone` は返さなくなりました**；
+- `GET /session-guard/settings`——`configFile: {path, candidates, errors}` を追加；
+- `GET /session-guard/diag`——`configFile` と `freeRun` 診断（`{tracked, active, persisted, root}`）を追加；
+- `GET /session-guard/events`（SSE）——`step` イベントのみ（step ゲート状態の変化を即時配信）；
+- `GET /session-guard/state?session=<id>`——`freeRun` オブジェクトを追加：`{ state, active, available, timezone, windows: [{id, from, to, fromInput, toInput, fromDisplay, toDisplay, paused, status}], activeId, msRemaining, nextStartMs, nextStartDisplay }`——新しい `active` ブール（削除された `enabled` ブールの置き換え）に注意。各ウィンドウは `paused` を持ち、その `status` は `active` / `paused` / `scheduled` / `ended` を取り得ます；
+- `POST /session-guard/rpc`——プラグイン級アクション `reloadConfig`（**`sessionId` は不要**）と、セッション級の畅跑アクション `freeRunAdd {sessionId, from, to}`（タスク作成。一時停止状態が同じ重複 / 隣接タスクとマージ）、`freeRunRemove {sessionId, id}`（1 つのタスクを削除）、`freeRunPause {sessionId, id}` / `freeRunResume {sessionId, id}`（**1 つ**のタスクを一時停止 / 再開）、`freeRunPauseAll {sessionId}` / `freeRunResumeAll {sessionId}`（まだ終了していないすべてのタスクを一時停止 / 再開——ツールバーの 2 番目のボタン）、`freeRunClear {sessionId}`（すべてのタスクを削除——ツールバーの 3 番目のボタン）を追加。旧セッション級 `freeRunSuspend` / `freeRunResume`（`id` を取らない）は**削除されました**。不正な入力（および未知のタスク `id`）は理由を説明する `{ok:false, error}` を返します（例：`to` は `from` より後でなければならない）。
+
+#### 既定の峰谷定義、および「中国の法定祝日は認識しません」（重要な制約）
+
+**出荷時の既定の峰谷定義**を一文で：タイムゾーン `Asia/Shanghai`（北京時間）；**ピーク** = 月〜金
+`09:00–12:00` と `14:00–18:00`（`peakWindows[].days: [mon…fri]` で限定）；**それ以外はすべてアイドル**
+（週末を含む。ただし**法定祝日は含まない**——次の段落を参照）。時間帯・タイムゾーン・週末ルールの変更は
+設定ファイルの編集だけで完結します（上記の各表を参照）。
+
+**本プラグインは中国の法定祝日を認識しません**。祝日カレンダーは存在せず、平日にあたる法定祝日は
+**通常の平日**として扱われるため、ピークウィンドウに入っていれば**ピーク**となり、ガードは**通常どおり
+セッションを一時停止します**（例：国慶節・端午節・中秋節・春節の休日期間中の平日 10:00 は PEAK）。
+これは**意図的なスコープ判断**です——祝日カレンダーは、振替出勤日・タスクスケジューリング・
+マルチセッション管理と同様に明示的に対象外です。
+
+**一方、週末は無条件にアイドルです——振替出勤日も含みます**：国務院が就業日と指定した土曜日も
+`OFF_PEAK` のままで、ピークとして扱われることはありません。
+
+**「アイドル」=「一時停止されない」**で、内部の 2 モードを指します：`OFF_PEAK`（週末、終日）と
+`NORMAL`（平日のピークウィンドウ外）。一時停止を起こすのは `PEAK` のみです——3 モードの用語が
+混ざらないよう、ここで一度明記します。
+
+**日付単位の除外設定は現在ありません**——`peakWindows[].days` は**曜日**単位までの粒度なので、
+特定の 1 日を設定ファイルの編集で除外することは**できません**（`"2026-10-01"` のような値は認識されません）。
+今日取れる現実的な手段は 2 つだけです：その日だけガードを切る（`config/session-guard.json` の `enabled`、
+または設定パネル）、あるいはその日のピークウィンドウで一時停止されることを受け入れる。
+
+> 将来祝日対応を行うなら、既存アーキテクチャから自然な形は `config/session-guard.json` に
+> `holidays: ["YYYY-MM-DD", …]` リストを置き、設定タイムゾーンで評価するものになります——**現在は未実装**。
+
+#### 挙動変更と制約（正直に記載）
+
+- **既定のピークウィンドウが `days: ["mon"…"fri"]` を持ちます**：既定の週末ルールと組み合わせれば実効挙動は不変ですが、週末ルールを無効化して**出荷時の既定ウィンドウを残す**と土日はピークではなくなります——週末ピークが欲しい場合は `days` を広げるか省略してください；
+- **ピークウィンドウは設定タイムゾーンで判定されます**：`timezone` を明示的に非北京圏にしたユーザーはピークが移動します（これが本機能の目的です）。課金に揃えたい場合は `peakPolicy.timezone: "Asia/Shanghai"` を固定してください。既定の `timezone` では no-op です；
+- **自動退峰復帰は手動 `/pause` を上書きしなくなりました**；
+- **明示的に対象外**：祝日カレンダー（上記「中国の法定祝日は認識しません」参照）、振替出勤日、タスクスケジューリング、マルチセッション管理。
 
 ### 公式ソース判定（providerGuard）
 
@@ -142,10 +282,10 @@ dsh plugin --profile web add dsh-session-guard@dsh-0.1.5
 
 ### タイムゾーン処理
 
-- **峰谷判定**：常に **北京時間（UTC+8）** を使用（`BILLING_TIMEZONE = 'Asia/Shanghai'`）。DeepSeek 公式課金基準。`timezone` 設定で変更不可（ハードコード）；
-- **週末判定**：ユーザー設定の `timezone`（例：`Asia/Tokyo`、`Asia/Seoul`）を使用。「週末」はローカル概念のため；
+- **峰谷判定**：`timezone`（既定 `Asia/Shanghai`）が**すべての**判定（曜日・週末・峰谷ウィンドウ一致）を駆動します。v0.3.0 以降これは**ハードコードではありません**：`peakPolicy.timezone` を使えばピーク判定だけを DeepSeek 課金タイムゾーンに固定し、週末はローカル `timezone` に従わせられます；
+- **週末判定**：設定された `timezone`（例：`Asia/Tokyo`、`Asia/Seoul`）を使用。「週末」はローカル概念のため；
 - `Intl.DateTimeFormat` でタイムゾーン投影。無効な IANA タイムゾーン名は `RangeError` で fail-open し `Asia/Shanghai` にフォールバック；
-- 峰谷ウィンドウは**左閉右開** `[start, end)`。深夜跨ぎウィンドウ（例：`22:00–06:00`）対応。
+- 峰谷ウィンドウは**左閉右開** `[start, end)`。深夜跨ぎウィンドウ（例：`22:00–06:00`、**開始日**に帰属）対応。
 
 ### status-badge（フロントエンド表示）
 
@@ -158,7 +298,7 @@ dsh plugin --profile web add dsh-session-guard@dsh-0.1.5
 | `off-peak` | 谷時 | `sg-off` | オフピーク時間帯、セッション通常稼働 |
 | `weekend` | 週末 | `sg-weekend` | 週末（週末モード有効時）、峰谷無視 |
 
-- 15 秒ごとに `GET /session-guard/status` をポーリング（`phase` / `providerGuard` / `held` / `deferred` / `stepHeld`）；
+- 15 秒ごとに `GET /session-guard/status` をポーリング（`phase` / `providerGuard` / `held` / `deferred` / `stepHeld`。v0.3.0 以降は `mode` / `reason` / `windowName` / `minutesUntilPeak` / `peakTimezone` / `weekendDays` / `configFile` も返し、`phase` は互換のため維持）；
 - fail-open：ルート到達不可・ネットワークエラー・`enabled` オフ時→バッジ非表示；
 - **input-traffic に依存しない**：session-guard クライアントコードが単独で描画。input-traffic は凍結ボタンのみ担当；
 
@@ -172,7 +312,13 @@ dsh plugin --profile web add dsh-session-guard@dsh-0.1.5
 - **session-guard = 止める**：いつ進めるかだけを決め、**キューの内容・順序には触れません**。step ゲート（`agent/pre-step`、次の step のモデルリクエスト前）、ターン級一時停止（`agent.cancel({keepInbox:true})` + `goals.pause`、**キューは保持**）、リクエスト級 hold（`agent/request`）。
 - **input-traffic = 並べる**：ユーザー入力がどのキューに、どの段階で入り、いつ消費されるかだけを決めます（三档：赤=interrupt は `cancel()` 後に `steer`、黄=`steer`（→ `next-step`）、緑=`next-turn` に待機）。凍結 = `queued`+`steering` 行を段階ごと退避 + composer ブロック + `sessionGuard.stopNextTurn`；再開 = ブロック解除 → `sessionGuard.resume` → 段階順に再投入。
 - **接点の 2 つの不変条件**：① 凍結は本プラグインに**先に step ゲートを解放**させる（でないとターン級一時停止が永遠に来ない安全境界を待ち、相互待機になる）；② step ゲート保留中は `preStep()` が waterfall 前に `inbox.claim()` 済みなので、新しい入力は取られた分の後ろに並ぶ（`keepInbox` はターン級のみ）。
-- ボタン：本プラグインの「一時停止 / 再開」（order 20）と input-traffic の「❄ 凍結して追加 / 再開して追加」（order 30）は**並列表示・相互に置き換えなし**。
+- ボタン：本プラグインの「畅跑」（order 20）と input-traffic の「❄ 凍結して追加 / 再開して追加」（order 30）は**並列表示・相互に置き換えなし**——前者は単一セッションに時間限定の峰谷免除を排定し、後者はキューの退避 + ターン級凍結を担います。
+
+## テスト
+
+```bash
+npm test   # node --test "tests/*.test.mjs"（390 件成功：タイムゾーン/峰谷ポリシー/設定ファイル/週末/状態機械/セッションゲート/畅跑/ブリッジ/リトライ）
+```
 
 ## ライセンス
 

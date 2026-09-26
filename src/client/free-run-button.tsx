@@ -35,7 +35,7 @@ import {
   type FreeRunView,
 } from './free-run-button-text'
 import { DateRangePicker } from './date-range-picker'
-import { seedRange } from './date-range'
+import { combineEnd, combineStart, seedRange } from './date-range'
 import { injectClientCss } from './styles'
 
 /** slot 运行时注入的会话级 props。 */
@@ -46,10 +46,8 @@ export interface FreeRunButtonProps {
 /** 兜底轮询间隔（畅跑是低频交互，5s 足够；到点切换另有本地定时器）。 */
 const POLL_MS = 5_000
 
-/** 日期 + 小时 → `YYYY-MM-DDTHH:00`（主机按配置时区解释）。 */
-export function combineDateTime(date: string, hour: string): string {
-  return `${date}T${String(hour).padStart(2, '0')}:00`
-}
+// 日期 + 小时的拼接与「按小时包含」语义见 date-range.ts 的 combineStart / combineEnd：
+// 开始 = H:00，结束 = H:59（否则选「23 时」会变成 23:00，当天最后一小时选不进来）。
 
 /** 拆出 `YYYY-MM-DD` 与 `HH`（供选择器回填）。 */
 export function splitDateTime(value: string | null | undefined): { date: string; hour: string } {
@@ -196,8 +194,8 @@ export function FreeRunButton({ sessionId }: FreeRunButtonProps) {
       return
     }
     const ok = await rpc('freeRunAdd', {
-      from: combineDateTime(fromDate, fromHour),
-      to: combineDateTime(toDate, toHour),
+      from: combineStart(fromDate, fromHour),
+      to: combineEnd(toDate, toHour),
     })
     if (ok) {
       setError('')

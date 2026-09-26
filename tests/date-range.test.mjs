@@ -6,7 +6,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  END_MINUTE,
   addMonths,
+  combineEnd,
+  combineStart,
   compareIso,
   daysInMonth,
   fromIso,
@@ -126,22 +129,55 @@ test('seedRange：开始 = 当前时刻整点，结束 = +2 小时', () => {
   assert.equal(s.fromDate, '2026-09-26')
   assert.equal(s.fromHour, '14', '取当前小时，分钟被抹掉')
   assert.equal(s.toDate, '2026-09-26')
-  assert.equal(s.toHour, '16')
+  assert.equal(s.toHour, '15', '结束 = 下一个小时（配合 :59 语义 = 覆盖 2 个自然小时）')
+})
+
+test('combineStart / combineEnd：按小时包含（开始 :00，结束 :59）', () => {
+  assert.equal(combineStart('2026-09-26', '12'), '2026-09-26T12:00')
+  assert.equal(combineEnd('2026-09-26', '14'), '2026-09-26T14:59')
+  // 关键回归：选「23 时」作为结束必须是 23:59，而不是 23:00 ——
+  // 否则当天最后一小时（23:00–24:00）永远选不进来。
+  assert.equal(combineEnd('2026-09-26', '23'), '2026-09-26T23:59')
+  assert.equal(combineStart('2026-09-26', '23'), '2026-09-26T23:00')
+  // 0 时：开始是当天 00:00，结束是当天 00:59
+  assert.equal(combineStart('2026-09-26', '00'), '2026-09-26T00:00')
+  assert.equal(combineEnd('2026-09-26', '00'), '2026-09-26T00:59')
+  // 单位数小时也要补零（来自 <select> 的字符串）
+  assert.equal(combineStart('2026-09-26', '9'), '2026-09-26T09:00')
+  assert.equal(combineEnd('2026-09-26', '9'), '2026-09-26T09:59')
+  assert.equal(END_MINUTE, 59)
+})
+
+test('combineStart/combineEnd：整点选择覆盖的小时数符合直觉', () => {
+  // 「开始 12 时 → 结束 14 时」应覆盖 12、13、14 三个小时 = 12:00–14:59
+  assert.equal(combineStart('2026-09-26', '12'), '2026-09-26T12:00')
+  assert.equal(combineEnd('2026-09-26', '14'), '2026-09-26T14:59')
+  // 「开始 12 时 → 结束 12 时」= 只覆盖 12 点这一小时
+  assert.equal(combineStart('2026-09-26', '12') < combineEnd('2026-09-26', '12'), true)
 })
 
 test('seedRange：跨天时结束日期顺延', () => {
   const s = seedRange(new Date(2026, 8, 26, 23, 5, 0))
   assert.equal(s.fromDate, '2026-09-26')
   assert.equal(s.fromHour, '23')
-  assert.equal(s.toDate, '2026-09-27', '23:00 + 2h 应落到次日')
-  assert.equal(s.toHour, '01')
+  assert.equal(s.toDate, '2026-09-27', '23 时的下一个小时应落到次日')
+  assert.equal(s.toHour, '00')
 })
 
 test('seedRange：跨月/跨年也正确', () => {
   const s = seedRange(new Date(2026, 11, 31, 23, 30, 0))
   assert.equal(s.fromDate, '2026-12-31')
   assert.equal(s.toDate, '2027-01-01')
-  assert.equal(s.toHour, '01')
+  assert.equal(s.toHour, '00')
+})
+
+test('seedRange + combine*：默认区间落在同一时刻之后且不超过一天', () => {
+  const s = seedRange(new Date(2026, 8, 26, 14, 37, 12))
+  const from = combineStart(s.fromDate, s.fromHour)
+  const to = combineEnd(s.toDate, s.toHour)
+  assert.ok(to > from, '结束必须晚于开始')
+  assert.equal(from, '2026-09-26T14:00')
+  assert.equal(to, '2026-09-26T15:59')
 })
 
 test('rangeLabel：未选满时给占位文案', () => {

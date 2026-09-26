@@ -190,7 +190,7 @@ The "free-run" button in the composer's right row (slot `conversation.input.righ
 **Panel layout (one popup, no additional UI surface)**:
 
 - Three text buttons in a toolbar at the top:
-  1. `新建畅跑任务` — toggles an inline form (开始 / 结束, each a native date picker + hour select, **hour granularity**) with `确定` / `取消`;
+  1. `新建畅跑任务` — toggles an inline form (开始 / 结束, each a native date picker + hour select, **hour granularity**: the start hour H means `H:00` and the end hour H means `H:59`, so the end hour is **fully included**) with `确定` / `取消`;
   2. `暂停全部任务` — pauses every not-yet-ended task; when all not-yet-ended tasks are already paused the label flips to `恢复全部任务`; disabled when there is no task to act on;
   3. `删除全部任务` — deletes all tasks; disabled when there are no tasks.
 - Two icon buttons per task row on the right:
@@ -204,7 +204,7 @@ Semantics, stated precisely:
 - **Per-session**: only the session whose button was used is exempt; every other session is paused during peak as usual;
 - **Pausing is per task**, not per session: there is no longer a session-level enable/disable switch. Pausing one task leaves the others working normally;
 - **When free-run is in effect**: exactly when **at least one not-paused task covers the current moment**. A paused task simply does not participate;
-- Tasks are **absolute start/end instants**, half-open `[from, to)`, with **hour precision**; the form's values are interpreted in the configured `timezone` (the panel labels it — the same zone used for `peakWindows` and the weekend rule);
+- Tasks are **absolute start/end instants**, half-open `[from, to)`, with **hour precision and an inclusive end hour**: the start hour H is `H:00` and the end hour H is `H:59`, so "开始 12 时 → 结束 14 时" = `12:00 → 14:59` (hours 12, 13 and 14) and "开始 12 时 → 结束 12 时" covers just that one hour; "结束 23 时" = `23:59`, making the last hour of the day (23:00–24:00) selectable; the host's window stays half-open `[from, to)` — the picker simply hands it the `:59`; the form's values are interpreted in the configured `timezone` (the panel labels it — the same zone used for `peakWindows` and the weekend rule);
 - `from` may be **soon or far in the future**; a `from` earlier than now is clamped to now, so "start right away" works;
 - **One-shot**: each task ends automatically at `to` and stops matching — that is its normal lifecycle, **not a configuration error**, so it is **not reported as an error**; the user can add new tasks any time;
 - **Automatic merging only happens between windows with the same paused state**: overlapping or adjacent windows (adjacent = "run straight through") with the **same paused state** are merged; a paused window and an enabled window that overlap are both kept (the enabled one still takes effect over the time it covers); up to **8** tasks after merging, beyond which adding fails with a clear error;
@@ -415,7 +415,7 @@ Free-run schedules are stored separately, one JSON per session: `$DSH_HOME/.dsh/
 ## Tests
 
 ```bash
-npm test   # node --test "tests/*.test.mjs" (368 passing: timezone/peak-policy/config-file/weekend/state-machine/gate/free-run/bridge/retry)
+npm test   # node --test "tests/*.test.mjs" (390 passing: timezone/peak-policy/config-file/weekend/state-machine/gate/free-run/bridge/retry)
 ```
 
 ## Modules

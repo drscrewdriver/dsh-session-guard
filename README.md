@@ -37,11 +37,11 @@
 > | **0.1.7-rc.1+** | ✅（**本线**，dist-tag `dsh-0.1.7`） | 声明式：Config `.volatile()` 字段由宿主投影成表单，`register` 已删除 | ✅ 事件经 `snapshotEvents()` 双路径读取 | ✅ 客户端设置卡改 `configForms` |
 > | 0.1.5-rc.2 | ✅（`compat/0.1.5` 分支，dist-tag `dsh-0.1.5`） | `register` 仍在（字符串命名空间） | ✅ 事件经 `snapshotEvents()` 双路径读取 | ✅ |
 >
-> **本线身份**：分支 `compat/0.1.7`，npm 版本号 **`3.1.0`**（semver），dist-tag **`dsh-0.1.7`**。
-> `package.json` 与 `dsh.plugin.json` 的 `engines.dsh` 与三个 `@deepseek-ai/dsh-client-*`
-> peer 线统一为 `>=0.1.7-rc.1 <0.2.0-0`。
+> **本线身份**：分支 `compat/0.1.7`，npm 版本号 **`3.1.1`**（semver），dist-tag **`dsh-0.1.7`**。
+> `package.json` 与 `dsh.plugin.json` 的 `engines.dsh`，以及四个 `@deepseek-ai/dsh-client-*`
+> peer，统一为 `>=0.1.7-rc.1 <0.1.8-0`。
 > 历史上 README 曾用「2.x / 3.x」当**线代号**，那是叙述习惯，**不是注册表里可拉取的版本号** ——
-> 请一律以 npm 版本号 `0.3.1`（0.1.2 线）、`3.0.0`/`3.0.1`（0.1.5 线）与 `3.1.0`（0.1.7 线）为准。
+> 请一律以 npm 版本号 `0.3.1`（0.1.2 线）、`3.0.0`/`3.0.1`（0.1.5 线）与 `3.1.1`（0.1.7 线）为准。
 >
 > **其它线的落点**：DSH `0.1.2-rc.x` 宿主请使用分支 **`legacy/0.1.2`**（npm dist-tag
 > `dsh-0.1.2`，版本 `0.3.1`）。**`main` 已冻结在 `0.2.0-beta.1`，不是 0.1.2 线的发布分支。**
@@ -58,7 +58,7 @@
 > 旧数组回退（仅影响 `findToolOutcome` / `lastUserPrompt` 两条辅助路径，事件类型匹配不变）。
 > 已核实 0.1.5 的 `WebRoute`（exact/prefix + SSE）契约不变，客户端
 > `fetch('/session-guard/...')` 无需改 `/api` 前缀。
-> 下面这张兼容表跨 0.1.1 / 0.1.2 两代 API，本线只认领 0.1.5 那一行。
+> 下面这张兼容表跨 0.1.1 / 0.1.2 两代 API，本线只认领 0.1.7 那一行。
 > `session/event`、`agent.cancel`、`goals.pause`、
 > `agent.followup`、`commands.register`、`timer.interval`、`webServer.register`、
 > `agent/request`、`llm.listConfigurableProviders`、`settings.register/get` 在
@@ -75,12 +75,16 @@
 
 无需修改 dsh 源码、无需提 PR：`dsh plugin` 命令组装 + bundle patch 装配的 cordis 插件。
 
-> 💡 **为什么推荐**：DeepSeek 已于 2026-08-17 实行**峰谷计费**——高峰时段（北京时间 9:00-12:00、14:00-18:00）单价为闲时（含午间、夜间、周末与节假日）的 **2 倍**。本插件在高峰自动停住运行会话、退峰自动续跑，错峰长跑最多可省 **50%**；手动冻结（配 input-traffic 按钮）可进一步按会话精确控停。
+> 💡 **为什么推荐**：DeepSeek 已于 2026-08-17 实行**峰谷计费**——高峰时段（默认北京时间 9:00-12:00、14:00-18:00）单价为闲时（含午间、夜间、周末与节假日）的 **2 倍**。本插件在高峰自动停住运行会话、退峰自动续跑，错峰长跑最多可省 **50%**；手动冻结（配 input-traffic 按钮）可进一步按会话精确控停。
+
+> ⚙️ **峰谷策略可配置**：时段、时区、窗口的星期限定、周末规则全部由 `config/session-guard.json` 决定，不再是硬编码；另有**畅跑**——单会话限时豁免峰谷暂停（见下文「畅跑（free-run）」）。
 
 ## 功能一览
 
+- **可配置峰谷策略**：峰谷/周末策略由 `config/session-guard.json` 定义（四级解析顺序，dsh 设置表单里改过的值仍优先）；三模式 `OFF_PEAK / PEAK / NORMAL`，多窗口、跨午夜、工作日限定；损坏文件 fail-open，`reloadConfig` 热重载。
+- **畅跑（free-run）**：输入区一个「畅跑」按钮，给**单个会话**排一段或几段限时豁免——窗口内无视峰谷照常跑，到点自动结束并回到常规峰谷判定；排期落盘，重启不丢。
 - **周末模式**：识别周末（基于配置时区 `Intl.DateTimeFormat`，不踩裸 `getUTCDay()` 的北京边界 8 小时 bug）→ 周末无视峰谷、畅快跑。
-- **高峰自动暂停（全局）**：进入高峰（且非周末）时，对所有 running root session 自动暂停；退峰自动恢复全部——**全局开关，无需手动**。
+- **高峰自动暂停（全局）**：进入高峰（且非周末）时，对所有 running root session 自动暂停；退峰只自动恢复**本插件暂停的**会话（手动 `/pause` 的不动）——**全局开关，无需手动**。
 - **官方源二维判定（providerGuard）**：高峰期**只在请求目标是 DeepSeek 官方源时**才拦；用本地/第三方 provider（如 `local-35b`）照常跑，不受高峰门影响。判定口径 = 显式 id 名单 → `baseURL` 端点 → catalog 默认端点 → 内置 id。
 - **请求级兜底 + 延后队列**：入峰后才启动的会话、会话中途被切到官方源的情况，由 `agent/request` 请求级守卫拦住（默认 `hold`：请求挂起不报错，退峰自动放行）。
 - **会话级冻结 / 恢复**：`sessionGuard` 冗余端口 + `POST /session-guard/rpc`，input-traffic 冻结按钮逐会话透传接入；也提供 `/pause /resume /cancel` 手动命令。
@@ -99,17 +103,18 @@
 ## 安装
 
 ```bash
-# DSH 0.1.5-rc.x 宿主（本线，dist-tag dsh-0.1.5）
-dsh plugin --profile web add dsh-session-guard@dsh-0.1.5
+# DSH 0.1.7-rc.x 宿主（本线，dist-tag dsh-0.1.7）
+dsh plugin --profile web add dsh-session-guard@dsh-0.1.7
 
 # 或直接走 git 分支
-dsh plugin --profile web add github:drscrewdriver/dsh-session-guard#compat/0.1.5
+dsh plugin --profile web add github:drscrewdriver/dsh-session-guard#compat/0.1.7
 
 # DSH 0.1.2-rc.x 宿主请改用 0.1.2 线
 dsh plugin --profile web add dsh-session-guard@dsh-0.1.2
 ```
 
-`compat/0.1.5` 是 DSH `0.1.5-rc.x` 专线，npm 版本号 **`3.0.0`**；DSH `0.1.2-rc.x` 宿主请改用
+`compat/0.1.7` 是 DSH `0.1.7-rc.x` 专线，npm 版本号 **`3.1.1`**；DSH `0.1.5-rc.x` 宿主请改用
+分支 **`compat/0.1.5`**（npm dist-tag `dsh-0.1.5`，版本 `3.0.0`）。DSH `0.1.2-rc.x` 宿主请改用
 分支 **`legacy/0.1.2`**（npm dist-tag `dsh-0.1.2`，版本 `0.3.1`）。**`main` 已冻结在 `0.2.0-beta.1`，
 不是 0.1.2 线的发布分支。**
 
@@ -120,13 +125,19 @@ dsh plugin --profile web add dsh-session-guard@dsh-0.1.2
 
 ## 设置（设置 → 插件 → session-guard，简单开关）
 
+本线的 dsh **不再提供 `settings` 服务**：`dsh-settings` 没有 `register()`，插件也**不 inject `settings`**
+（声明一个本线缺席的服务会让客户端条目永远 pending、进而让应用 web boot 致命失败）。设置面改为
+**声明式**：插件 `export const Config = SettingsSchema`，`schema` 里每个字段都标了 `.volatile()`，
+dsh 据此**自动生成设置表单**（设置 → 插件 → session-guard）——**插件不注册任何命名空间，也不挂自定义设置卡片**。
+运行时值与表单值都从 apply 的组合条目读出，再与 `config/session-guard.json` 的默认层合并（见下节）。
+
 | 开关 | 默认 | 说明 |
 |---|---|---|
 | `enabled` | on | **高峰自动暂停冻结会话**：高峰时段自动暂停运行会话 |
 | `stepLevelPause` | on | **step 级门控**：高峰在下一个 step 的模型请求**之前**拉门（比回合级暂停更早、更省）；关掉则回退为回合级暂停 |
 | `providerGuard` | on | **官方源二维判定**：高峰期只拦 DeepSeek 官方源，本地/第三方 provider 照常跑 |
 | `guardSubagents` | on | **纳入子代理请求**：子代理请求同样计费，默认一并拦截 |
-| `offPeakAutoResume` | on | **低谷自动恢复**：低峰时段自动恢复被暂停的会话；关掉则退峰不自动恢复（需手动） |
+| `offPeakAutoResume` | on | **低谷自动恢复**：低峰时段自动恢复被本插件暂停的会话；关掉则退峰不自动恢复（需手动） |
 | `weekendMode` | on | **周末模式**：识别周末 → 周末不自动暂停（周末本无高峰，畅快跑） |
 | `deferredResume` | on | **退峰自动继续**：关闭后延后的请求/会话不自动续跑，需手动 `/resume` |
 | `queueFallback` | on | 自研会话门不可用时回退锁等待队列（fail-open） |
@@ -134,8 +145,8 @@ dsh plugin --profile web add dsh-session-guard@dsh-0.1.2
 
 附属配置：
 
-- `timezone`（默认 Asia/Shanghai）——**周末判定**和徽标显示用的时区；**不影响峰谷判定**（峰谷固定按北京时间）；
-- `peakWindows`（默认 09:00–12:00 / 14:00–18:00）——按北京时间（UTC+8）的峰谷窗口，与 DeepSeek 官方计费一致；
+- `timezone`（默认 Asia/Shanghai）——IANA 时区名，**驱动全部时间判定**（星期几 / 周末 / 峰窗口匹配）；`peakTimezone` 可单独覆盖峰窗口判定（详见下文「可配置峰谷策略」）；
+- `peakWindows`（默认 09:00–12:00 / 14:00–18:00，工作日）——峰谷窗口与周末策略的权威来源现在是配置文件 `config/session-guard.json`；表单里改过的值仍是最高优先级；
 - `pauseMode`（`safe`/`force`）、`pauseReason`（`wait`/`stop`）——暂停推进方式；
 - `stepGateTimeoutMs`（默认 300000）——step 门挂起超时；到期释放门并**升级为回合级暂停**（防死锁，不会形成「每 5 分钟一个 step」的 token 滴漏）；
 - 官方源判定：`officialProviders`（追加官方 provider id，逗号分隔，优先级最高）、`officialBaseURLs`（官方端点 host 名单，默认 `api.deepseek.com`）；
@@ -147,29 +158,169 @@ dsh plugin --profile web add dsh-session-guard@dsh-0.1.2
 ### 高峰自动门（全局）
 
 - **入峰**（且非周末）：`stepLevelPause` 开启时**不再立即掐断回合**——会话自然跑到下一个 `agent/pre-step` 边界由 step 门拉门（见下节）；关掉则对所有 running root session 调 `gate.stopNextTurn`（自研会话门真暂停，或按 `queueFallback` 回退锁等待队列）；
-- **退峰 / 周末**：先 `releaseAll` 放行被挂起的 step（回合原地续跑），再 `gate.resume` **全部**会话——受 `offPeakAutoResume` 开关控制，关掉则退峰不自动恢复；
-- **峰谷时区**：固定使用北京时间（`Asia/Shanghai`），与 DeepSeek 官方计费基准一致，不受 `timezone` 配置影响；
+- **退峰 / 周末**：先 `releaseAll` 放行被挂起的 step（回合原地续跑），再 `gate.resume` 恢复**本插件暂停的**会话——受 `offPeakAutoResume` 开关控制，关掉则退峰不自动恢复。自动释放带 `auto: true`，因此手动 `/pause` 的会话不会被覆盖；
+- **峰谷时区**：由配置决定——`peakTimezone`（省略时跟随 `timezone`）驱动峰窗口判定，默认 `Asia/Shanghai`，与 DeepSeek 官方计费基准一致；v0.2.0 的「固定北京时间」不再是硬编码（见下文「可配置峰谷策略」）；
 - 状态机：单实例 `NORMAL ↔ PAUSED_PEAK`（`scheduler.js`），由单一 30s tick 驱动。
 
 ### step 级门控（v0.2.0，省 token 的关键）
 
 挂在 `agent/pre-step` waterfall 上：**在下一个 step 的模型请求发生之前**把回合挂起。
 
-- **拉门条件**（全部满足）：`enabled` + `stepLevelPause` + `step > 1` + 高峰（北京时间，非周末）+ 目标 provider 属官方（`providerGuard`，关闭时全部拦）+ 该会话未被请求级 hold + 本峰内未被手动跳过；
+- **拉门条件**（全部满足）：`enabled` + `stepLevelPause` + `step > 1` + 高峰（按配置的峰谷时区，默认北京时间，非周末）+ 目标 provider 属官方（`providerGuard`，关闭时全部拦）+ 该会话未被请求级 hold + 未被**畅跑**豁免 + 本峰内未被手动跳过；
 - **为什么 `step > 1`**：一个回合的第 1 个 step 由请求级守卫覆盖，两道门不重叠；
-- **释放路径**：①「⏸ 暂停中（继续）」按钮 / `POST /session-guard/rpc {action:'stepResume'}` / `/resume` → 放行当前 step，且**本高峰内不再拦该会话**；② 退峰 → 全部放行，回合原地续跑（**不需要 followup**）；③ 冻结按钮 / `/pause` / `/cancel` → 释放门并转入回合级暂停；④ `signal` abort（用户取消）→ 释放门；
+- **释放路径**：① `POST /session-guard/rpc {action:'stepResume'}` / `/resume` / 冗余端口 `stepResume` → 放行当前 step，且**本高峰内不再拦该会话**；② 退峰 → 全部放行，回合原地续跑（**不需要 followup**）；③ 冻结按钮 / `/pause` / `/cancel` → 释放门并转入回合级暂停；④ `signal` abort（用户取消）→ 释放门；
 - **超时升级**：挂起超过 `stepGateTimeoutMs`（默认 5 分钟）→ 释放门并**升级为回合级 force 暂停**，退峰统一恢复（不会卡死，也不会在高峰形成 token 滴漏）；
 - **状态**：`GET /session-guard/state?session=<id>` 返回 `paused: { step, turn }` 与 `stepGate: { held, since, bypass }`；服务端口 `state()` 的 `paused` **仍是布尔**（向后兼容），step 态用 `pausedStep`；
+- **事件推送**：`GET /session-guard/events?session=<id>`（SSE）在 step 门状态变化时即时推送 `step` 事件（客户端据此即时刷新，无需等轮询）；
 - **不落盘**：挂起的是进程内 Promise，重启即失效（避免幽灵状态）。
 
-#### 暂停会话 / 继续会话按钮（session-guard 提供）
+### 可配置峰谷策略（`config/session-guard.json`）
 
-输入区右侧的「暂停会话」按钮（slot `conversation.input.right`，id `session-guard-pause`，order 20，排在 input-traffic「❄ 冻结追加」左侧）：
+峰谷/周末策略**不再硬编码**——改高峰时段、时区、窗口的星期限定、周末规则，都只是改一份配置文件。日常改**用户级**那一份，改完 `POST /session-guard/rpc {"action":"reloadConfig"}` 即时生效，无需重启。
 
-- 未暂停 → 「暂停会话」，**可点**：点击调 `stepPause`，在**下一次 step 的模型请求之前**暂停该会话（不打断当前 step；step 1 也拦，不受峰谷 / provider 限制）；
-- 已暂停 → 「继续会话」，点击调 `stepResume`：放行当前 step，且本高峰内不再拦该会话；
-- **事件推送**：`GET /session-guard/events?session=<id>`（SSE）在 step 门状态变化时**即时**推送——高峰期自动拉门后按钮立刻变「继续会话」，无需等轮询；另每 10 秒轮询 `/session-guard/state` 兜底（SSE 不可用 / 断线时仍能收敛）；
-- 样式与同一行的 input-traffic 按钮对齐（24px 高 / 6px 圆角 / 12px 字号 / 同一套 CSS 令牌），悬停与暂停态都有对应视觉反馈。
+解析顺序（**先命中者胜**）：
+
+| # | 路径 | 层级 |
+|---|---|---|
+| 1 | `$DSH_SESSION_GUARD_CONFIG` | 显式指定路径 |
+| 2 | `$DSH_HOME/config/session-guard.json` | 用户级（**日常改这里**） |
+| 3 | `<cwd>/config/session-guard.json` | 项目级 |
+| 4 | `<plugin>/config/session-guard.json` | 包内默认（随包发布） |
+
+- 该文件是**默认层**：dsh 自动生成的设置表单（由 `Config` 的 `.volatile()` 字段投影而来）里显式设过的值**仍然优先**——运行时值 = 配置文件默认层 ← 组合条目的表单覆盖层。本线没有 `settings` 服务，所以不再有「settings 用户层」这一层；
+- `reloadConfig` 重新读取的是**配置文件默认层**，因此重载只改变你**没有**在表单里亲手改过的键——表单里改过的值依旧压过文件；
+- **取值会校验，坏值不会悄悄搞坏守卫**：无法读取的文件、非法 JSON、非数组/非法 `peakWindows`、越界的标量、非法时区——一律记入 `errors` 并在启动与 `reloadConfig` 时记 warning，**保留该项默认值**，绝不允许静默退化成「没有峰窗口」或守卫失效；显式写 `"peakWindows": []` 仍然算**有意为之**的「不要峰窗口」；
+- **损坏不阻塞启动（fail-open）**：错误被收集、以 warning 记录，然后回退内置默认值——`GET /session-guard/settings` 与 `GET /session-guard/diag` 的 `configFile.errors` 能看到具体原因。即使文件值连设置 schema 都过不去，设置表单**仍会以内置默认值生成**（绝不静默消失），坏值被忽略并记 warning。
+- **不识别中国法定节假日（有意为之）**：没有节假日日历，落在工作日的法定节假日按**普通工作日**处理，见下文「默认峰谷定义与节假日限制」。
+
+```json
+{
+  "enabled": true,
+  "timezone": "Asia/Shanghai",
+  "peakPolicy": {
+    "timezone": "Asia/Shanghai",
+    "peakWindows": [
+      { "name": "morning",   "start": "09:00", "end": "12:00", "days": ["mon","tue","wed","thu","fri"] },
+      { "name": "afternoon", "start": "14:00", "end": "18:00", "days": ["mon","tue","wed","thu","fri"] }
+    ]
+  },
+  "weekendPolicy": { "enabled": true, "days": ["sat","sun"], "mode": "offPeak" }
+}
+```
+
+| 字段 | 默认 | 说明 |
+|---|---|---|
+| `enabled` | `true` | 总开关 |
+| `timezone` | `Asia/Shanghai` | IANA 时区名，驱动**全部**判定：星期几、周末、峰窗口匹配；**按 IANA 数据库校验**，非法/拼错的时区（如 `"Asia/Shangai"`）被拒绝并保留默认值（别名如 `Asia/Calcutta` 可用） |
+| `peakPolicy.timezone` | 省略 | **只**覆盖峰窗口判定——把高峰钉在 DeepSeek 计费时区（如 `Asia/Shanghai`），周末仍跟随 `timezone`；省略则跟随 `timezone`。同样按 IANA 校验 |
+| `peakPolicy.peakWindows[].name` | — | 窗口名（出现在 `/peak` 响应与 `/status` 的 `windowName` 里） |
+| `peakPolicy.peakWindows[].start` / `end` | — | `HH:MM`，**左闭右开** `[start, end)` |
+| `peakPolicy.peakWindows[].days` | 省略/为空 = 每天 | `mon`…`sun`；`start > end` = **跨午夜**，且归属**起始日**（`fri` 22:00–06:00 覆盖到周六 01:00） |
+| `weekendPolicy.enabled` | `true` | 周末规则开关 |
+| `weekendPolicy.days` | `["sat","sun"]` | 哪些星期算周末 |
+| `weekendPolicy.mode` | `"offPeak"` | 目前只支持 `"offPeak"`（整个周末视为谷时）；无法识别的 `mode` 会**记 warning 并禁用该周末规则**，不会静默接受 |
+
+`peakWindows` **支持多个窗口**。默认行为与 v0.2.0 一致：`timezone` 默认 `Asia/Shanghai`，随包默认配置未写 `peakPolicy.timezone`（此时跟随 `timezone`），结果同为 `Asia/Shanghai`；窗口带 `days` 又叠加默认周末规则。旧设置形状 `peakWindows: [{start,end}]` + `weekendMode: true/false` 继续可用（无 `days` = 每天）。
+
+#### 三种模式与优先级（`TimePolicyResolver`）
+
+| 优先级 | 条件 | 模式 |
+|---|---|---|
+| 1 | 当天是周末日（按 `weekendPolicy`） | **OFF_PEAK**——整天，无视峰谷窗口 |
+| 2 | 否则命中某个峰窗口 | **PEAK** |
+| 3 | 否则 | **NORMAL**（工作日谷时） |
+
+v0.2.0 的两值判决保留兼容：`pause === (mode === PEAK)`，`reason` 仍是 `'disabled' | 'weekend' | 'peak' | 'off-peak'`（`/status` 的旧 `phase` 字段同样保留给既有徽标）。
+
+#### 畅跑（free-run）
+
+输入区右侧的「畅跑」按钮（slot `conversation.input.right`，id `session-guard-free-run`，order 20，排在 input-traffic「❄ 冻结追加」左侧）给**单个会话**排定**限时豁免峰谷**的任务。
+
+**按钮**：
+
+- 文案**固定**：`畅跑`；任务多于 1 个时为 `畅跑 ×N`——文案不再编码状态；
+- **点击永远打开「畅跑任务管理」面板**（不再直接执行任何动作）；当前是否正在生效由按钮的**高亮颜色**与悬停提示表示；
+- 悬停提示同时**逐条列出每个任务的时间范围与状态**，并说明点击会打开管理面板。
+
+**面板布局（只有一个弹层，不新增其它 UI 表面）**：
+
+- 顶部工具栏三个文字按钮：
+  1. `新建畅跑任务`——展开 / 收起内联表单（`开始` / `结束`，各为**双月日期区间日历** + 小时下拉，**小时粒度**），带 `确定` / `取消`；
+  2. `暂停全部任务`——暂停所有尚未结束的任务；当所有尚未结束的任务都已暂停时，文案翻转为 `恢复全部任务`；没有可操作的任务时禁用；
+  3. `删除全部任务`——删除所有任务；没有任何任务时禁用。
+- 每个任务行右侧两个图标按钮：
+  1. `⏸` / `▶`——暂停 / 恢复**该单个任务**（图标与提示随该任务状态翻转）；对已经结束的任务禁用；
+  2. `×`——删除该任务。
+- 每行同时显示时间范围与状态标签：`进行中` / `已暂停` / `待开始` / `已结束`；
+- 面板头部显示标题、时间所按解释的时区，以及一个小的 `×` 用于关闭。点击外部或按 Esc 也可关闭。
+
+**新建表单的日期区间日历（双月）**：
+
+- 点开日期选择器后是**两个并排月份**，表头为 `‹‹ ‹  2026年 9月   2026年 10月  › ››`（上一年 / 上个月 / 下个月 / 下一年），便于一眼圈出跨月区间；
+- 一周从**周一**开始（一 二 三 四 五 六 日），今天有描边，选中区间整段**底色高亮**、两端点**实心填充**，非本月的补位格淡显；
+- **第一次点击选起点，第二次点击选终点**；若终点早于起点则**自动对调**（允许反着选）；区间一旦选满即**自动收起**日历；触发器上显示 `起 → 止`（未选满时给占位文案）；
+- 面板打开时用**当前时刻**播种（开始 = 本小时整点，结束 = +2 小时，跨天则顺延到下一天）——「新建畅跑任务」最常见的意图就是现在就开始；小时下拉与日历并列保留以提供小时精度，表单里的 `现在` 按钮可随时按当前时刻**重新播种**。
+
+语义（精确）：
+
+- **单会话**：只有用了该按钮的那个会话被豁免，其他会话在高峰照常暂停；
+- **暂停粒度是「每个任务」**，不是会话级：不再有会话级启停开关。暂停一个任务，其余任务照常工作；
+- **生效判定**：只要**至少一个未暂停的任务覆盖当前时刻**，畅跑即生效；被暂停的任务不参与判定；
+- 任务是**绝对起止时刻**，半开区间 `[from, to)`，**小时精度**；表单的值按配置的 `timezone` 解释（面板标注该时区，与 `peakWindows`、周末规则同一个时区）；
+- `from` 可以是**马上**也可以是**很久以后**；早于当前时刻的 `from` 会被钳到当前时刻（所以「立刻开始」可用）；
+- **一次性**：每个任务到 `to` 自动结束、不再匹配——这是它的正常生命周期，**不是配置错误**，因此**不报错**（也没有「即将过期」的提醒）；用户随时可以再新建任务；
+- **自动合并只发生在暂停状态相同的窗口之间**：重叠或相邻（相邻 = 首尾相接一口气跑）且**暂停状态相同**的窗口合并；一个暂停窗口与一个启用窗口重叠时两者都保留（启用窗口仍在其覆盖时间内生效）；合并后最多 **8** 个任务，超过则新建失败并给出明确错误；
+- 被暂停的任务**不产生自动状态转换**（不会自己开始），只有用户按 `▶` / `恢复全部任务` 后才重新生效；
+- 任务**落盘**（每会话一个 JSON，位于插件自己的状态目录下）——因为 `from` 可能在将来，dsh 重启不能丢排期；
+- 畅跑生效期间该会话不会被任何地方拦住：自动的回合级 / step 门暂停会跳过它，本来会被 `agent/request` 挂起的请求也放行（插件为此加了**按会话的 `release`**，让已经挂起的请求继续）——即「在入峰时刻、step 门、`agent/request` 三处都生效」；
+- 当畅跑不再适用（所有覆盖此刻的任务都被暂停，或某个任务的窗口在峰内结束）时，会话**重新挂起**，并在下一个谷时自动继续——即「会话自动挂起，等待波谷自动继续」；
+- 不影响 `providerGuard`、手动 `/pause`、周末规则或全局峰谷状态机（`GET /session-guard/status` 仍是全局的——畅跑是会话级概念，不改变全局徽标）。
+
+#### 暂停 / 恢复语义
+
+- `pause` 复用既有会话门：保存暂停快照、等安全边界，并**记录 `pausedReason`**——峰谷策略暂停为 `"peak_window"`，显式 `/pause` 为 `"manual"`；
+- 自动释放（退峰、周末、目标切走到非官方 provider）以 `auto: true` 调用，因此**只恢复本插件暂停的会话**：**用户手动 `/pause` 的会话不会被自动恢复**。手动 `/resume` **始终有效**；
+- 恢复发生在模式**不再是 PEAK** 时——同时覆盖 OFF_PEAK（周末）与 NORMAL（工作日谷时）；
+- `GET /session-guard/state` 现在返回 `paused.reason`。
+
+#### 相关路由增量
+
+- `GET /session-guard/peak` — **新增**：实时模式（PEAK/OFF_PEAK/NORMAL）、命中窗口名、距高峰分钟数、下一个高峰、距退峰毫秒数、归一化后的策略；
+- `GET /session-guard/status` — 新增 `mode` / `reason` / `windowName` / `minutesUntilPeak` / `peakTimezone` / `weekendDays` / 解析出的 `configFile` 路径，**不再有 `billingTimezone`**；
+- `GET /session-guard/settings` — 新增 `configFile: {path, candidates, errors}`；
+- `GET /session-guard/diag` — 新增 `configFile` 与 `freeRun` 诊断（`{tracked, active, persisted, root}`）；
+- `GET /session-guard/events`（SSE）— 只有 `step` 事件（step 门状态变化即时推送）；
+- `GET /session-guard/state?session=<id>` — 新增 `freeRun` 对象：`{ state, active, available, timezone, windows: [{id, from, to, fromInput, toInput, fromDisplay, toDisplay, paused, status}], activeId, msRemaining, nextStartMs, nextStartDisplay }`——`active` 布尔表示此刻是否有未暂停的任务在生效（取代已移除的 `enabled`）；每个窗口带 `paused`，其 `status` 可为 `active` / `paused` / `scheduled` / `ended`；
+- `POST /session-guard/rpc` — 新增插件级动作 `reloadConfig`（**不需要 `sessionId`**），以及会话级畅跑动作：`freeRunAdd {sessionId, from, to}`（新建任务，与暂停状态相同的重叠 / 相邻任务合并）、`freeRunRemove {sessionId, id}`（删除一个任务）、`freeRunPause {sessionId, id}` / `freeRunResume {sessionId, id}`（暂停 / 恢复**单个**任务）、`freeRunPauseAll {sessionId}` / `freeRunResumeAll {sessionId}`（暂停 / 恢复所有尚未结束的任务，即面板的第二个按钮）、`freeRunClear {sessionId}`（删除全部任务，即面板的第三个按钮）；旧的会话级 `freeRunSuspend` / `freeRunResume`（不带 `id`）已**移除**；非法输入（以及未知的任务 `id`）返回 `{ok:false, error}` 说明原因（例如 `to` 必须晚于 `from`）。
+
+#### 默认峰谷定义，以及「不识别中国法定节假日」（重要限制）
+
+**出厂默认的峰谷定义**（一句话）：时区 `Asia/Shanghai`（北京时间）；**高峰** = 周一至周五 `09:00–12:00`
+与 `14:00–18:00`（由 `peakWindows[].days: [mon…fri]` 限定）；**其余时间一律空闲**（含周末；但**不含**法定节假日，
+见下条）。改时段/时区/周末规则都只是改配置文件，见上文各表。
+
+**插件不识别中国法定节假日**。没有节假日日历：落在工作日的法定节假日会被当作**普通工作日**处理，
+因此只要它落在峰窗口内就**算高峰**，守卫**会照常暂停**会话（例如国庆、端午、中秋、春节假期里的工作日
+10:00 就是 PEAK）。这是**有意的范围决定**——节假日日历与调休、任务排程、多会话管理一样，都在「明确不做」之列。
+
+**周末则无条件空闲，包括调休补班日**：被指定为上班日的周六仍然是 `OFF_PEAK`，永远不会被当成高峰。
+
+**「空闲」= 不会被暂停**，它涵盖两种内部模式：`OFF_PEAK`（周末，全天）与 `NORMAL`（工作日峰窗口之外）。
+只有 `PEAK` 会触发暂停——这样三种模式的用词就不会混淆。
+
+**目前没有按日期排除的配置**——`peakWindows[].days` 只到**星期几**的粒度，**无法**在配置文件里排除某一个
+具体日期（`"2026-10-01"` 这类写法不会被识别）。今天的可行做法只有两条：那天把守卫关掉
+（`config/session-guard.json` 里的 `enabled`，或设置表单）；或者接受会话在该日峰窗口内被暂停。
+
+> 如将来要做节假日支持，顺理成章的形态是在 `config/session-guard.json` 里加一份
+> `holidays: ["YYYY-MM-DD", …]` 列表，并按配置时区求值——**目前未实现**。
+
+#### 行为变化与限制（诚实列出）
+
+- **默认峰窗口带 `days: ["mon"…"fri"]`**：配合默认周末规则实际行为不变；但若**关掉周末规则又保留出厂默认窗口**，周六/周日不再算高峰——想要周末高峰就把 `days` 放宽或省略；
+- **峰窗口现在按配置时区判定**：显式把 `timezone` 设成非北京时区的人会看到高峰跟着变（这正是本特性的目的）；要保住对齐计费的高峰，钉住 `peakPolicy.timezone: "Asia/Shanghai"`。用默认 `timezone` 时这是 no-op；
+- **自动退峰恢复不再覆盖手动 `/pause`**；
+- **明确不做**：节假日日历（详见上文「不识别中国法定节假日」）、调休、任务排程、多会话管理。
 
 ### 会话锁定（冻结）
 
@@ -197,9 +348,10 @@ dsh plugin --profile web add dsh-session-guard@dsh-0.1.2
 | `off-peak` | 谷时 | `sg-off` | 非高峰时段，会话正常运行 |
 | `weekend` | 周末 | `sg-weekend` | 周末（周末模式开启时），无视峰谷畅快跑 |
 
-- **轮询**：每 15 秒请求 `GET /session-guard/status`，获取全局 `phase`、`providerGuard`、`held`、`deferred`、`stepHeld`；
+- **轮询**：每 15 秒请求 `GET /session-guard/status`，获取全局 `phase`、`providerGuard`、`held`、`deferred`、`stepHeld`（`/status` 另报 `mode`/`reason`/`windowName`/`minutesUntilPeak`/`peakTimezone`/`weekendDays`/`configFile`；`phase` 为兼容保留）；
 - **fail-open**：路由不可达、网络错误、或 `enabled` 关闭时→ 徽标静默隐藏，不影响任何会话；
 - **独立于 input-traffic**：徽标由 session-guard 客户端独立渲染，**不需要安装 input-traffic 插件**即可显示。input-traffic 只负责冻结按钮，与徽标无依赖关系；
+- **与畅跑无关**：徽标是**全局**峰谷状态，畅跑是**会话级**豁免，因此畅跑生效不会改变徽标；
 - **tooltip**：悬停显示 `阶段 · 时区 · 周末模式 · 判定口径 · 挂起/延后/step 挂起数量`。
 
 ### 官方源判定口径（providerGuard）
@@ -240,8 +392,12 @@ dsh plugin --profile web add dsh-session-guard@dsh-0.1.2
 ### 时区处理与校验
 
 - 时区判定基于 **IANA 时区名**（如 `Asia/Shanghai`、`Asia/Tokyo`、`Asia/Seoul`），通过 `Intl.DateTimeFormat` 投影为配置时区的墙钟，**不依赖裸 `getUTCDay()`**——避免北京时区 UTC+8 边界错 8 小时的经典 bug（周六 00:30 北京时间，UTC 还是周五）；
-- `Intl.DateTimeFormat` 本身即为校验层：传入无效时区名（如 `Foo/Bar`）会抛 `RangeError`，被外层 try-catch 静默降级为默认时区 `Asia/Shanghai`（fail-open）；
-- 峰谷窗口为**左闭右开** `[start, end)`，支持跨午夜窗口（如 `22:00–06:00`）；
+- `timezone`（默认 `Asia/Shanghai`）驱动**全部**判定：星期几、周末与峰窗口匹配（早先版本峰窗口固定北京时间，现在不再是硬编码）；
+- `peakTimezone` 可选，**只**覆盖峰窗口判定——把高峰钉在 DeepSeek 计费时区而周末仍跟随本地 `timezone`；省略时跟随 `timezone`；
+- **时区串按 IANA 数据库校验**：配置文件里非法/拼错的时区名（如 `Asia/Shangai`）会被**拒绝并保留默认值**，并把原因记入 `configFile.errors`——不会一路走到墙钟投影抛 `RangeError` 被吞掉、进而让守卫静默失效；
+- `Intl.DateTimeFormat` 本身即为最后一道校验层：传入无效时区名（如 `Foo/Bar`）会抛 `RangeError`，被外层 try-catch 静默降级为默认时区 `Asia/Shanghai`（fail-open）；
+- 峰谷窗口为**左闭右开** `[start, end)`，支持跨午夜窗口（如 `22:00–06:00`，归属**起始日**）；
+- 畅跑任务的起止时刻同样按 `timezone` 解释（小时精度，绝对时刻）；
 - `timezone` 配置项对所有语言（中/英/日/韩）通用——`Intl.DateTimeFormat` 的 IANA 时区名不依赖 locale，日文/韩文界面下时区行为与中文完全一致。
 
 ### 与 input-traffic 的分工：一个「停」，一个「排」
@@ -284,7 +440,7 @@ dsh plugin --profile web add dsh-session-guard@dsh-0.1.2
 
 **不会互相越界**：input-traffic 不监听 `agent/pre-step` / `agent/request`（唯一例外是「打断」档显式 `cancel()`，那是用户主动要求打断）；本插件也不改写 `next-step` / `next-turn` 的内容与顺序。
 
-按钮上：本插件的「暂停会话 / 继续会话」（order 20）与 input-traffic 的「❄ 冻结追加 / 恢复追加」（order 30）并列显示、互不取代——前者控 step 门，后者控队列摘除 + 回合级冻结。
+按钮上：本插件的「畅跑」（order 20）与 input-traffic 的「❄ 冻结追加 / 恢复追加」（order 30）并列显示、互不取代——前者给单会话排限时峰谷豁免，后者控队列摘除 + 回合级冻结。
 
 ## 冗余端口 `sessionGuard`
 
@@ -296,28 +452,31 @@ dsh plugin --profile web add dsh-session-guard@dsh-0.1.2
   unlockQueue(sessionId),         // 显式解锁
   stepPause(sessionId),           // 手动请求 step 级暂停（下一次 pre-step 边界拉门，step 1 也拦）
   stepResume(sessionId, opts),    // 解开 step 门（v0.2.0）；opts.bypass=false 时不置本峰跳过
-  state(sessionId),               // { queueLocked, lockReason, paused, pausedStep, stepHeldSince, stepBypass, taskControlAvailable, taskControl }
+  state(sessionId),               // { queueLocked, lockReason, paused, pausedStep, pausedReason, stepHeldSince, stepBypass, taskControlAvailable, taskControl }
 }
 ```
 
 ## HTTP 路由
 
-- `GET /session-guard/state?session=<id>` — 会话状态（含 `paused: { step, turn, manual }` / `stepGate` / 最近目标 / 是否挂起 / 是否延后）
-- `GET /session-guard/events?session=<id>` — **SSE**：step 门状态变化即时推送（按钮据此更新）
-- `GET /session-guard/settings` — 设置 + taskControl 可用性
-- `GET /session-guard/status` — 全局当前阶段（状态徽标轮询；含 `stepHeld`）
+- `GET /session-guard/state?session=<id>` — 会话状态（含 `paused: { step, turn, manual, reason }` / `stepGate` / `freeRun` / 最近目标 / 是否挂起 / 是否延后）
+- `GET /session-guard/peak` — **实时峰谷策略**（`mode` / `windowName` / `minutesUntilPeak` / 下一个高峰 / `msUntilOffPeak` / 归一化策略）
+- `GET /session-guard/events?session=<id>` — **SSE**：只有 `step` 事件，step 门状态变化即时推送
+- `GET /session-guard/settings` — 设置 + taskControl 可用性 + `configFile: {path, candidates, errors}`
+- `GET /session-guard/status` — 全局当前阶段（状态徽标轮询；含 `mode` / `reason` / `windowName` / `minutesUntilPeak` / `peakTimezone` / `weekendDays` / `stepHeld` / `configFile`）
 - `GET /session-guard/provider?provider=<id>` — 官方源判定诊断（`official` / `matchedBy` / `endpoint`）
-- `GET /session-guard/diag` — 运行时诊断（含 `stepGate`）
-- `POST /session-guard/rpc` — `{ action: stopNextTurn|resume|lockQueue|unlockQueue|stepPause|stepResume|state, sessionId }`
+- `GET /session-guard/diag` — 运行时诊断（含 `stepGate` / `configFile` / `freeRun`）
+- `POST /session-guard/rpc` — `{ action: stopNextTurn|resume|lockQueue|unlockQueue|stepPause|stepResume|state|reloadConfig|freeRunAdd|freeRunRemove|freeRunPause|freeRunResume|freeRunPauseAll|freeRunResumeAll|freeRunClear, sessionId }`（`reloadConfig` 不需要 `sessionId`；`freeRunRemove` / `freeRunPause` / `freeRunResume` 另需任务 `id`）
 
 ## 状态存储
 
 每会话 JSON：`$DSH_HOME/.dsh/session-guard/<sessionId>.json`（原子写；`DSH_SESSION_GUARD_STATE_DIR` 可覆盖）。
 
+畅跑排期另存一份每会话 JSON：`$DSH_HOME/.dsh/session-guard/free-run/<sessionId>.json`（原子写；`DSH_SESSION_GUARD_FREE_RUN_DIR` 可覆盖）——`from` 可能在将来，重启不能丢排期。
+
 ## 测试
 
 ```bash
-npm test   # node --test tests/*.test.mjs（时区/周末/状态机/会话门/桥接/重试）
+npm test   # node --test "tests/*.test.mjs"（394 通过：时区/峰谷策略/配置文件/周末/状态机/会话门/畅跑/桥接/重试）
 ```
 
 ## 模块
@@ -325,6 +484,8 @@ npm test   # node --test tests/*.test.mjs（时区/周末/状态机/会话门/�
 | 文件 | 职责 |
 |---|---|
 | `src/time.js` | 高峰/周末判定（时区正确）+ `msUntilOffPeak`（退峰精确定时） |
+| `src/time-policy.js` | **时间策略解析器（`TimePolicyResolver`）**：三模式判定（OFF_PEAK / PEAK / NORMAL）+ 配置文件解析与归一化（`peakPolicy` / `weekendPolicy`）+ IANA 时区校验 |
+| `src/config-file.js` | **`config/session-guard.json` 加载**：四级搜索顺序、归一化、坏值收集到 `errors`（永不抛异常，fail-open） |
 | `src/scheduler.js` | 纯状态机 NORMAL ↔ PAUSED_PEAK |
 | `src/provider.js` | 官方源五级判定（纯函数：端点归一化 + 判定矩阵） |
 | `src/provider-directory.js` | 端点目录（`llm.listConfigurableProviders` + `settings.get`，全链路降级） |
@@ -335,14 +496,15 @@ npm test   # node --test tests/*.test.mjs（时区/周末/状态机/会话门/�
 | `src/wiring.js` | 接线编排（入峰过滤 / step 门接线 / 退峰释放 / 精确定时 / 卸载清理） |
 | `src/pause-gate.js` | 自研会话门引擎（agent.cancel keepInbox + goals.pause + 安全边界 + followup 续跑；暂停前先释放 step 门） |
 | `src/pause-store.js` | 自研暂停状态持久化 |
+| `src/free-run.js` | **畅跑状态与存储**：窗口归一化 / 重叠与相邻合并 / 上限 8 / 派生状态 / 每会话落盘 |
 | `src/gate.js` | 会话门驱动（自研真暂停 / 回退锁队列，fail-open） |
 | `src/bridge.js` | `sessionGuard` 冗余端口 |
 | `src/retry.js` | 后端自动重试（失败分类/退避/冻结让路；只按精确码 `PEAK_DEFERRED` 短路） |
 | `src/detect.js` | 自动检测（host taskControl / client input-traffic 桥） |
 | `src/store.js` | 每会话持久化状态 |
-| `src/settings.js` | 设置子板块（schemastery schema + fail-open 注册） |
-| `src/index.js` | host apply（设置/路由/tick/提供服务/重试接线/请求守卫） |
-| `src/client/` | 浏览器 half（**暂停会话按钮** + 状态徽标 + 设置卡片） |
+| `src/settings.js` | **声明式设置 schema**（schemastery `Config`，字段级 `.default()` + `.volatile()`；坏值回退内置默认） |
+| `src/index.js` | host apply（`Config` 导出 / 路由 / tick / 提供服务 / 重试接线 / 请求守卫 / 畅跑定时器） |
+| `src/client/` | 浏览器 half（**畅跑按钮** `free-run-button.tsx` + 文案投影 `free-run-button-text.ts` + **双月日期区间选择器** `date-range-picker.tsx` / `date-range.ts` + 状态徽标） |
 
 ## License
 

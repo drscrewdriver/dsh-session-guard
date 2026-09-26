@@ -18,7 +18,7 @@
  *
  * 任何判定异常都 fail-open 放行（绝不因为本插件让正常请求失败）。
  */
-import { shouldPause } from './time.js'
+import { shouldPause } from './time-policy.js'
 import { PeakDeferredError } from './deferrals.js'
 
 /**
@@ -55,6 +55,7 @@ export function makeIsRoot(ctx) {
  * @param {()=>Date} [deps.clock]
  * @param {(agent:object)=>boolean} [deps.isRoot]
  * @param {(ms:number)=>void} [deps.scheduleRelease] 挂起后请求一次退峰释放检查
+ * @param {(sessionId:string, date:Date)=>boolean} [deps.isFreeRunActive] 畅跑生效中的会话不拦
  * @returns {{install:()=>()=>void, handle:(payload:object, next:Function)=>Promise<unknown>, stats:()=>object}}
  */
 export function createRequestGuard({
@@ -67,6 +68,7 @@ export function createRequestGuard({
   clock = () => new Date(),
   isRoot,
   scheduleRelease,
+  isFreeRunActive,
 }) {
   const rootCheck = isRoot ?? makeIsRoot(ctx)
   const counters = { pass: 0, hold: 0, error: 0, skippedSubagent: 0, failOpen: 0 }
@@ -99,6 +101,19 @@ export function createRequestGuard({
 
     const verdict = shouldPause(cfg, clock())
     if (!verdict.pause) return { action: 'pass', why: verdict.reason }
+
+    // 畅跑（单会话豁免）：该会话在排定窗口内不被拦——请求级 hold 也要让路，
+    // 否则「无视峰谷照常运行」在请求这一层是假的。
+    // 注意：pass 计数由调用方（handle）统一累加，这里不要再加一次。
+    if (typeof isFreeRunActive === 'function') {
+      let free
+      try {
+        free = isFreeRunActive(sessionId, clock()) === true
+      } catch {
+        free = false
+      }
+      if (free) return { action: 'pass', why: 'free-run' }
+    }
 
     const cls = directory.classify(config && config.provider)
     if (!cls.official) {

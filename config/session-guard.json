@@ -1,0 +1,44 @@
+{
+  "enabled": true,
+
+  "timezone": "Asia/Shanghai",
+
+  "peakPolicy": {
+    "peakWindows": [
+      {
+        "name": "morning",
+        "start": "09:00",
+        "end": "12:00",
+        "days": [
+          "mon",
+          "tue",
+          "wed",
+          "thu",
+          "fri"
+        ]
+      },
+
+      {
+        "name": "afternoon",
+        "start": "14:00",
+        "end": "18:00",
+        "days": [
+          "mon",
+          "tue",
+          "wed",
+          "thu",
+          "fri"
+        ]
+      }
+    ]
+  },
+
+  "weekendPolicy": {
+    "enabled": true,
+    "days": [
+      "sat",
+      "sun"
+    ],
+    "mode": "offPeak"
+  }
+}

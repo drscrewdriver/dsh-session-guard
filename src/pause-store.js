@@ -40,6 +40,7 @@ export function idlePauseState(id) {
     forced: false,
     interruptedTool: null,
     deferredTools: null,
+    pausedReason: null,
     updatedAt: null,
   }
 }

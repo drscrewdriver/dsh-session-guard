@@ -32,7 +32,7 @@
 > | --- | --- | --- | --- | --- |
 > | 0.1.0-rc.7 ~ 0.1.1-rc.x | ➖ 本ライン対象外（`legacy/0.1.2` 以前の歴史バージョン） | `ctx.settings.register(ns, schema, { base })` | ✅ 形状一致 | ✅ プラットフォーム値の import なし |
 > | 0.1.2-alpha.2+ / 0.1.2-rc.1 | ➖ 本ライン対象外 → `legacy/0.1.2`（npm `@dsh-0.1.2`） | `register` は維持（`installSection` 追加） | ✅ 形状一致 | ✅ プラットフォーム値の import なし |
-> | **0.1.7-rc.1+** | ✅（**本ライン**、dist-tag `dsh-0.1.7`） | 宣言式：`Config` の `.volatile()` フィールドをホストがフォームに投影、`register` は削除 | ✅ イベントは `snapshotEvents()` の二重経路で読み取り | ✅ クライアントは設定サービスに依存しない |
+> | **0.1.7-rc.1+** | ✅（**本ライン**、dist-tag `dsh-0.1.7`） | 宣言式：`Config` の `.volatile()` フィールドをホストがフォームに投影、**`register` 呼び出しなし**（`settings` サービス自体は依然存在） | ✅ イベントは `snapshotEvents()` の二重経路で読み取り | ✅ クライアントは `slots` + `locale` のみ inject、設定サービスに依存しない |
 > | 0.1.5-rc.2 | ✅（`compat/0.1.5` ブランチ、dist-tag `dsh-0.1.5`） | `register` は維持（文字列名前空間） | ✅ イベントは `snapshotEvents()` の二重経路で読み取り | ✅ |
 >
 > **本ラインの識別情報**：ブランチ `compat/0.1.7`、npm バージョン **`3.1.1`**（semver）、
@@ -75,7 +75,7 @@
 - **リクエスト級バックストップ + 延後キュー**：ピーク入場後に起動したセッション、途中で公式ソースへ切り替えたセッションは `agent/request` ガードが捕捉（既定 `hold`：リクエストを保留しエラーなし、退峰時に自動解放）。
 - **セッション級凍結/再開**：`sessionGuard` 冗余ポート + `POST /session-guard/rpc`、input-traffic 凍結ボタンでセッションごと透伝。`/pause /resume /cancel` 手動コマンドも提供。
 - **バックエンド自動リトライ（D9）**：turn/end 瞬時失敗（error/429/max-tokens）はアダプティブバックオフで自動再試行。永久失敗は停止。**凍結/ゲート期間中は譲歩**、セッションゲートを迂回しません。
-- **fail-open**：カスタムセッションゲート利用不可、session-guard 未インストール、設定ファイル破損、設定サービス欠如——すべて静的降格、依存でクラッシュしません。
+- **fail-open**：カスタムセッションゲート利用不可、session-guard 未インストール、設定ファイル破損、`settings` サービスに `register`/`get` が無い——すべて静的降格、依存でクラッシュしません。
 
 ## インストール
 
@@ -103,13 +103,21 @@ dsh plugin --profile web add dsh-session-guard@dsh-0.1.2
 
 ## 設定（設定 → プラグイン → session-guard）
 
-本ラインの dsh は**`settings` サービスを提供しません**：`dsh-settings` に `register()` はなく、プラグインも
-`settings` を **inject しません**（本ラインに存在しないサービスを宣言すると、エントリが永遠に pending になり
-アプリの web boot が致命的に失敗します）。設定面は**宣言式**です：プラグインが
+本ラインの `settings` サービスは**依然として存在します**（実装クラス `SettingsForms`、`describe()` あり、
+`hasSettings: true` / `hasDescribe: true`）。ただし `dsh-settings` は **`register()` を提供しなくなり
+（`get()` もありません）**、残るのは `describe()` と `configure()` だけです。プラグインが `settings` を
+**inject しない**のは、このサービスから何も消費しないため（呼べる `register` も読める `get` も無い）で
+あって、**サービスが存在しないからではありません**。設定面はしたがって**宣言式**です：プラグインが
 `Config = SettingsSchema` を export し、`schema` の各フィールドに `.volatile()` を付けているため、dsh が
 **設定フォームを自動生成**します（設定 → プラグイン → session-guard）——プラグインは名前空間を登録せず、
 独自の設定カードも持ちません。実行時の値は apply の合成エントリから読み、`config/session-guard.json` の
 既定レイヤーにマージされます（次節参照）。
+
+> ⚠️ クライアント半はこれとは別問題です：**クライアント側**のサービス **`settingsScope` は本ラインで
+> 確かに提供されていません**。これをクライアントの静的 `inject` に宣言すると、クライアントエントリが
+> 永遠に pending（`waiting for service: settingsScope`）となり、アプリの web boot が**致命的に失敗**します。
+> そのためクライアント半は `inject = ['slots', 'locale']` で、設定カードも持ちません。web boot の危険は
+> `settingsScope`（クライアント）に由来し、ホストの `settings` サービスとは無関係です。
 
 | スイッチ | デフォルト | 説明 |
 |---|---|---|
@@ -167,7 +175,7 @@ dsh plugin --profile web add dsh-session-guard@dsh-0.1.2
 | 3 | `<cwd>/config/session-guard.json` | プロジェクト級 |
 | 4 | `<plugin>/config/session-guard.json` | パッケージ同梱の既定値 |
 
-- このファイルは**既定レイヤー**です：dsh が `Config` の `.volatile()` フィールドから自動生成する設定フォーム（設定 → プラグイン → session-guard）で明示した値が**優先**されます——実行時の値は「設定ファイルの既定レイヤー ← 合成エントリのフォーム上書き層」です。本ラインには `settings` サービスが無いため、「settings ユーザー層」という層はもう存在しません；
+- このファイルは**既定レイヤー**です：dsh が `Config` の `.volatile()` フィールドから自動生成する設定フォーム（設定 → プラグイン → session-guard）で明示した値が**優先**されます——実行時の値は「設定ファイルの既定レイヤー ← 合成エントリのフォーム上書き層」です。本ラインの `settings` サービスは存在しますが、`dsh-settings` に `register()`/`get()` が無いため、プラグインから読める「settings ユーザー層」という層は存在しません；
 - `reloadConfig` が読み直すのは**設定ファイルの既定レイヤー**だけなので、再読み込みで変わるのはあなたが**フォームで自分で上書きしていない**キーだけです——フォームで変更した値は引き続きファイルより優先されます；
 - **値は検証されます。不正値がガードを黙って壊すことはありません**：読めないファイル、不正な JSON、配列でない/不正な `peakWindows`、範囲外のスカラー、不正なタイムゾーンは `errors` に記録され warning として記録され（起動時と `reloadConfig` 時の両方）、**該当キーは既定値を保ちます**——「峰ウィンドウが無い」状態や機能しないガードに静かに落ちることはありません。明示的な `"peakWindows": []` は意図的な「峰ウィンドウ無し」として尊重されます；
 - **壊れたファイルが起動を止めることはありません（fail-open）**：エラーは収集され warning として記録され、内蔵既定値へフォールバックします——原因は `GET /session-guard/settings` と `GET /session-guard/diag` の `configFile.errors` で確認できます。ファイル値が設定 schema を通らない場合でも、設定フォームは**内蔵既定値から生成され続けます**（黙って消えることはありません）。不正値は無視され warning が記録されます；

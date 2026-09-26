@@ -32,7 +32,7 @@
 > | --- | --- | --- | --- | --- |
 > | 0.1.0-rc.7 ~ 0.1.1-rc.x | ➖ not on this line (history before `legacy/0.1.2`) | `ctx.settings.register(ns, schema, { base })` | ✅ same shape | ✅ no platform value imports |
 > | 0.1.2-alpha.2+ / 0.1.2-rc.1 | ➖ not on this line → use `legacy/0.1.2` (npm `dsh-0.1.2`) | `register` still present (`installSection` added) | ✅ same shape | ✅ no platform value imports |
-> | **0.1.7-rc.1+** | ✅ (**this line**, dist-tag `dsh-0.1.7`) | declarative: `Config` `.volatile()` fields are projected into the form by the host; `register` is gone | ✅ events read via the `snapshotEvents()` dual path | ✅ no client settings dependency |
+> | **0.1.7-rc.1+** | ✅ (**this line**, dist-tag `dsh-0.1.7`) | declarative: `Config` `.volatile()` fields are projected into the form by the host, **no `register` call** (the `settings` service itself still exists) | ✅ events read via the `snapshotEvents()` dual path | ✅ client injects only `slots` + `locale`, no settings dependency |
 > | 0.1.5-rc.2 | ✅ (`compat/0.1.5` branch, dist-tag `dsh-0.1.5`) | `register` unchanged (string namespaces) | ✅ events read via `snapshotEvents()` dual path | ✅ |
 >
 > **This line's identity**: branch `compat/0.1.7`, npm version **`3.1.1`** (semver), dist-tag
@@ -93,7 +93,7 @@ A cordis plugin assembled via the `dsh plugin` command and a bundle patch — no
 - **Request-level backstop + deferral queue**: sessions started after peak entry, or switched to an official source mid-session, are caught by the `agent/request` guard (default `hold`: the request is suspended without an error and released off-peak).
 - **Per-session freeze / resume**: `sessionGuard` redundant port + `POST /session-guard/rpc`, input-traffic freeze button per-session passthrough; also provides `/pause /resume /cancel` manual commands.
 - **Backend auto-retry (D9)**: turn/end transient failures (error/429/max-tokens) auto-retry with adaptive backoff; permanent failures stop; **yields during freeze/gate**, never bypasses the session gate.
-- **Fail-open**: custom session gate unavailable, session-guard not installed, config file malformed, settings service missing — all silently degrade, never crash on dependencies.
+- **Fail-open**: custom session gate unavailable, session-guard not installed, config file malformed, the `settings` service lacking `register`/`get` — all silently degrade, never crash on dependencies.
 
 ## Installation
 
@@ -121,13 +121,21 @@ Restart dsh web and refresh the page after installation.
 
 ## Settings (Settings → Plugins → session-guard, simple toggles)
 
-On this line dsh **no longer provides a `settings` service** — `dsh-settings` has no `register()` and
-the plugin does **not** inject `settings` (declaring that absent service would leave the entry
-permanently pending and fatally break web boot). The settings surface is **declarative** instead: the
-plugin exports `Config = SettingsSchema`, every field of which is marked `.volatile()`, and dsh
-**auto-generates the settings form** (Settings → Plugins → session-guard). The plugin registers no
-namespace and ships no custom settings card. Runtime values are read from the apply composition entry
-and merged over the `config/session-guard.json` default layer (see the next section).
+On this line the `settings` service **still exists** (class `SettingsForms`; `hasSettings: true`,
+`hasDescribe: true`), but `dsh-settings` **no longer offers `register()` (nor `get()`)** — only
+`describe()` and `configure()`. The plugin does **not** inject `settings` because it consumes nothing
+from that service (there is no `register` to call and no `get` to read), **not because the service is
+absent**. The settings surface is therefore **declarative**: the plugin exports
+`Config = SettingsSchema`, every field of which is marked `.volatile()`, and dsh **auto-generates the
+settings form** (Settings → Plugins → session-guard). The plugin registers no namespace and ships no
+custom settings card. Runtime values are read from the apply composition entry and merged over the
+`config/session-guard.json` default layer (see the next section).
+
+> ⚠️ The client half is a separate matter: the **client-side** service `settingsScope` genuinely is
+> not provided on this line. Declaring it in the client's static `inject` left the client entry
+> pending forever (`waiting for service: settingsScope`) and fatally broke the app's web boot. That is
+> why the client half uses `inject = ['slots', 'locale']` and ships no settings card. The web-boot
+> danger comes from `settingsScope` (client), never from the host `settings` service.
 
 | Toggle | Default | Description |
 |---|---|---|
@@ -185,7 +193,7 @@ Resolution order (**first hit wins**):
 | 3 | `<cwd>/config/session-guard.json` | project level |
 | 4 | `<plugin>/config/session-guard.json` | bundled default (shipped in the package) |
 
-- The file is the **default layer**: values explicitly set in the auto-generated settings form (the `Config` `.volatile()` fields projected by dsh into Settings → Plugins → session-guard) **still win** — runtime values are the config-file default layer with the composition-entry form overrides merged on top. This line has no `settings` service at all, so there is no separate "settings user layer";
+- The file is the **default layer**: values explicitly set in the auto-generated settings form (the `Config` `.volatile()` fields projected by dsh into Settings → Plugins → session-guard) **still win** — runtime values are the config-file default layer with the composition-entry form overrides merged on top. On this line the `settings` service still exists, but `dsh-settings` no longer offers `register()`/`get()`, so there is no separate plugin-readable "settings user layer";
 - `reloadConfig` re-reads the **config-file default layer** only, so a reload changes every key you have **not** personally overridden in the form — form edits keep winning over the file;
 - **Values are validated; a bad value can never quietly break the guard**: an unreadable file, invalid JSON, a non-array/invalid `peakWindows`, an out-of-range scalar or an invalid timezone is recorded in `errors` and logged as a warning (at startup and again on `reloadConfig`), and the **affected key keeps its default** — the plugin never silently ends up with "no peak windows" or a non-functional guard. An explicit `"peakWindows": []` is still honoured as the deliberate "no peak windows" intent;
 - **A malformed file never blocks startup (fail open)**: errors are collected, logged as warnings and the built-in defaults are used — `GET /session-guard/settings` and `GET /session-guard/diag` expose the cause under `configFile.errors`. Even when file values cannot pass the settings schema, the settings form **is still generated from the built-in defaults** (never silently removed); the bad values are ignored and a warning is logged;

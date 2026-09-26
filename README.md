@@ -34,7 +34,7 @@
 > | --- | --- | --- | --- | --- |
 > | 0.1.0-rc.7 ~ 0.1.1-rc.x | ➖ 不在本线（`legacy/0.1.2` 之前的历史版本） | `ctx.settings.register(ns, schema, { base })` | ✅ 形状一致 | ✅ 无平台值导入 |
 > | 0.1.2-alpha.2+ / 0.1.2-rc.1 | ➖ 不在本线 → 用 `legacy/0.1.2`（npm `@dsh-0.1.2`） | `register` 仍保留（另加 `installSection`） | ✅ 形状一致 | ✅ 无平台值导入 |
-> | **0.1.7-rc.1+** | ✅（**本线**，dist-tag `dsh-0.1.7`） | 声明式：Config `.volatile()` 字段由宿主投影成表单，`register` 已删除 | ✅ 事件经 `snapshotEvents()` 双路径读取 | ✅ 客户端设置卡改 `configForms` |
+> | **0.1.7-rc.1+** | ✅（**本线**，dist-tag `dsh-0.1.7`） | 声明式：`Config` 的 `.volatile()` 字段由宿主投影成表单，**不调用 `register`**（`settings` 服务本身仍在） | ✅ 事件经 `snapshotEvents()` 双路径读取 | ✅ 客户端只 inject `slots` + `locale`，不依赖设置服务 |
 > | 0.1.5-rc.2 | ✅（`compat/0.1.5` 分支，dist-tag `dsh-0.1.5`） | `register` 仍在（字符串命名空间） | ✅ 事件经 `snapshotEvents()` 双路径读取 | ✅ |
 >
 > **本线身份**：分支 `compat/0.1.7`，npm 版本号 **`3.1.1`**（semver），dist-tag **`dsh-0.1.7`**。
@@ -67,8 +67,8 @@
 > `source.callId` 回退），已抽到 `src/tool-call-id.js` 并配单测——两版本的回放日志都可能出现这两种形态。
 > 0.1.5 起 `session.events` 数组访问器被移除，本线经 `snapshotEvents()`（保留旧数组回退）读取，
 > 只影响 `findToolOutcome` / `lastUserPrompt` 两条辅助路径。
-> `model/selection` 事件**仅 0.1.2+**，只做切模型加速且必须特性探测；设置面只用
-> `register` + `get` 交集（不碰 `installSection` / 已移除的 `installSettingsSection`）。
+> `model/selection` 事件**仅 0.1.2+**，只做切模型加速且必须特性探测；本线设置面改为声明式
+> （`Config` + `.volatile()`），完全不调用 `register` / `installSection` / `installSettingsSection`。
 > 漂移守卫脚本：`tools/check-api-drift.ps1`（本线默认对 `dsh-v0.1.5-rc.2` 断言必需接口存在）。
 
 > 高峰时段自动暂停运行中的会话、低峰/周末自动续跑；配合 input-traffic 的冻结按钮做到**会话级**锁定；后端**自动重试**在冻结/门控期间让路。核心基于**自研会话门**（`agent.cancel keepInbox + goals.pause + session/event 安全边界 + followup 续跑`），不再依赖 dsh-task-control。
@@ -89,7 +89,7 @@
 - **请求级兜底 + 延后队列**：入峰后才启动的会话、会话中途被切到官方源的情况，由 `agent/request` 请求级守卫拦住（默认 `hold`：请求挂起不报错，退峰自动放行）。
 - **会话级冻结 / 恢复**：`sessionGuard` 冗余端口 + `POST /session-guard/rpc`，input-traffic 冻结按钮逐会话透传接入；也提供 `/pause /resume /cancel` 手动命令。
 - **后端自动重试（D9）**：turn/end 瞬时失败（error/429/max-tokens）自适应退避自动续跑；永久失败停止；**冻结/门控期间让路**，绝不绕过会话门。
-- **fail-open**：自研会话门不可用、session-guard 未装、设置服务缺失——均静默降级，绝不因依赖而崩。
+- **fail-open**：自研会话门不可用、session-guard 未装、`settings` 服务缺少 `register`/`get`——均静默降级，绝不因依赖而崩。
 
 ## 界面预览
 
@@ -125,11 +125,18 @@ dsh plugin --profile web add dsh-session-guard@dsh-0.1.2
 
 ## 设置（设置 → 插件 → session-guard，简单开关）
 
-本线的 dsh **不再提供 `settings` 服务**：`dsh-settings` 没有 `register()`，插件也**不 inject `settings`**
-（声明一个本线缺席的服务会让客户端条目永远 pending、进而让应用 web boot 致命失败）。设置面改为
-**声明式**：插件 `export const Config = SettingsSchema`，`schema` 里每个字段都标了 `.volatile()`，
-dsh 据此**自动生成设置表单**（设置 → 插件 → session-guard）——**插件不注册任何命名空间，也不挂自定义设置卡片**。
-运行时值与表单值都从 apply 的组合条目读出，再与 `config/session-guard.json` 的默认层合并（见下节）。
+本线的 `settings` 服务**仍然存在**（实现类 `SettingsForms`，有 `describe()`，即 `hasSettings: true`、
+`hasDescribe: true`），但 `dsh-settings` **不再提供 `register()`（也没有 `get()`）**，只剩 `describe()`
+与 `configure()`。插件 **不 inject `settings`**，是因为它不从该服务消费任何东西（没有 `register` 可调、
+也没有 `get` 可读），**不是因为服务缺席**。设置面因此是**声明式**：插件 `export const Config = SettingsSchema`，
+`schema` 里每个字段都标了 `.volatile()`，dsh 据此**自动生成设置表单**（设置 → 插件 → session-guard）——
+**插件不注册任何命名空间，也不挂自定义设置卡片**。运行时值与表单值都从 apply 的组合条目读出，再与
+`config/session-guard.json` 的默认层合并（见下节）。
+
+> ⚠️ 客户端半与此无关：**客户端侧**的服务 **`settingsScope` 在本线确实没有提供**。把它声明进客户端的
+> 静态 `inject` 会让客户端条目永远 pending（`waiting for service: settingsScope`），并让应用 web boot
+> **致命失败**。所以客户端半的 `inject = ['slots', 'locale']`，且不挂设置卡片。web boot 的风险来自
+> `settingsScope`（客户端），与宿主 `settings` 服务无关。
 
 | 开关 | 默认 | 说明 |
 |---|---|---|
@@ -187,7 +194,7 @@ dsh 据此**自动生成设置表单**（设置 → 插件 → session-guard）�
 | 3 | `<cwd>/config/session-guard.json` | 项目级 |
 | 4 | `<plugin>/config/session-guard.json` | 包内默认（随包发布） |
 
-- 该文件是**默认层**：dsh 自动生成的设置表单（由 `Config` 的 `.volatile()` 字段投影而来）里显式设过的值**仍然优先**——运行时值 = 配置文件默认层 ← 组合条目的表单覆盖层。本线没有 `settings` 服务，所以不再有「settings 用户层」这一层；
+- 该文件是**默认层**：dsh 自动生成的设置表单（由 `Config` 的 `.volatile()` 字段投影而来）里显式设过的值**仍然优先**——运行时值 = 配置文件默认层 ← 组合条目的表单覆盖层。本线的 `settings` 服务仍在，但 `dsh-settings` 不再提供 `register()`/`get()`，所以不再有插件可读的「settings 用户层」这一层；
 - `reloadConfig` 重新读取的是**配置文件默认层**，因此重载只改变你**没有**在表单里亲手改过的键——表单里改过的值依旧压过文件；
 - **取值会校验，坏值不会悄悄搞坏守卫**：无法读取的文件、非法 JSON、非数组/非法 `peakWindows`、越界的标量、非法时区——一律记入 `errors` 并在启动与 `reloadConfig` 时记 warning，**保留该项默认值**，绝不允许静默退化成「没有峰窗口」或守卫失效；显式写 `"peakWindows": []` 仍然算**有意为之**的「不要峰窗口」；
 - **损坏不阻塞启动（fail-open）**：错误被收集、以 warning 记录，然后回退内置默认值——`GET /session-guard/settings` 与 `GET /session-guard/diag` 的 `configFile.errors` 能看到具体原因。即使文件值连设置 schema 都过不去，设置表单**仍会以内置默认值生成**（绝不静默消失），坏值被忽略并记 warning。

@@ -43,6 +43,9 @@ import { NS, DEFAULT_SETTINGS, SettingsSchema, effectiveDefaults } from './setti
 export const Config = SettingsSchema
 
 export const name = 'session-guard'
+// 不含 `settings`：本线的 settings 服务仍在（类 SettingsForms，有 describe()），
+// 但已无 register()/get()，我们从它消费不到任何东西，所以不声明这个依赖。
+// （会致命的是**客户端**缺失的 `settingsScope`，见 src/client/index.ts。）
 export const inject = ['agents', 'webServer', 'timer', 'commands', 'goals']
 
 export { NS, DEFAULT_SETTINGS }

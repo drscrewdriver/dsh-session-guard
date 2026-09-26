@@ -1,14 +1,19 @@
 /**
  * dsh-session-guard — 设置 schema（0.1.7 线：**声明式 volatile 设置**）。
  *
- * 0.1.7 的 `dsh-settings` 不再提供 `register()`（只剩 `configure()` / `get()` /
- * `describe()`），因此本线改用官方推荐的声明式形态：
+ * **本线的 `settings` 服务仍在**（类 `SettingsForms`，有 `describe()` / `configure()`），
+ * 但 `dsh-settings` **已没有 `register()` 与 `get()`** —— 这（而非「服务缺席」）才是设置面
+ * 改用官方推荐声明式形态的原因：
  * - `src/index.js` 导出 `export const Config = SettingsSchema`，dsh 依据 schema 里的
  *   `.volatile()` 字段**自动生成设置表单**；
  * - 运行时经 `apply(ctx, config)` 的组合条目读取（volatile 值是 live ref，
  *   用 `.get()` 解引），见 `src/index.js` 的 `resolveEntryConfig()`；
- * - **不再有任何 register 调用**，插件也**不 inject `settings`**（该服务在本线缺席，
- *   声明它会让条目永远 pending 并让应用 web boot 致命失败）。
+ * - **不再有任何 register 调用**（没有可调用的 `register`），插件也**不 inject `settings`**
+ *   —— 它不从该服务消费任何东西，少一个依赖更干净。
+ *
+ * ⚠️ 真正会让应用 **web boot 致命失败**的是**客户端**缺失的 `settingsScope`（写成静态
+ * `inject` 会让客户端条目永远 pending），与宿主的 `settings` 服务无关 —— 见
+ * `src/client/index.ts` 的兼容性注记。
  *
  * 本文件只保留纯数据 + 纯校验：
  * - `DEFAULT_SETTINGS`：核心逻辑依赖的默认值；

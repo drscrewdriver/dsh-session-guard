@@ -99,13 +99,18 @@ All notable changes to `dsh-session-guard` are recorded here. Versions follow se
 
 ### Changed
 
-- **Settings model on this line is declarative.** dsh 0.1.7 no longer provides a `settings` service
-  and `dsh-settings` has no `register()`. The plugin now `export const Config = SettingsSchema` with
-  every field marked `.volatile()`, so dsh **auto-generates the settings form**; runtime values come
-  from the apply composition entry merged over the `config/session-guard.json` default layer. The
-  plugin registers no namespace, ships no custom settings card, and does **not** inject `settings`
-  (declaring that absent service would leave the entry permanently pending and fatally break web
-  boot). Documentation is updated accordingly.
+- **Settings model on this line is declarative.** On this line the `settings` service **still exists**
+  (class `SettingsForms`, with `describe()`), but `dsh-settings` no longer offers `register()` (nor
+  `get()`): only `describe()` and `configure()`. The plugin now `export const Config = SettingsSchema`
+  with every field marked `.volatile()`, so dsh **auto-generates the settings form**; runtime values
+  come from the apply composition entry merged over the `config/session-guard.json` default layer. The
+  plugin registers no namespace, ships no custom settings card, and does **not** inject `settings` —
+  not because the service is absent, but because it consumes nothing from it (there is no `register`
+  to call and no `get` to read). The client half is a separate case: the **client-side** service
+  `settingsScope` really is not provided on this line, and declaring it in the client's static
+  `inject` left the entry pending forever (`waiting for service: settingsScope`) and fatally broke
+  web boot — hence the client uses `inject = ['slots', 'locale']` and no settings card. Documentation
+  is updated accordingly.
 - **The composer button was replaced.** The old "pause session / resume session" button (slot
   `session-guard-pause`, `src/client/pause-button.tsx` / `pause-button-text.ts`) and its four states
   are gone; the free-run button (slot `session-guard-free-run`, order 20) takes that position. The

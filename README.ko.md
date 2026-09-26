@@ -32,7 +32,7 @@
 > | --- | --- | --- | --- | --- |
 > | 0.1.0-rc.7 ~ 0.1.1-rc.x | ➖ 본 라인 대상 아님(`legacy/0.1.2` 이전 역사 버전) | `ctx.settings.register(ns, schema, { base })` | ✅ 형태 동일 | ✅ 플랫폼 값 import 없음 |
 > | 0.1.2-alpha.2+ / 0.1.2-rc.1 | ➖ 본 라인 대상 아님 → `legacy/0.1.2`(npm `@dsh-0.1.2`) | `register` 유지(`installSection` 추가) | ✅ 형태 동일 | ✅ 플랫폼 값 import 없음 |
-> | **0.1.7-rc.1+** | ✅(**본 라인**, dist-tag `dsh-0.1.7`) | 선언식: `Config`의 `.volatile()` 필드를 호스트가 폼으로 투영, `register`는 제거 | ✅ 이벤트는 `snapshotEvents()` 이중 경로로 읽음 | ✅ 클라이언트는 설정 서비스에 의존하지 않음 |
+> | **0.1.7-rc.1+** | ✅(**본 라인**, dist-tag `dsh-0.1.7`) | 선언식: `Config`의 `.volatile()` 필드를 호스트가 폼으로 투영, **`register` 호출 없음**(`settings` 서비스 자체는 여전히 존재) | ✅ 이벤트는 `snapshotEvents()` 이중 경로로 읽음 | ✅ 클라이언트는 `slots` + `locale`만 inject, 설정 서비스에 의존하지 않음 |
 > | 0.1.5-rc.2 | ✅(`compat/0.1.5` 브랜치, dist-tag `dsh-0.1.5`) | `register` 유지(문자열 네임스페이스) | ✅ 이벤트는 `snapshotEvents()` 이중 경로로 읽음 | ✅ |
 >
 > **본 라인 식별 정보**: 브랜치 `compat/0.1.7`, npm 버전 **`3.1.1`**(semver),
@@ -75,7 +75,7 @@
 - **요청급 백스톱 + 연기 큐**: 피크 진입 후 시작된 세션, 도중에 공식 소스로 전환된 세션은 `agent/request` 가드가 포착(기본 `hold`: 요청을 보류하고 오류 없이, 피크 종료 시 자동 해제).
 - **세션급 동결/재개**: `sessionGuard` 중복 포트 + `POST /session-guard/rpc`, input-traffic 동결 버튼으로 세션별 패스스루. `/pause /resume /cancel` 수동 명령도 제공.
 - **백엔드 자동 재시도(D9)**: turn/end 일시적 실패(error/429/max-tokens)는 적응형 백오프로 자동 재시도; 영구 실패는 중지; **동결/게이트 기간 중 양보**, 세션 게이트를 우회하지 않음.
-- **fail-open**: 커스텀 세션 게이트 사용 불가, session-guard 미설치, 설정 파일 손상, 설정 서비스 누락 — 모두 조용히 성능 저하, 의존성으로 크래시하지 않음.
+- **fail-open**: 커스텀 세션 게이트 사용 불가, session-guard 미설치, 설정 파일 손상, `settings` 서비스에 `register`/`get` 없음 — 모두 조용히 성능 저하, 의존성으로 크래시하지 않음.
 
 ## 설치
 
@@ -103,13 +103,21 @@ dsh plugin --profile web add dsh-session-guard@dsh-0.1.2
 
 ## 설정 (설정 → 플러그인 → session-guard)
 
-본 라인의 dsh는 **`settings` 서비스를 제공하지 않습니다**: `dsh-settings`에 `register()`가 없고, 플러그인도
-`settings`를 **inject하지 않습니다**(본 라인에 없는 서비스를 선언하면 엔트리가 영원히 pending 상태가 되어
-앱 web boot가 치명적으로 실패합니다). 설정면은 **선언식**입니다: 플러그인이
+본 라인의 `settings` 서비스는 **여전히 존재합니다**(구현 클래스 `SettingsForms`, `describe()` 있음,
+`hasSettings: true` / `hasDescribe: true`). 다만 `dsh-settings`는 **`register()`를 더 이상 제공하지 않고
+(`get()`도 없습니다)** `describe()`와 `configure()`만 남습니다. 플러그인이 `settings`를 **inject하지
+않는** 이유는 이 서비스에서 아무것도 소비하지 않기 때문이며(호출할 `register`도, 읽을 `get`도 없음),
+**서비스가 없기 때문이 아닙니다**. 따라서 설정면은 **선언식**입니다: 플러그인이
 `Config = SettingsSchema`를 export하고 `schema`의 각 필드에 `.volatile()`을 붙였으므로 dsh가
 **설정 폼을 자동 생성**합니다(설정 → 플러그인 → session-guard) — 플러그인은 네임스페이스를 등록하지 않고
 자체 설정 카드도 두지 않습니다. 런타임 값은 apply의 합성 엔트리에서 읽어
 `config/session-guard.json`의 기본 레이어 위에 병합합니다(다음 절 참조).
+
+> ⚠️ 클라이언트 절반은 별개 문제입니다: **클라이언트 측** 서비스 **`settingsScope`는 본 라인에서
+> 실제로 제공되지 않습니다**. 이를 클라이언트의 정적 `inject`에 선언하면 클라이언트 엔트리가 영원히
+> pending(`waiting for service: settingsScope`)이 되어 앱의 web boot가 **치명적으로 실패**합니다.
+> 그래서 클라이언트 절반은 `inject = ['slots', 'locale']`이며 설정 카드도 두지 않습니다. web boot 위험은
+> `settingsScope`(클라이언트)에서 오며, 호스트 `settings` 서비스와는 무관합니다.
 
 | 스위치 | 기본값 | 설명 |
 |---|---|---|
@@ -167,7 +175,7 @@ dsh plugin --profile web add dsh-session-guard@dsh-0.1.2
 | 3 | `<cwd>/config/session-guard.json` | 프로젝트급 |
 | 4 | `<plugin>/config/session-guard.json` | 패키지 동봉 기본값 |
 
-- 이 파일은 **기본 레이어**입니다: dsh가 `Config`의 `.volatile()` 필드에서 자동 생성하는 설정 폼(설정 → 플러그인 → session-guard)에서 명시한 값이 **우선**합니다 — 런타임 값은 "설정 파일 기본 레이어 ← 합성 엔트리의 폼 덮어쓰기 레이어"입니다. 본 라인에는 `settings` 서비스가 없으므로 "settings 사용자 레이어"라는 층은 더 이상 존재하지 않습니다；
+- 이 파일은 **기본 레이어**입니다: dsh가 `Config`의 `.volatile()` 필드에서 자동 생성하는 설정 폼(설정 → 플러그인 → session-guard)에서 명시한 값이 **우선**합니다 — 런타임 값은 "설정 파일 기본 레이어 ← 합성 엔트리의 폼 덮어쓰기 레이어"입니다. 본 라인의 `settings` 서비스는 존재하지만 `dsh-settings`에 `register()`/`get()`이 없으므로 플러그인이 읽을 수 있는 "settings 사용자 레이어"라는 층은 존재하지 않습니다；
 - `reloadConfig`가 다시 읽는 것은 **설정 파일의 기본 레이어**뿐이므로, 재로드로 바뀌는 것은 당신이 **폼에서 직접 덮어쓰지 않은** 키뿐입니다 — 폼에서 바꾼 값은 계속 파일보다 우선합니다；
 - **값은 검증됩니다. 잘못된 값이 가드를 조용히 망가뜨릴 수 없습니다**: 읽을 수 없는 파일, 잘못된 JSON, 배열이 아니거나 잘못된 `peakWindows`, 범위를 벗어난 스칼라, 잘못된 타임존은 `errors`에 기록되고 warning으로 남으며(시작 시와 `reloadConfig` 시 모두) **해당 키는 기본값을 유지합니다** — "피크 윈도우 없음" 상태나 작동하지 않는 가드로 조용히 떨어지지 않습니다. 명시적 `"peakWindows": []`는 의도적인 "피크 윈도우 없음"으로 존중됩니다；
 - **잘못된 파일이 시작을 막지 않습니다(fail-open)**: 오류는 수집되어 warning으로 기록되고 내장 기본값으로 폴백합니다 — 원인은 `GET /session-guard/settings`와 `GET /session-guard/diag`의 `configFile.errors`에서 확인할 수 있습니다. 파일 값이 설정 schema를 통과하지 못하더라도 설정 폼은 **내장 기본값으로 계속 생성됩니다**(조용히 사라지지 않음). 잘못된 값은 무시되고 warning이 기록됩니다；

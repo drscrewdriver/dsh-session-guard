@@ -109,14 +109,39 @@ export function isEdge(iso: string, from: string, to: string): boolean {
 }
 
 /**
- * 默认区间：**开始 = 当前时刻**（本小时整点），结束 = +2 小时（跨天则顺延到下一天）。
+ * 小时选择的语义：**按小时包含**。
+ *
+ * - **开始**小时 H → `H:00`（从这一小时的开头开始）；
+ * - **结束**小时 H → `H:59`（把这一小时**整个包含**进去）。
+ *
+ * 为什么结束取 `:59` 而不是 `:00`：主机侧的窗口是半开的 `[from, to)`。若结束也取 `:00`，
+ * 选「23 时」就会得到 `23:00`，当天最后一小时（23:00–24:00）根本选不进来；取 `:59`
+ * 后「开始 12 时 → 结束 14 时」= `12:00 → 14:59`，正好覆盖 12、13、14 三个小时，
+ * 而「结束 23 时」= `23:59`，即当天最后一刻。
+ */
+export const END_MINUTE = 59
+
+/** 把「日期 + 小时」拼成主机要的墙钟串（按配置时区解释）：开始 = `H:00`。 */
+export function combineStart(date: string, hour: string): string {
+  return `${date}T${pad2(Number(hour))}:00`
+}
+
+/** 把「日期 + 小时」拼成主机要的墙钟串：结束 = `H:59`（含该小时）。 */
+export function combineEnd(date: string, hour: string): string {
+  return `${date}T${pad2(Number(hour))}:${pad2(END_MINUTE)}`
+}
+
+/**
+ * 默认区间：**开始 = 当前时刻**（本小时整点），结束 = 下一个小时（按上面的「含该小时」
+ * 语义即覆盖 2 个自然小时；跨天/跨月/跨年会顺延到下一天）。
  *
  * 与用户要求一致：「默认开始时间是当前时刻」。返回 `YYYY-MM-DD` 与 `HH` 四段，
  * 直接喂给日历 + 小时下拉。
  */
 export function seedRange(now: Date): { fromDate: string; fromHour: string; toDate: string; toHour: string } {
   const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), 0, 0, 0)
-  const end = new Date(start.getTime() + 2 * 60 * 60 * 1000)
+  // 结束小时 = 开始小时 + 1（显示用的小时；配合 `:59` 语义 = 覆盖开始那一小时与下一小时）。
+  const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours() + 1, 0, 0, 0)
   return {
     fromDate: toIso({ y: start.getFullYear(), m: start.getMonth() + 1, d: start.getDate() }),
     fromHour: pad2(start.getHours()),

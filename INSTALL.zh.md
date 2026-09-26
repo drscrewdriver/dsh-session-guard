@@ -90,7 +90,7 @@ dsh plugin --profile web add dsh-session-guard@dsh-0.1.7
 
 旧的输入区「暂停会话 / 继续会话」按钮已**移除**，「畅跑」按钮（slot `session-guard-free-run`，
 order 20）占据该位置。`/pause`、`/resume`、`/cancel` 命令与 `sessionGuard` 端口（含 `stepPause` /
-`stepResume`）保持不变。畅跑窗口现在在任务面板里按小时精度编辑；原先想在峰谷上做的特例改由配置文件承担。
+`stepResume`）保持不变。畅跑窗口现在在任务面板里按小时精度编辑（开始小时 = `H:00`、结束小时 = `H:59`，即结束小时整点包含，「结束 23 时」= `23:59`）；原先想在峰谷上做的特例改由配置文件承担。
 
 ## 4. 故障排查
 

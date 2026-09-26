@@ -50,8 +50,9 @@ All notable changes to `dsh-session-guard` are recorded here. Versions follow se
   `‹‹ ‹ … › ››` month/year navigation, weeks starting on Monday, today outlined, the selected range
   shaded and its endpoints filled; the first click picks the start, the second the end, reversed
   clicks swap, and the calendar closes once the range is complete. Opening the panel seeds the range
-  with **the current time** (start = the current hour, end = +2h); hour selects stay alongside for
-  hour precision and a `现在` button re-seeds from the current time.
+  with **the current time** (start = the current hour `H:00`, end = the next hour `H+1:59` — two
+  clock hours); hour selects stay alongside for hour precision and a `现在` button re-seeds from the
+  current time.
 - **Free-run semantics**: absolute half-open `[from, to)` instants at **hour precision** in the
   configured `timezone`; `from` in the past is clamped to now (so "start immediately" works);
   one-shot — a task simply stops matching at `to`, which is its normal lifecycle and therefore
@@ -62,6 +63,13 @@ All notable changes to `dsh-session-guard` are recorded here. Versions follow se
   exemption holds while **at least one unpaused task covers the current instant**, and a paused task
   never transitions on its own. Schedules are persisted per session as JSON, so a dsh restart does
   not lose a future `from`.
+- **Free-run hours are inclusive per hour**: the start hour H means `H:00` and the end hour H means
+  `H:59`, so the end hour is covered in full — "开始 12 时 → 结束 14 时" is `12:00 → 14:59` (hours
+  12, 13 and 14), "开始 12 时 → 结束 12 时" covers exactly that one hour, and "结束 23 时" is
+  `23:59`, so the last hour of the day (23:00–24:00) can be selected (it used to be `23:00`, which
+  left that hour unreachable). The host window stays half-open `[from, to)`; the picker simply hands
+  it the `:59`. The default seed changed to match: start = the current hour (`H:00`), end = the
+  **next hour** (`H+1:59`) — two clock hours, rolling to the next day at 23 (previously `+2h`).
 - **Per-session exemption at all three gates**: while free-run is in effect the session is not held
   anywhere — automatic turn-level / step-gate pausing skips it, and requests that would be
   suspended by `agent/request` are released (a new **per-session `release`** lets an already-held
@@ -87,7 +95,7 @@ All notable changes to `dsh-session-guard` are recorded here. Versions follow se
   `src/client/date-range-picker.tsx`, `src/client/date-range.ts`. New tests:
   `tests/time-policy.test.mjs`, `tests/config-file.test.mjs`, `tests/free-run.test.mjs`,
   `tests/free-run-isolation.test.mjs`, `tests/free-run-button-text.test.mjs`,
-  `tests/date-range.test.mjs`. The suite is **394 passing** (`node --test "tests/*.test.mjs"`).
+  `tests/date-range.test.mjs`. The suite is **397 passing** (`node --test "tests/*.test.mjs"`).
 
 ### Changed
 

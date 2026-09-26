@@ -101,8 +101,9 @@ block **only** official-source targets by default. To restore the old blanket be
 The old composer "pause session / resume session" button has been **removed**; the **free-run**
 button (slot `session-guard-free-run`, order 20) takes that position. The `/pause`, `/resume` and
 `/cancel` commands and the `sessionGuard` port (including `stepPause` / `stepResume`) are unchanged.
-Free-run windows are now edited at hour precision in the task panel; any peak-window special-casing
-you had in mind is done by the config file instead.
+Free-run windows are now edited at hour precision in the task panel (the start hour is `H:00` and
+the end hour is `H:59`, so the end hour is fully included — "结束 23 时" = `23:59`); any peak-window
+special-casing you had in mind is done by the config file instead.
 
 ## 4. Troubleshooting
 

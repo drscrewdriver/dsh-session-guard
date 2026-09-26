@@ -243,7 +243,7 @@ The "畅跑" button in the composer's right row (slot `conversation.input.right`
 **Panel layout (one popup, no additional UI surface)**:
 
 - Three text buttons in a toolbar at the top:
-  1. `新建畅跑任务` — toggles an inline form (`开始` / `结束`, each a **dual-month date-range calendar** + hour select, **hour granularity**) with `确定` / `取消`;
+  1. `新建畅跑任务` — toggles an inline form (`开始` / `结束`, each a **dual-month date-range calendar** + hour select, **hour granularity**: the start hour H means `H:00` and the end hour H means `H:59`, so the end hour is **fully included**) with `确定` / `取消`;
   2. `暂停全部任务` — pauses every not-yet-ended task; when all not-yet-ended tasks are already paused the label flips to `恢复全部任务`; disabled when there is no task to act on;
   3. `删除全部任务` — deletes all tasks; disabled when there are no tasks.
 - Two icon buttons per task row on the right:
@@ -257,14 +257,14 @@ The "畅跑" button in the composer's right row (slot `conversation.input.right`
 - Opening the date picker shows **two side-by-side months** with `‹‹ ‹  2026年 9月   2026年 10月  › ››` navigation (previous year / previous month / next month / next year), so a range spanning a month boundary can be picked in one glance;
 - Weeks start on **Monday** (一 二 三 四 五 六 日), today is outlined, the selected range is **shaded** across all its days and its two endpoints are **filled**; padding cells from adjacent months are dimmed;
 - The **first click picks the start, the second the end**; if the end lands before the start the two are **swapped** (picking in reverse works), and the calendar **closes as soon as the range is complete**; the trigger shows `from → to` (with placeholder text until both ends are chosen);
-- Opening the panel seeds the range with **the current time** (start = the current hour, end = +2h, rolling into the next day if needed) — "create a free-run task" almost always means "start now"; the hour selects stay alongside the calendar for hour precision, and the form's `现在` button re-seeds from the current time at any moment.
+- Opening the panel seeds the range with **the current time** (start = the current hour `H:00`, end = **the next hour** `H+1:59` — two clock hours, rolling into the next day if needed) — "create a free-run task" almost always means "start now"; the hour selects stay alongside the calendar for hour precision, and the form's `现在` button re-seeds from the current time at any moment.
 
 Semantics, stated precisely:
 
 - **Per-session**: only the session whose button was used is exempt; every other session is paused during peak as usual;
 - **Pausing is per task**, not per session: there is no longer a session-level enable/disable switch. Pausing one task leaves the others working normally;
 - **When free-run is in effect**: exactly when **at least one not-paused task covers the current moment**. A paused task simply does not participate;
-- Tasks are **absolute start/end instants**, half-open `[from, to)`, with **hour precision**; the form's values are interpreted in the configured `timezone` (the panel labels it — the same zone used for `peakWindows` and the weekend rule);
+- Tasks are **absolute start/end instants**, half-open `[from, to)`, with **hour precision and an inclusive end hour**: the start hour H is `H:00` and the end hour H is `H:59`, so "开始 12 时 → 结束 14 时" = `12:00 → 14:59` (hours 12, 13 and 14) and "开始 12 时 → 结束 12 时" covers just that one hour; "结束 23 时" = `23:59`, making the last hour of the day (23:00–24:00) selectable; the host's window stays half-open `[from, to)` — the picker simply hands it the `:59`; the form's values are interpreted in the configured `timezone` (the panel labels it — the same zone used for `peakWindows` and the weekend rule);
 - `from` may be **soon or far in the future**; a `from` earlier than now is clamped to now, so "start right away" works;
 - **One-shot**: each task ends automatically at `to` and stops matching — that is its normal lifecycle, **not a configuration error**, so it is **not reported as an error** (and there is no "expiring soon" warning); the user can add new tasks any time;
 - **Automatic merging only happens between windows with the same paused state**: overlapping or adjacent windows (adjacent = "run straight through") with the **same paused state** are merged; a paused window and an enabled window that overlap are both kept (the enabled one still takes effect over the time it covers); up to **8** tasks after merging, beyond which adding fails with a clear error;
@@ -400,7 +400,7 @@ During peak hours the plugin does not blanket-pause sessions: it first decides w
 - **Timezone strings are validated against the IANA database**: an invalid or misspelled zone in the config file (e.g. `Asia/Shangai`) is **rejected and the default kept**, with the reason recorded in `configFile.errors` — it cannot slip through to the wall-clock projection, throw a `RangeError` there and get swallowed, silently disabling the guard;
 - `Intl.DateTimeFormat` remains the final validation layer: an invalid zone name (e.g. `Foo/Bar`) throws `RangeError`, caught by fail-open and falling back to `Asia/Shanghai`;
 - Peak windows are **left-closed, right-open** `[start, end)`, supporting cross-midnight windows (e.g. `22:00–06:00`, attributed to the **start day**);
-- Free-run task instants are likewise interpreted in `timezone` (hour precision, absolute instants);
+- Free-run task instants are likewise interpreted in `timezone` (hour precision, absolute instants; the start hour is `H:00` and the end hour is `H:59`, so the end hour is fully included — "结束 23 时" = `23:59`);
 - The `timezone` setting works identically across all UI languages (zh/en/ja/ko) — IANA timezone names are locale-independent.
 
 ### Division of labour with input-traffic: one "stops", one "orders"
@@ -479,7 +479,7 @@ Free-run schedules are stored in their own per-session JSON: `$DSH_HOME/.dsh/ses
 ## Tests
 
 ```bash
-npm test   # node --test "tests/*.test.mjs" (394 passing: timezone/peak policy/config file/state machine/session gate/free-run/bridge/retry)
+npm test   # node --test "tests/*.test.mjs" (397 passing: timezone/peak policy/config file/state machine/session gate/free-run/bridge/retry)
 ```
 
 ## Modules

@@ -31,7 +31,8 @@ export default tseslint.config(
     },
     rules: {
       // 插件宿主端常用可选链/空值合并，eslint 推荐规则对它们无异议。
-      'no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+      // 只用 @typescript-eslint 版：核心 no-unused-vars 不识别 TS 类型签名
+      // （接口方法参数 / 函数类型成员），会对未实现的签名参数误报 unused。
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
     },
   },

@@ -160,7 +160,7 @@ export function createRetry({ ctx, getSettings, isFrozen, send }) {
             id: `session-guard-retry-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
             role: 'user',
             content: [{ type: 'text', text }],
-            source: { kind: 'plugin', plugin: 'session-guard', form: 'notice' },
+            source: { kind: 'plugin:session-guard', form: 'notice' },
           })
         }
         s.lastAttemptAt = Date.now()

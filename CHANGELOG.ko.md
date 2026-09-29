@@ -6,6 +6,16 @@
 - [日本語 changelog](./CHANGELOG.ja.md)
 - [한국어 changelog](./CHANGELOG.ko.md)
 
+## 3.2.4 — 2026-09-27
+
+### Fixed
+- **세션 포맷 v4 대응(호스트 >= 0.1.7-rc.1)**: 세션 기록 3곳에서 v4 호스트가 거부하는 구형 서명 `source: { kind: 'plugin', plugin: 'session-guard' }` 사용을 중단하고 producer-owned kind로 변경했습니다(`SessionFormatError`로 라운드 전체가 실패하던 문제 수정):
+  - 지연 재개 notice 주입(`src/wiring.js`)
+  - 자동 재시도 notice 주입(`src/retry.js`)
+  - 일시정지 해제 followup(`src/pause-gate.js`, ```kind: `plugin:${pluginId}````)
+  - **tool-result v4 native 대응(N1)**: `src/pause-gate.js`의 `findToolOutcome`은 v4 일급 `role:'tool'` 메시지(메시지 최상위 `toolCallId`/`isError`)를 우선 읽습니다. v3 `tool-result` 블록 경로는 역사 호환으로 유지. 미대응 시 일시정지 중 실패한 도구를 재개 시 "완료됨"으로 오판하는 조용한 오류를 수정. `src/tool-call-id.js`도 native 최상위 id 최우선. 0.1.1/0.1.2 시대 헤더 주기를 삼형상 세대표로 정정.
+  `form` 등 나머지 필드는 불변. 기존 구형 서명 행은 호스트 자체의 v3→v4 마이그레이션이 승격하므로 히스토리 데이터는 재작성하지 않습니다. 근거: `@deepseek-ai/dsh-session-format-v3-to-v4@0.1.7-rc.2`는 `source.kind`가 비어 있지 않고 `'plugin'`이 아닌지만 검증합니다.
+
 ## 0.4.0 — 2026-09-18 (잘못된 버전 번호, 3.0.0으로 대체됨)
 
 ### 수정

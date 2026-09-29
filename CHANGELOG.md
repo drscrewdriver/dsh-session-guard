@@ -6,6 +6,16 @@ All notable changes to `dsh-session-guard` are recorded here. Versions follow se
 - [日本語 changelog](./CHANGELOG.ja.md)
 - [한국어 changelog](./CHANGELOG.ko.md)
 
+## 3.2.4 — 2026-09-27
+
+### Fixed
+- **Session format v4 adaptation (host >= 0.1.7-rc.1)**: the three session-writing paths no longer use the retired `source: { kind: 'plugin', plugin: 'session-guard' }` signature, which the v4 host rejects with `SessionFormatError` (whole round fails). All three now use the producer-owned kind:
+  - delayed-resume notice injection (`src/wiring.js`);
+  - auto-retry notice injection (`src/retry.js`);
+  - pause-resume followup (`src/pause-gate.js`, ```kind: `plugin:${pluginId}````).
+  - **tool-result v4 native adaptation (N1)**: `findToolOutcome` in `src/pause-gate.js` now reads the v4 first-class `role:'tool'` message (`toolCallId`/`isError` at message top level) first; the v3 `tool-result` block path is kept as historical fallback. Without this, a failed tool at pause time was reported as completed on resume ("do not re-run") — a silent wrong decision. `src/tool-call-id.js` reads the native top-level id first; stale 0.1.1/0.1.2-era header notes corrected to the three-shape generation table.
+  `form` and all other fields are unchanged; the host's own v3-to-v4 migration lifts existing legacy rows, so no historical data is rewritten. Evidence: `@deepseek-ai/dsh-session-format-v3-to-v4@0.1.7-rc.2` validates only that `source.kind` is non-empty and not `'plugin'`.
+
 ## 0.4.0 — 2026-09-18 (mis-versioned; superseded by 3.0.0)
 
 ### Fixed

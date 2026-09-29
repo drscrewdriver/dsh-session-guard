@@ -9,7 +9,12 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { readToolResultBlockId, readToolResultCallId } from '../src/tool-call-id.js'
 
-test('readToolResultCallId：现行形态 content[].toolCallId', () => {
+test('readToolResultCallId：v4 native 顶层 toolCallId（第一顺位）', () => {
+  const message = { role: 'tool', toolCallId: 'call-native', isError: true, content: [{ type: 'text', text: 'boom' }] }
+  assert.equal(readToolResultCallId(message), 'call-native')
+})
+
+test('readToolResultCallId：v3 wrapper 形态 content[].toolCallId', () => {
   const message = { content: [{ type: 'tool-result', toolCallId: 'call-1', content: [] }] }
   assert.equal(readToolResultCallId(message), 'call-1')
 })
@@ -19,7 +24,16 @@ test('readToolResultCallId：遗留形态 source.callId', () => {
   assert.equal(readToolResultCallId(message), 'call-legacy')
 })
 
-test('readToolResultCallId：两形态并存时块优先', () => {
+test('readToolResultCallId：三形态并存时 native 顶层最优先', () => {
+  const message = {
+    toolCallId: 'call-native',
+    content: [{ type: 'tool-result', toolCallId: 'call-block' }],
+    source: { callId: 'call-legacy' },
+  }
+  assert.equal(readToolResultCallId(message), 'call-native')
+})
+
+test('readToolResultCallId：v3 wrapper 与遗留形态并存时块优先', () => {
   const message = {
     content: [{ type: 'tool-result', toolCallId: 'call-block' }],
     source: { callId: 'call-legacy' },

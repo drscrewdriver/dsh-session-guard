@@ -17,9 +17,10 @@
  * 设计为目标可单测：ctx / pauseStore / makeFollowupMessage 全部依赖注入，
  * 停/续/取消判定不依赖真实 dsh runtime；`getAgent(sessionId)` 经 `ctx.agents.get` 懒取。
  *
- * DUAL-VERSION（DSH 0.1.1-rc.2 与 0.1.2-rc.1）：上述扩展点在两版本中签名一致
- * （已逐行核对 `packages/session/session-persistence/src/coordinator.ts`、
- * `packages/core/agent-loop/src/agent.ts`、`packages/goal/goal/src/index.ts`）。
+ * VERSION-LINE（2026-09-27 订正）：本仓 engines.dsh >=0.1.7-rc.1（会话格式 v4）。
+ * 下述扩展点的 0.1.1-rc.2/0.1.2-rc.1 双版本签名核对结论为历史依据，现役契约以
+ * v4 为准（署名 producer-owned kind、tool/result 为一等 role:'tool' 消息，
+ * 见 `tool-call-id.js` 头注的三形状代际表）。
  * 唯一需要双读的是 `tool/result` 记录的调用 id 形态（见 readToolResultCallId）：
  * 0.1.1 与 0.1.2 的回放日志都同时保留 `content[].toolCallId` 与 `source.callId` 两种形态。
  */
@@ -47,7 +48,7 @@ export function createPluginUserMessage({ content, source }) {
 }
 
 /**
- * 恢复消息入队（0.1.5 compat 双路径）。
+ * 恢复消息入队（双路径；双路径判定沿自 0.1.5 代的兼容实测，现役线为 v4）。
  *
  * 0.1.5 把 Inbox 从独立服务改为 agent-loop 只读投影（消息入队走 session 事件），
  * `agent.followup` 是否保留无法静态确认，因此运行时检测：
@@ -157,9 +158,10 @@ export function createPauseGate({ ctx, pauseStore, pluginId = 'session-guard', m
   }
 
   /**
-   * `tool/result` 调用 id 的双形态读取已抽到 `./tool-call-id.js`（零依赖、可单测）：
-   * 优先 `data.message.content[].toolCallId`，回退 `data.message.source.callId`。
-   * 两种形态在 DSH 0.1.1-rc.2 与 0.1.2-rc.1 的回放日志里都保留，勿改成单读。
+   * `tool/result` 调用 id 的多形态读取已抽到 `./tool-call-id.js`（零依赖、可单测），
+   * 三形状代际（详见其头注）：v4 native 顶层 `message.toolCallId` 优先 →
+   * v3 wrapper `content[].toolCallId` → 遗留 `source.callId`。勿改成单读——
+   * 任一单读都会在其它代际的记录上丢 id（in-flight 工具无法落地/暂停点判定失效）。
    */
 
   /**
@@ -189,6 +191,22 @@ export function createPauseGate({ ctx, pauseStore, pluginId = 'session-guard', m
     for (const event of events) {
       if (event.type === 'tool/result') {
         const message = event.data?.message ?? {}
+        // v4 native（≥0.1.7-rc.1）：一等 role:'tool' 消息，toolCallId/isError 在
+        // message 顶层（宿主 assertBlock 硬拒 `type:'tool-result'` 块）。native
+        // 分支是强制新增——漏掉它 isError 恒 false，恢复 followup 会把失败工具
+        // 误报为"已执行完成，不要重复执行"。
+        if (typeof message.toolCallId === 'string') {
+          if (message.toolCallId === callId) {
+            outcome = {
+              hasResult: true,
+              isError: message.isError === true,
+              abortedBeforeDispatch: event.data?.error?.code === 'ABORTED_BEFORE_DISPATCH',
+              content: Array.isArray(message.content) ? message.content : [],
+            }
+          }
+          continue
+        }
+        // v3 wrapper（未迁移日志的历史兼容）。
         const block = (Array.isArray(message.content) ? message.content : []).find((b) => b?.type === 'tool-result')
         const id = readToolResultCallId(message)
         if (id === callId) {
@@ -337,8 +355,9 @@ export function createPauseGate({ ctx, pauseStore, pluginId = 'session-guard', m
     state.pendingPause.delete(sessionId)
     const current = currentPause(sessionId)
     if (!current.paused) return { kind: 'success', text: 'no paused task to resume' }
-    // 0.1.5 compat：source 补 form: 'instructions'（0.1.5 ContextFormed 契约；旧版本忽略未知字段）
-    const followup = (blocks) => enqueueFollowup(agent, makeFollowupMessage({ content: blocks, source: { kind: 'plugin', plugin: pluginId, form: 'instructions' } }), ctx)
+    // form: 'instructions' —— 0.1.5 引入的 ContextFormed 语义字段（旧版本忽略未知字段）；
+    // 署名 kind 已按 v4（≥0.1.7-rc.1）适配为 producer-owned `plugin:${pluginId}`
+    const followup = (blocks) => enqueueFollowup(agent, makeFollowupMessage({ content: blocks, source: { kind: `plugin:${pluginId}`, form: 'instructions' } }), ctx)
 
     if (current.forced) {
       const tool = current.interruptedTool
@@ -462,7 +481,8 @@ export function createPauseGate({ ctx, pauseStore, pluginId = 'session-guard', m
       return
     }
     if (event.type === 'tool/result') {
-      // 双形态双读（见 readToolResultCallId）：块上 toolCallId 优先，旧记录回退 source.callId。
+      // 三形状双读以上（见 readToolResultCallId）：v4 native 顶层 toolCallId 优先，
+      // v3 wrapper 块上次之，旧记录再回退 source.callId。
       const callId = readToolResultCallId(event.data?.message)
       if (typeof callId === 'string') inflightOf(sessionId).delete(callId)
       tryApplyPending(sessionId)

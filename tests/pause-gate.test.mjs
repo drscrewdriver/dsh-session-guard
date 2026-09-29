@@ -132,7 +132,7 @@ test('resume：清暂停态 + followup 续跑指令', async (t) => {
   assert.equal(pauseStore.get('s1'), null)
   const followup = calls.find(([kind]) => kind === 'followup')
   assert.ok(followup !== undefined)
-  assert.equal(followup[1].source.plugin, 'session-guard')
+  assert.equal(followup[1].source.kind, 'plugin:session-guard')
   // 0.1.5 compat：source 携带 ContextFormed 语义字段
   assert.equal(followup[1].source.form, 'instructions')
 })
@@ -205,12 +205,12 @@ test('taskControlAvailable：自研后恒 true', (t) => {
 })
 
 test('createPluginUserMessage：形状与 dsh-llm createUserMessage 一致，id 唯一', () => {
-  const m = createPluginUserMessage({ content: [{ type: 'text', text: '继续' }], source: { kind: 'plugin', plugin: 'session-guard' } })
+  const m = createPluginUserMessage({ content: [{ type: 'text', text: '继续' }], source: { kind: 'plugin:session-guard' } })
   assert.equal(m.role, 'user')
   assert.equal(typeof m.id, 'string')
   assert.ok(m.id.length > 0)
   assert.deepEqual(m.content, [{ type: 'text', text: '继续' }])
-  assert.deepEqual(m.source, { kind: 'plugin', plugin: 'session-guard' })
+  assert.deepEqual(m.source, { kind: 'plugin:session-guard' })
   const m2 = createPluginUserMessage({ content: [], source: {} })
   assert.notEqual(m.id, m2.id)
 })
@@ -225,7 +225,7 @@ test('默认 makeFollowupMessage 走本地构造（无 @deepseek-ai/dsh-llm 依�
   assert.ok(sent.length >= 1, 'expected a followup call')
   const msg = sent[0][1]
   assert.equal(msg.role, 'user')
-  assert.equal(msg.source.plugin, 'session-guard')
+  assert.equal(msg.source.kind, 'plugin:session-guard')
   assert.equal(typeof msg.id, 'string')
 })
 
@@ -346,6 +346,37 @@ test('0.1.5 主路径：snapshotEvents 里的 tool/result 驱动「已执行完�
   const calls = []
   const events = [
     { type: 'tool/result', data: { message: { content: [{ type: 'tool-result', isError: false }], source: { callId: 'c1' } } } },
+  ]
+  const agent = fakeAgent({ session: { snapshotEvents: () => events } }, calls)
+  const { gate } = setup(t, { agent, calls })
+  gate.handleEvent({ id: 's1' }, { type: 'tool/call', data: { name: 'bash', arguments: '{}', callId: 'c1' } })
+  const r = gate.pause('s1', { mode: 'force' })
+  assert.equal(r.kind, 'success')
+  const r2 = gate.resume('s1', { confirm: true })
+  assert.equal(r2.kind, 'success')
+  assert.match(r2.text, /had actually completed/)
+})
+
+test('v4 native：tool/result 顶层 isError:true 时不得误判「已执行完成」（N1 回归钉子）', (t) => {
+  const calls = []
+  const events = [
+    { type: 'tool/result', data: { message: { role: 'tool', toolCallId: 'c1', isError: true, content: [{ type: 'text', text: 'boom' }] } } },
+  ]
+  const agent = fakeAgent({ session: { snapshotEvents: () => events } }, calls)
+  const { gate } = setup(t, { agent, calls })
+  gate.handleEvent({ id: 's1' }, { type: 'tool/call', data: { name: 'bash', arguments: '{}', callId: 'c1' } })
+  const r = gate.pause('s1', { mode: 'force' })
+  assert.equal(r.kind, 'success')
+  const r2 = gate.resume('s1', { confirm: true })
+  assert.equal(r2.kind, 'success')
+  // 失败工具 → 不进「had actually completed」分支（那会让模型不重跑失败的工具）。
+  assert.doesNotMatch(r2.text, /had actually completed/)
+})
+
+test('v4 native：tool/result 顶层 isError:false 时走「已执行完成」恢复分支', (t) => {
+  const calls = []
+  const events = [
+    { type: 'tool/result', data: { message: { role: 'tool', toolCallId: 'c1', isError: false, content: [{ type: 'text', text: 'ok' }] } } },
   ]
   const agent = fakeAgent({ session: { snapshotEvents: () => events } }, calls)
   const { gate } = setup(t, { agent, calls })

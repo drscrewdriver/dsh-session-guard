@@ -238,7 +238,7 @@ service = {
 
 ## F3. `kind: 'plugin'` 是 0.1.5 内置 source kind，但新增 `form` 语义字段
 - `source-analysis/v0.1.5-rc.2/04-llm-typer.md`：`MessageSourceMap.plugin = { kind: 'plugin'; plugin: string } & ContextFormed`，`form` ∈ instructions/directory/snapshot/notice/relay/recall。
-- 插件 `src/pause-gate.js` 的 followup 消息用 `source: { kind:'plugin', plugin: pluginId }`，缺 `form`。#6311 拒载的是「插件**自定义** kind」，`plugin` 是内置 kind 不受影响，但补 `form: 'instructions'` 更符合 0.1.5 契约（旧版本多一个未知字段无害）。
+- 插件 `src/pause-gate.js` 的 followup 消息用 `source: { kind:'plugin', plugin: pluginId }`，缺 `form`。#6311 拒载的是「插件**自定义** kind」，`plugin` 是内置 kind 不受影响，但补 `form: 'instructions'` 更符合 0.1.5 契约（旧版本多一个未知字段无害）。**【2026-09-27 修订，v4 适配】**：0.1.7 线（宿主 ≥0.1.7-rc.1）契约反转——v4 准入拒绝 `kind:'plugin'`、要求 producer-owned kind（`plugin:<名>`），本仓三处写路径已改为 `kind:'plugin:session-guard'`（模板 `plugin:${pluginId}` 于 pause-gate）；本节 0.1.5 结论仅对旧版本线有效。
 
 ## F4. Inbox 从服务改为 agent-loop 投影 —— `agent.followup` 是最大未验证点
 - 0.1.5 中 InboxState 是只读投影，「消息入队走 session 事件，不再直接操作 inbox」（plugin-migration-guide §三）。

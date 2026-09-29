@@ -197,7 +197,7 @@ export function createWiring({
         id: `session-guard-deferred-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         role: 'user',
         content: [{ type: 'text', text }],
-        source: { kind: 'plugin', plugin: 'session-guard', form: 'notice' },
+        source: { kind: 'plugin:session-guard', form: 'notice' },
       })
       return true
     } catch (e) {

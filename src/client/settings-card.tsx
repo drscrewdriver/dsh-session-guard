@@ -1,5 +1,5 @@
 /**
- * dsh-session-guard — 插件配置卡片（dsh-family.tab 共用 tab 面）。
+ * dsh-session-guard — 插件配置卡片（dsh-family.tab 共用设置节，抽屉默认展开）。
  *
  * 对齐 dsh-thinking-levels / dsh-tidychat 的卡片语法：一个可展开的 `<li>`，
  * header 按钮（插件名 + 描述 + chevron）切换字段体；开关为 pill switch
@@ -232,7 +232,7 @@ export function SessionGuardCard({ scope }: SettingsCardProps): JSX.Element {
   const unavailable = snapshot.status === 'unavailable'
   const readonly = unavailable || !snapshot.writable
   const value = (snapshot.value ?? {}) as Partial<SessionGuardConfig>
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(true)
 
   injectCss()
 

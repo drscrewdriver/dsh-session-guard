@@ -1,6 +1,6 @@
 {
   "name": "dsh-session-guard",
-  "version": "3.2.1",
+  "version": "3.2.4",
   "publishConfig": {
     "tag": "dsh-0.1.7"
   },

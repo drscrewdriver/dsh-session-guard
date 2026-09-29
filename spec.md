@@ -22,6 +22,6 @@
 | 客户端 fetch 路径 | 不改 | webServer 前缀路由在 0.1.5 契约不变，`/api` 前缀仅影响 DSH 自身 endpoint |
 
 ## 约束
-- 不写自定义 message source kind 进会话日志（#6311 教训），现有 `kind:'plugin'` 为内置 kind，保留。
+- ~~不写自定义 message source kind 进会话日志（#6311 教训）~~ **【2026-09-27 修订，v4 适配】**：#6311 拒载自定义 kind 是 **0.1.5 线**宿主的契约；v4（宿主 ≥0.1.7-rc.1）契约方向相反——**强制** producer-owned kind 且拒绝内置 `kind:'plugin'`（`dsh-session-format-v3-to-v4` 实证）。本仓三处写路径已按 v4 改为 `kind:'plugin:session-guard'`，此条旧结论对 0.1.7 线失效，勿据其回滚。
 - 单一产物继续双版本兼容（0.1.x 全系），不做分叉大改。
 - 测试框架保持 `node --test`，改动需补 pause-gate 双路径用例。

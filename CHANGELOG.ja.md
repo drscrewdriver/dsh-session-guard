@@ -6,6 +6,16 @@
 - [日本語 changelog](./CHANGELOG.ja.md)
 - [한국어 changelog](./CHANGELOG.ko.md)
 
+## 3.2.4 — 2026-09-27
+
+### Fixed
+- **セッション形式 v4 対応（ホスト >= 0.1.7-rc.1）**: セッション書き込み 3 箇所で、v4 ホストが拒否する旧署名 `source: { kind: 'plugin', plugin: 'session-guard' }` を廃止し、プロデューサー所有 kind に変更しました（`SessionFormatError` でラウンド全体が失敗する問題を修正）：
+  - 遅延再開の notice 注入（`src/wiring.js`）
+  - 自動リトライの notice 注入（`src/retry.js`）
+  - 一時停止からの再開 followup（`src/pause-gate.js`、```kind: `plugin:${pluginId}````）
+  - **tool-result v4 native 対応（N1）**: `src/pause-gate.js` の `findToolOutcome` は、v4 の一等 `role:'tool'` メッセージ（`toolCallId`/`isError` が message 最上位）を優先して読みます。v3 の `tool-result` ブロック経路は歴史互換として残存。未対応だと一時停止中の失敗ツールが再開時に「完了済み」と誤判される静かな誤判定を修正。`src/tool-call-id.js` も native 最上位 id を最優先に。0.1.1/0.1.2 時代のヘッダ注記を三形状世代表に訂正。
+  `form` など他フィールドは不変。既存の旧署名行はホスト自身の v3→v4 移行が昇格するため、履歴データは書き換えません。根拠: `@deepseek-ai/dsh-session-format-v3-to-v4@0.1.7-rc.2` は `source.kind` が非空かつ `'plugin'` でないことのみ検証します。
+
 ## 0.4.0 — 2026-09-18（誤ったバージョン番号。3.0.0 に置き換え）
 
 ### 修正

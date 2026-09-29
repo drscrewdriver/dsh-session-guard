@@ -34,14 +34,23 @@
 > | --- | --- | --- | --- | --- |
 > | 0.1.0-rc.7 ~ 0.1.1-rc.x | ➖ 不在本线（`legacy/0.1.2` 之前的历史版本） | `ctx.settings.register(ns, schema, { base })` | ✅ 形状一致 | ✅ 无平台值导入 |
 > | 0.1.2-alpha.2+ / 0.1.2-rc.1 | ➖ 不在本线 → 用 `legacy/0.1.2`（npm `@dsh-0.1.2`） | `register` 仍保留（另加 `installSection`） | ✅ 形状一致 | ✅ 无平台值导入 |
-> | **0.1.7-rc.1+** | ✅（**本线**，dist-tag `dsh-0.1.7`） | 声明式：Config `.volatile()` 字段由宿主投影成表单，`register` 已删除 | ✅ 事件经 `snapshotEvents()` 双路径读取 | ✅ 客户端设置卡改 `configForms` |
+> | **0.2.0-rc.1+** | ✅（**本线**，dist-tag `dsh-0.2.0`，npm `4.0.0`） | 声明式：Config `.volatile()` 字段由宿主投影成表单，`register` 已删除 | ✅ 事件经 `snapshotEvents()` 双路径读取 | ✅ 客户端设置卡改 `configForms` |
+> | 0.1.7-rc.1+ | ✅（`compat/0.1.7` 分支，dist-tag `dsh-0.1.7`） | 声明式：Config `.volatile()` 字段由宿主投影成表单，`register` 已删除 | ✅ 事件经 `snapshotEvents()` 双路径读取 | ✅ 客户端设置卡改 `configForms` |
 > | 0.1.5-rc.2 | ✅（`compat/0.1.5` 分支，dist-tag `dsh-0.1.5`） | `register` 仍在（字符串命名空间） | ✅ 事件经 `snapshotEvents()` 双路径读取 | ✅ |
 >
-> **本线身份**：分支 `compat/0.1.7`，npm 版本号 **`3.1.0`**（semver），dist-tag **`dsh-0.1.7`**。
-> `package.json` 与 `dsh.plugin.json` 的 `engines.dsh` 与三个 `@deepseek-ai/dsh-client-*`
-> peer 线统一为 `>=0.1.7-rc.1 <0.2.0-0`。
+> **本线身份**：分支 `compat/0.2.0`，npm 版本号 **`4.0.0`**（semver），dist-tag **`dsh-0.2.0`**。
+> `package.json` 与 `dsh.plugin.json` 的 `engines.dsh` 与四个 `@deepseek-ai/dsh-client-*`
+> peer 线统一为 `>=0.2.0-rc.1 <0.2.1-0`；`@deepseek-ai/cordis` peer 下限对齐宿主线的 `^4.0.4`。
 > 历史上 README 曾用「2.x / 3.x」当**线代号**，那是叙述习惯，**不是注册表里可拉取的版本号** ——
-> 请一律以 npm 版本号 `0.3.1`（0.1.2 线）、`3.0.0`/`3.0.1`（0.1.5 线）与 `3.1.0`（0.1.7 线）为准。
+> 请一律以 npm 版本号 `0.3.1`（0.1.2 线）、`3.0.0`/`3.0.1`（0.1.5 线）、`3.2.4`（0.1.7 线）与 `4.0.0`（0.2.0 线）为准。
+>
+> **0.2.0 适配（compat/0.2.0 分支，npm 4.0.0）**：
+> 0.2.0-rc.1 对本插件用到的插件 API（manifest/settings/HMR/slot/会话 V4）与 0.1.7 完全兼容，
+> 适配为元数据换代（peer/engines/dist-tag/版本 4.0.0）。随基线一并对齐的工程修复：
+> ① `src/client/family-section.tsx` 补入版本管理（此前仅在本地工作区，纯净 checkout 无法 build）；
+> ② eslint 配置去掉对 TS 类型签名误报的核心 `no-unused-vars`，lint 基线可全绿；
+> ③ v4 写路径署名静态闸（`tests/source-kind.test.mjs`）随基线带入本线；
+> ④ `@deepseek-ai/cordis` peer 对齐 `^4.0.4`（0.2.0-rc.1 宿主 UI 包声明 `~4.0.4`，原 `^4.0.1` 不冲突但下限过旧）。
 >
 > **其它线的落点**：DSH `0.1.2-rc.x` 宿主请使用分支 **`legacy/0.1.2`**（npm dist-tag
 > `dsh-0.1.2`，版本 `0.3.1`）。**`main` 已冻结在 `0.2.0-beta.1`，不是 0.1.2 线的发布分支。**

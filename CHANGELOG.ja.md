@@ -6,6 +6,17 @@
 - [日本語 changelog](./CHANGELOG.ja.md)
 - [한국어 changelog](./CHANGELOG.ko.md)
 
+## 4.0.0 — 2026-09-29
+
+### Changed
+- **DSH 0.2.0 ライン対応**: `engines.dsh` と 4 つの `@deepseek-ai/dsh-client-*` peer を `>=0.2.0-rc.1 <0.2.1-0` に更新（0.1.7 系レンジを置き換え）。npm dist-tag は `dsh-0.2.0`、manifest バージョンは `4.0.0` に統一。プラグインが利用する API 面（manifest / settings / HMR / slots / セッション v4）は 0.1.7 から変更なし — 実行コードの変更はありません。
+- `@deepseek-ai/cordis` peer の下限を `^4.0.4` に整合（0.2.0-rc.1 ホストの UI パッケージは `~4.0.4` を宣言。旧 `^4.0.1` は衝突しないものの下限が実態より低かった）。
+
+### Fixed
+- `src/client/family-section.tsx` をバージョン管理に取り込み（3.2.x から作業ツリーのみに存在し、クリーンな checkout ではビルドできなかった）。
+- eslint flat config: TS 型シグネチャの引数を誤検出するコア `no-unused-vars` を削除（typescript-eslint 版は維持）。lint ベースラインが再びグリーンに。
+- v4 source-kind 静的ゲート（`tests/source-kind.test.mjs`）を追跡下に置き、`npm test` で実行（248 テスト）。
+
 ## 3.2.4 — 2026-09-27
 
 ### Fixed

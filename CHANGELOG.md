@@ -6,6 +6,17 @@ All notable changes to `dsh-session-guard` are recorded here. Versions follow se
 - [日本語 changelog](./CHANGELOG.ja.md)
 - [한국어 changelog](./CHANGELOG.ko.md)
 
+## 4.0.0 — 2026-09-29
+
+### Changed
+- **DSH 0.2.0 line adaptation**: `engines.dsh` and the four `@deepseek-ai/dsh-client-*` peers move to `>=0.2.0-rc.1 <0.2.1-0` (replacing the 0.1.7 ranges); npm dist-tag `dsh-0.2.0`; manifest version aligned to `4.0.0`. The plugin-facing API surface (manifest / settings / HMR / slots / session v4) is unchanged from 0.1.7 — no runtime code changes.
+- `@deepseek-ai/cordis` peer floor aligned to `^4.0.4` (the 0.2.0-rc.1 host UI packages declare `~4.0.4`; the previous `^4.0.1` accepted it but understated the floor).
+
+### Fixed
+- `src/client/family-section.tsx` landed in version control (it had existed only in the working tree since 3.2.x, so a clean checkout could not build).
+- eslint flat config: dropped the core `no-unused-vars` rule — it mis-flags TS type-signature parameters; the typescript-eslint variant is kept, and the lint baseline is green again.
+- v4 source-kind static gates (`tests/source-kind.test.mjs`) are now tracked and run in `npm test` (248 tests).
+
 ## 3.2.4 — 2026-09-27
 
 ### Fixed

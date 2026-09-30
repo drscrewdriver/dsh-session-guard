@@ -56,6 +56,8 @@ export function makeIsRoot(ctx) {
  * @param {(agent:object)=>boolean} [deps.isRoot]
  * @param {(ms:number)=>void} [deps.scheduleRelease] 挂起后请求一次退峰释放检查
  * @param {(sessionId:string, date:Date)=>boolean} [deps.isFreeRunActive] 畅跑生效中的会话不拦
+ * @param {(sessionId:string, provider?:unknown, model?:unknown)=>void} [deps.recordTarget]
+ *   把这次请求的真实目标写入目标表（独立于 session/event 事件管道，供二维判定使用）
  * @returns {{install:()=>()=>void, handle:(payload:object, next:Function)=>Promise<unknown>, stats:()=>object}}
  */
 export function createRequestGuard({
@@ -69,6 +71,7 @@ export function createRequestGuard({
   isRoot,
   scheduleRelease,
   isFreeRunActive,
+  recordTarget,
 }) {
   const rootCheck = isRoot ?? makeIsRoot(ctx)
   const counters = { pass: 0, hold: 0, error: 0, skippedSubagent: 0, failOpen: 0 }
@@ -97,6 +100,17 @@ export function createRequestGuard({
     if (cfg.guardSubagents === false && !rootCheck(agent)) {
       counters.skippedSubagent += 1
       return { action: 'pass', why: 'subagent' }
+    }
+
+    // 目标追踪（独立于 session/event 事件管道）：这里手上就是这次请求真正要去的
+    // provider/model，写进 targets 后，`shouldPauseSession` 的二维判定才有真实依据；
+    // 否则目标恒为 unknown → 保守暂停 → 连非官方源也一起拦。绝不因它抛错而影响请求。
+    if (typeof recordTarget === 'function') {
+      try {
+        recordTarget(sessionId, config && config.provider, config && config.model)
+      } catch {
+        /* 追踪失败绝不影响判定 */
+      }
     }
 
     const verdict = shouldPause(cfg, clock())

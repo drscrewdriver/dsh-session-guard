@@ -55,7 +55,7 @@ const PEAK_NOW = () => new Date('2026-08-19T02:00:00Z') // 北京周三 10:00
 const silent = { info() {}, warn() {}, error() {} }
 const tick = () => new Promise((r) => setImmediate(r))
 
-function harness({ cfg = {}, roots = [], setTimer, clearTimer, unrefTimers = true, clock = PEAK_NOW, stepGate } = {}) {
+function harness({ cfg = {}, roots = [], setTimer, clearTimer, unrefTimers = true, clock = PEAK_NOW, stepGate, isFreeRunActive } = {}) {
   const paused = []
   const resumed = []
   const followups = []
@@ -97,6 +97,7 @@ function harness({ cfg = {}, roots = [], setTimer, clearTimer, unrefTimers = tru
     setTimer,
     clearTimer,
     unrefTimers,
+    isFreeRunActive,
   })
   return { wiring, paused, resumed, followups, agents, clockRef, listeners, ctx }
 }
@@ -111,6 +112,48 @@ function idleAgent(id, followups) {
 }
 
 // ── task_16：目标追踪接线 ──
+
+// ── 回归：畅跑豁免与「请求级目标追踪」必须真的接到请求守卫上 ──
+// 这两条集成在移植过程中漏接过（`isFreeRunActive` 只传给了 wiring 自己，
+// 没传给 createRequestGuard；目标也只靠 session/event 喂）。
+// 单测覆盖了函数本身，集成却是死的 —— 所以在这里驱动 wiring 的真实监听器来守。
+
+/** 断言 promise 仍未 settle。 */
+async function assertPending(p) {
+  let settled = false
+  p.then(() => { settled = true }, () => { settled = true })
+  await tick()
+  assert.equal(settled, false, 'expected promise to stay pending')
+}
+
+const REQ_PAYLOAD = { agent: { id: 's1' }, turn: 1, step: 0, signal: undefined }
+const OFFICIAL_CFG = { provider: 'deepseek-official', model: 'deepseek-v4-pro' }
+
+test('回归：畅跑生效时请求级守卫必须放行（官方源也不拦）', async () => {
+  const h = harness({ isFreeRunActive: () => true })
+  h.wiring.installGuard()
+  const listener = h.listeners['agent/request']
+  assert.equal(typeof listener, 'function', 'installGuard 应注册 agent/request')
+  const got = await listener(REQ_PAYLOAD, async () => OFFICIAL_CFG)
+  assert.deepEqual(got, OFFICIAL_CFG, '畅跑生效 → 原样放行')
+})
+
+test('回归：未开畅跑时官方源在高峰被 hold（对照组，证明上一条不是恒真）', async () => {
+  const h = harness({ isFreeRunActive: () => false })
+  h.wiring.installGuard()
+  const listener = h.listeners['agent/request']
+  const p = listener(REQ_PAYLOAD, async () => OFFICIAL_CFG)
+  await assertPending(p)
+  h.wiring.dispose()
+})
+
+test('回归：请求级守卫把真实目标写入 targets（不依赖 session/event）', async () => {
+  const h = harness({ isFreeRunActive: () => true })
+  h.wiring.installGuard()
+  const listener = h.listeners['agent/request']
+  await listener(REQ_PAYLOAD, async () => ({ provider: 'local', model: 'bai/glm-5.3-flash' }))
+  assert.equal(h.wiring.targets.providerOf('s1'), 'local', '目标表应被请求级信号填上')
+})
 
 test('onSessionEvent：request/header 写入目标；形状异常 → unknown；空 id 忽略', () => {
   const h = harness()

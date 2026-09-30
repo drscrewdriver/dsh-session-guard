@@ -99,6 +99,14 @@ export function createWiring({
     logger,
     clock,
     scheduleRelease,
+    // 畅跑豁免必须接到请求级守卫上：否则「无视峰谷照常运行」在请求这一层是假的
+    // （`shouldPauseSession` 里的豁免只管入峰与 step 门，管不到 agent/request）。
+    isFreeRunActive,
+    // 请求级守卫顺带记录真实目标：session/event 事件管道不可用时的可靠替代信号。
+    recordTarget: (sessionId, provider, model) => {
+      const rec = targets.set(sessionId, provider, model)
+      if (rec !== null) maybeAutoResume(sessionId, rec)
+    },
   })
 
   /** `session/event` → 目标追踪（形状异常降级 unknown，不抛出）+ 目标转非官方时自动恢复。 */

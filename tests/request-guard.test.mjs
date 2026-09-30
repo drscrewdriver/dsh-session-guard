@@ -39,7 +39,7 @@ const BASE_CFG = {
 
 const silent = { info() {}, warn() {}, error() {} }
 
-function harness({ cfg = {}, agents, classify, now = PEAK_NOW, isRoot, isFreeRunActive } = {}) {
+function harness({ cfg = {}, agents, classify, now = PEAK_NOW, isRoot, isFreeRunActive, recordTarget } = {}) {
   let listener = null
   const ctx = {
     on: (name, fn) => {
@@ -68,6 +68,7 @@ function harness({ cfg = {}, agents, classify, now = PEAK_NOW, isRoot, isFreeRun
     clock: now,
     isRoot,
     isFreeRunActive,
+    recordTarget,
   })
   const off = guard.install()
   return {
@@ -122,6 +123,40 @@ test('畅跑判定回调抛异常 → 退回常规判定（fail-closed 到既有
   assert.equal(h.deferrals.size(), 1, '异常时仍按峰谷规则 hold')
   h.deferrals.releaseAll('test')
   assert.deepEqual(await p, CONFIG)
+})
+
+test('目标追踪：请求级守卫把真实 provider/model 写入目标表（不依赖 session/event）', async () => {
+  // 1) 非官方源 → 请求放行，同时目标被记录
+  const seen = []
+  const h = harness({
+    classify: () => ({ official: false, matchedBy: 'endpoint' }),
+    recordTarget: (id, provider, model) => seen.push([id, provider, model]),
+  })
+  const r = await h.call(PAYLOAD, { provider: 'local', model: 'bai/glm-5.3-flash' })
+  assert.deepEqual(r, { provider: 'local', model: 'bai/glm-5.3-flash' }, '非官方源应原样放行（返回传入的 config）')
+  assert.deepEqual(seen, [['s1', 'local', 'bai/glm-5.3-flash']])
+
+  // 2) 官方源 → 被 hold，但目标照样被记录（记录发生在判定之前）
+  const seen2 = []
+  const h2 = harness({ recordTarget: (id, provider, model) => seen2.push([id, provider, model]) })
+  const p = h2.call(PAYLOAD, { provider: 'deepseek-official', model: 'deepseek-v4-pro' })
+  await assertPending(p)
+  assert.deepEqual(seen2, [['s1', 'deepseek-official', 'deepseek-v4-pro']])
+  h2.deferrals.releaseAll('test')
+  await p
+})
+
+test('目标追踪：recordTarget 抛错绝不影响请求判定', async () => {
+  const h = harness({
+    recordTarget: () => {
+      throw new Error('tracker boom')
+    },
+  })
+  const p = h.call(PAYLOAD)
+  await assertPending(p)
+  assert.equal(h.deferrals.size(), 1, '追踪抛错时仍按峰谷规则 hold')
+  h.deferrals.releaseAll('test')
+  await p
 })
 
 test('高峰 + 官方 → 请求不发出（promise 挂起），且不抛错', async () => {

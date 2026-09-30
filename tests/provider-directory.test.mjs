@@ -45,6 +45,52 @@ test('无 llm 服务 → 降级为 id 判定', () => {
   assert.equal(d.endpointOf('deepseek-official'), null)
 })
 
+// ── 回归：cordis 的服务属性是**带守卫的 getter**，未在 inject 里声明就访问会抛错 ──
+// 本仓库 0.1.7+ 线为兼容声明式设置已不再 inject `settings`，所以直接写 `ctx.settings`
+// 每次都会抛 → 端点查询恒为 null → 判定退化成「只按 id 猜」。
+
+test('回归：ctx.settings 抛错（未 inject）时，经 ctx.get 仍能拿到服务并解出端点', () => {
+  const entries = [{ provider: 'deepseek-official', displayName: 'DeepSeek', settingsNs: 'llm-deepseek', settingsPath: [] }]
+  const settings = fakeSettings({ 'llm-deepseek': { baseURL: 'https://api.deepseek.com' } })
+  const ctx = {
+    get: (name) => (name === 'llm' ? fakeLlm(entries) : name === 'settings' ? settings : undefined),
+    // 模拟未 inject `settings` 的守卫 getter
+    get settings() {
+      throw new Error('cannot get property "settings" without inject')
+    },
+  }
+  const d = createProviderDirectory({ ctx, getSettings: () => CFG })
+  assert.equal(d.endpointOf('deepseek-official'), 'https://api.deepseek.com')
+  assert.deepEqual(d.classify('deepseek-official'), { official: true, matchedBy: 'endpoint' })
+})
+
+test('回归：ctx.settings 抛错且 ctx.get 取不到 → 端点 null，判定降级但不抛错', () => {
+  const entries = [{ provider: 'deepseek-official', displayName: 'DeepSeek', settingsNs: 'llm-deepseek', settingsPath: [] }]
+  const ctx = {
+    get: (name) => (name === 'llm' ? fakeLlm(entries) : undefined),
+    get settings() {
+      throw new Error('cannot get property "settings" without inject')
+    },
+  }
+  const d = createProviderDirectory({ ctx, getSettings: () => CFG })
+  assert.equal(d.endpointOf('deepseek-official'), null)
+  // 无端点时回落到内置端点表 → 仍判定为官方
+  assert.deepEqual(d.classify('deepseek-official'), { official: true, matchedBy: 'endpoint-default' })
+})
+
+test('回归：中转改到别处（deepseek-official 但 baseURL 非官方）→ 不判定为官方', () => {
+  const entries = [{ provider: 'deepseek-official', displayName: 'DeepSeek', settingsNs: 'llm-deepseek', settingsPath: [] }]
+  const settings = fakeSettings({ 'llm-deepseek': { baseURL: 'https://my-relay.example.com/v1' } })
+  const ctx = {
+    get: (name) => (name === 'llm' ? fakeLlm(entries) : name === 'settings' ? settings : undefined),
+    get settings() {
+      throw new Error('cannot get property "settings" without inject')
+    },
+  }
+  const d = createProviderDirectory({ ctx, getSettings: () => CFG })
+  assert.deepEqual(d.classify('deepseek-official'), { official: false, matchedBy: 'endpoint' })
+})
+
 test('llm 存在但目录里没有该条目 → 无端点', () => {
   const ctx = fakeCtx({ services: { llm: fakeLlm([]) }, settings: fakeSettings({}) })
   const d = createProviderDirectory({ ctx, getSettings: () => CFG })

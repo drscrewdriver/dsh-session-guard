@@ -10,6 +10,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { apply, name, inject } from '../src/index.js'
+import { DEFAULT_SETTINGS } from '../src/settings.js'
 
 /** 最小 cordis 风格 ctx：effect 立即执行回调（与 cordis 语义一致）并收集 disposer。 */
 function fakeCtx() {
@@ -592,9 +593,10 @@ test('reloadConfig：组合条目里的值仍然优先于新的文件值', async
   assert.equal(cfg.timezone, 'Asia/Tokyo', '没设过的键应采用文件新值')
 
   // 声明式模型的关键性质：设置表单改动 → live ref 变化 → 立刻生效，无需 reloadConfig
-  ref.current = ['sat', 'sun']
+  // （用**非默认值**：等于 schema 默认值的表单值被视为「用户没改过」，见下方边界测试）
+  ref.current = ['mon']
   const rec2 = await callRoute(routes[0], fakeReq('GET', '/session-guard/settings'), fakeRes())
-  assert.deepEqual(JSON.parse(rec2.chunks.join('')).settings.weekendDays, ['sat', 'sun'])
+  assert.deepEqual(JSON.parse(rec2.chunks.join('')).settings.weekendDays, ['mon'])
 })
 
 test('reloadConfig：配置文件写坏 → 记 error 且不静默清空窗口（守卫不会无声失效）', async (t) => {
@@ -625,4 +627,70 @@ test('组合条目完全缺失时 readCfg 也不炸（fail-open）', async (t) =
   const rec = await callRoute(routes[0], fakeReq('GET', '/session-guard/settings'), fakeRes())
   const cfg = JSON.parse(rec.chunks.join('')).settings
   assert.deepEqual(cfg.peakWindows.map((w) => w.name), ['morning'], '应回退到配置文件的值')
+})
+
+// ── 回归：层叠顺序（文件=默认层 / 声明式条目=覆盖层）──
+//
+// 修复前：`Config = SettingsSchema` 的 28 个字段都是 `.volatile()`，dsh 解析组合条目时
+// 会把每个字段的 schema 默认值都填上（实测 entryKeys 恒为 28 个），于是
+// `{ ...文件层, ...条目 }` 等价于「条目默认值覆盖一切」——`config/session-guard.json`
+// 写什么都读不到（实测：写进 officialProviders 毫无效果）。
+// 修法：条目里与 schema 默认值相同的项视为「用户没改过」，不参与覆盖。
+
+/** 用临时配置文件 + 指定组合条目装配一次，返回 /session-guard/settings 的响应体。 */
+async function applyWithLayers(t, fileConfig, entryConfig) {
+  withTmpState(t)
+  const dir = mkdtempSync(join(tmpdir(), 'session-guard-layer-'))
+  const cfgPath = join(dir, 'session-guard.json')
+  writeFileSync(cfgPath, JSON.stringify(fileConfig))
+  const old = process.env.DSH_SESSION_GUARD_CONFIG
+  process.env.DSH_SESSION_GUARD_CONFIG = cfgPath
+  t.after(() => {
+    rmSync(dir, { recursive: true, force: true })
+    if (old === undefined) delete process.env.DSH_SESSION_GUARD_CONFIG
+    else process.env.DSH_SESSION_GUARD_CONFIG = old
+  })
+  const { ctx, routes } = fakeCtx()
+  apply(ctx, entryConfig)
+  const rec = await callRoute(routes[0], fakeReq('GET', '/session-guard/settings'), fakeRes())
+  assert.equal(rec.code, 200)
+  return JSON.parse(rec.chunks.join(''))
+}
+
+/** 组合条目的「全部 schema 默认值」形态（等价于用户没在设置表单里改过任何一项）。 */
+function entryAllDefaults() {
+  const out = {}
+  for (const key of Object.keys(DEFAULT_SETTINGS)) out[key] = DEFAULT_SETTINGS[key]
+  return out
+}
+
+test('层叠：条目带 schema 默认值时，配置文件的值必须生效（默认层）', async (t) => {
+  const body = await applyWithLayers(t, { officialProviders: ['deepseek-account'] }, entryAllDefaults())
+  assert.deepEqual(body.settings.officialProviders, ['deepseek-account'], '文件层的值必须生效')
+  assert.ok(String(body.configFile.path).endsWith('session-guard.json'))
+})
+
+test('层叠：用户在设置表单里改过的项，仍然覆盖配置文件（覆盖层）', async (t) => {
+  const entry = entryAllDefaults()
+  entry.officialProviders = ['deepseek-official']
+  const body = await applyWithLayers(t, { officialProviders: ['deepseek-account'] }, entry)
+  assert.deepEqual(body.settings.officialProviders, ['deepseek-official'], '表单改动必须赢')
+})
+
+test('层叠：文件设了、条目没改的峰谷窗口不被 schema 默认值顶掉', async (t) => {
+  const fileWindows = [{ name: 'custom', start: '08:00', end: '09:30', days: ['mon'] }]
+  const body = await applyWithLayers(t, { peakPolicy: { peakWindows: fileWindows } }, entryAllDefaults())
+  assert.deepEqual(
+    body.settings.peakWindows.map((w) => w.name),
+    ['custom'],
+    '文件里的自定义窗口必须保留',
+  )
+})
+
+test('层叠边界：表单值恰好等于 schema 默认值 → 视为「没改过」，文件层生效', async (t) => {
+  // 这是本方案刻意接受的边界：分层配置里「显式设成默认值」与「没设过」不可区分。
+  // 选择「文件赢」是因为文件层曾被条目默认值整层盖死（更严重的失效）。
+  const entry = entryAllDefaults() // weekendMode/enabled 等都取 schema 默认（true）
+  const body = await applyWithLayers(t, { weekendPolicy: { enabled: false } }, entry)
+  assert.equal(body.settings.weekendMode, false, '文件里的 weekendPolicy.enabled=false 必须生效')
 })

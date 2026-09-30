@@ -345,3 +345,60 @@ test('0.1.7 声明式设置：Config 导出 schema，volatile 字段解析成 li
     ['morning', 'afternoon'],
   )
 })
+
+// ── 回归：提供方守卫字段必须能从配置文件设置 ──
+// 早先的 normalizeConfig 白名单漏了 providerGuard / officialProviders / officialBaseURLs，
+// 于是「写进 JSON 却被静默丢弃」：用户按文档把 deepseek-account 加进官方名单后毫无效果。
+
+test('normalizeConfig：officialProviders 从配置文件读入并去空白', () => {
+  const r = normalizeConfig({ officialProviders: [' deepseek-account ', 'deepseek-official'] })
+  assert.deepEqual(r.settings.officialProviders, ['deepseek-account', 'deepseek-official'])
+  assert.deepEqual(r.errors, [])
+})
+
+test('normalizeConfig：officialProviders 显式空数组是合法意图（清空追加名单）', () => {
+  const r = normalizeConfig({ officialProviders: [] })
+  assert.deepEqual(r.settings.officialProviders, [])
+  assert.deepEqual(r.errors, [])
+})
+
+test('normalizeConfig：officialProviders 形状不合法 → 报错并保留默认（不产出该键）', () => {
+  const r = normalizeConfig({ officialProviders: 'deepseek-account' })
+  assert.equal('officialProviders' in r.settings, false, '不合法时不得写入，交给 DEFAULT_SETTINGS 兜底')
+  assert.match(r.errors[0], /officialProviders must be an array of strings/)
+})
+
+test('normalizeConfig：officialProviders 数组里全非法 → 报错并保留默认', () => {
+  const r = normalizeConfig({ officialProviders: [1, '', null, {}] })
+  assert.equal('officialProviders' in r.settings, false)
+  assert.match(r.errors[0], /officialProviders has no valid entry/)
+})
+
+test('normalizeConfig：officialBaseURLs 与 providerGuard 同样支持', () => {
+  const r = normalizeConfig({ officialBaseURLs: ['api.deepseek.com', '  '], providerGuard: false })
+  assert.deepEqual(r.settings.officialBaseURLs, ['api.deepseek.com'])
+  assert.equal(r.settings.providerGuard, false)
+  assert.deepEqual(r.errors, [])
+
+  const bad = normalizeConfig({ providerGuard: 'yes' })
+  assert.equal('providerGuard' in bad.settings, false)
+  assert.match(bad.errors[0], /providerGuard must be a boolean/)
+})
+
+test('loadConfigFile：真实文件里的 officialProviders 能被读出（端到端）', () => {
+  const { exists, readFile } = memFs({
+    'C:\\dsh\\config\\session-guard.json': JSON.stringify({
+      timezone: 'Asia/Shanghai',
+      officialProviders: ['deepseek-account'],
+    }),
+  })
+  const r = loadConfigFile({
+    env: { DSH_HOME: 'C:\\dsh' },
+    cwd: 'C:\\cwd',
+    pluginDir: 'C:\\plugin',
+    exists,
+    readFile,
+  })
+  assert.deepEqual(r.settings.officialProviders, ['deepseek-account'])
+  assert.deepEqual(r.errors, [])
+})

@@ -10,7 +10,7 @@
  * - 设置：设置 → 插件 → session-guard 子板块，简单开关。config/session-guard.json 为默认层。
  */
 import { computeState, transition } from './scheduler.js'
-import { MODES, createTimePolicyResolver } from './time-policy.js'
+import { MODES, createTimePolicyResolver, stableStringify } from './time-policy.js'
 import { loadConfigFile } from './config-file.js'
 import { fileURLToPath } from 'node:url'
 import { createStore } from './store.js'
@@ -77,6 +77,39 @@ export function apply(ctx, config = {}) {
   const store = createStore()
   let lastState = null
 
+  // 诊断：会话事件探针 —— 最近 12 次 session/event 的形态 + 事件类型直方图，经 /diag 暴露。
+  // 为什么留着：0.2.0 上「目标追踪为空」的排查完全靠它才定位到 —— 事件送达是正常的，
+  // 但主信号 request/header 只在首次请求 / envelope 变化 / 序列起点才追加，天然稀疏，
+  // 单独依赖它会退化成 unknown → 保守拦。直方图能一眼看出某事件本进程内有没有来过。
+  const eventProbe = []
+  const eventCounts = new Map()
+  function probeEvent(session, event) {
+    try {
+      const type = event && event.type !== undefined ? String(event.type) : '(no type)'
+      eventCounts.set(type, (eventCounts.get(type) ?? 0) + 1)
+      if (eventProbe.length >= 12) eventProbe.shift()
+      const data = event && event.data
+      eventProbe.push({
+        at: new Date().toISOString().slice(11, 19),
+        sessionId: session && typeof session.id === 'string' ? session.id.slice(0, 18) : typeof (session && session.id),
+        hasHeaderId: !!(session && session.header && typeof session.header.id === 'string'),
+        type: event && event.type !== undefined ? String(event.type) : '(no type)',
+        eventKeys: event && typeof event === 'object' ? Object.keys(event).slice(0, 8) : typeof event,
+        dataKeys: data && typeof data === 'object' ? Object.keys(data).slice(0, 10) : typeof data,
+        headerConfigKeys:
+          data && data.header && data.header.config && typeof data.header.config === 'object'
+            ? Object.keys(data.header.config).slice(0, 8)
+            : null,
+        headerProvider:
+          data && data.header && data.header.config && typeof data.header.config.provider === 'string'
+            ? data.header.config.provider
+            : null,
+      })
+    } catch {
+      /* 诊断自身绝不抛 */
+    }
+  }
+
   // ── config/session-guard.json（v0.3.0）──
   // 用户改这个文件即可调整 peak 时间 / step 门控超时 / 时区 / 周末定义；文件值是**默认层**。
   // 读取失败 / JSON 坏掉都不阻塞启动：收集 errors，回退内置默认（fail-open）。
@@ -109,7 +142,17 @@ export function apply(ctx, config = {}) {
     const out = {}
     for (const key of Object.keys(DEFAULT_SETTINGS)) {
       const v = readVolatileValue(config[key])
-      if (v !== undefined) out[key] = v
+      if (v === undefined) continue
+      // **只有与 schema 默认值不同才算「用户改过」**，才允许覆盖配置文件层。
+      //
+      // 为什么必须这样：`Config = SettingsSchema` 的 28 个字段都是 `.volatile()`，
+      // dsh 解析组合条目时会把**每个字段的默认值**都填上（实测 entryKeys 恒为 28 个）。
+      // 若照单全收，`{ ...文件层, ...条目 }` 就等价于「条目默认值覆盖一切」——
+      // `config/session-guard.json` 里写什么都被静默盖掉，文件层形同虚设
+      // （与上方注释承诺的「文件=默认层」矛盾；实测：写进文件的 officialProviders
+      //  永远读不到，用户按文档配置后毫无效果）。
+      if (stableStringify(v) === stableStringify(DEFAULT_SETTINGS[key])) continue
+      out[key] = v
     }
     return out
   }
@@ -451,6 +494,7 @@ export function apply(ctx, config = {}) {
   // 同一条监听顺带做「最近真实目标」追踪（request/header 两版本通吃）。
   if (typeof ctx.on === 'function') {
     ctx.effect(() => ctx.on('session/event', (session, event) => {
+      probeEvent(session, event) // [临时诊断]
       try {
         pauseGate.handleEvent(session, event)
       } catch (e) {
@@ -764,6 +808,10 @@ export function apply(ctx, config = {}) {
             return json(200, {
               ok: true,
               diag: {
+                // 诊断：最近 12 次 session/event 的形态 + 事件类型直方图
+                eventProbe: [...eventProbe],
+                eventCounts: Object.fromEntries(eventCounts),
+                targets: wiring.targets.entries().map(([id, rec]) => ({ id: id.slice(0, 18), provider: rec.provider, model: rec.model })),
                 // 保持旧字段名以便既有排查习惯可用：本线恒为 false / 由 Config 取代。
                 hasSettings: false,
                 settingsType: 'declarative-config',

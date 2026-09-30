@@ -56,6 +56,33 @@ export function createProviderDirectory({ ctx, getSettings, warn }) {
   }
 
   /**
+   * 安全取 `settings` 服务。
+   *
+   * **不能直接写 `ctx.settings`**：cordis 的服务属性是带守卫的 getter，未在 `inject` 里
+   * 声明就访问会**直接抛错**（`cannot get property "settings" without inject`），而不是
+   * 返回 undefined。本仓库的 0.1.7+ 线为了兼容声明式设置已经**不再 inject `settings`**，
+   * 于是这里每次都会抛 → 端点查询恒为 null → 判定退化成「只按 id 猜」，
+   * 「名为 deepseek-official 但 baseURL 已指向中转」这类配置会被**误拦**。
+   * 统一经 `ctx.get()` 取，取不到就是 undefined。
+   * @returns {object|undefined}
+   */
+  function settingsService() {
+    try {
+      if (ctx && typeof ctx.get === 'function') {
+        const viaGet = ctx.get('settings')
+        if (viaGet !== undefined && viaGet !== null) return viaGet
+      }
+    } catch {
+      /* 取不到继续退化 */
+    }
+    try {
+      return ctx && ctx.settings
+    } catch {
+      return undefined
+    }
+  }
+
+  /**
    * 读某路由的实时端点（`baseURL`）；取不到返回 null。
    * @param {string} providerId
    * @returns {string|null}
@@ -65,7 +92,7 @@ export function createProviderDirectory({ ctx, getSettings, warn }) {
     try {
       const entry = entries().find((e) => e && e.provider === providerId)
       if (!entry) return null
-      const settings = ctx && ctx.settings
+      const settings = settingsService()
       if (!settings || typeof settings.get !== 'function') return null
       const section = settings.get(entry.settingsNs)
       const profile = pickPath(section, Array.isArray(entry.settingsPath) ? entry.settingsPath : [])

@@ -205,6 +205,38 @@ function normalizeConfigWeekend(raw, errors) {
 }
 
 /**
+ * 字符串数组字段的归一化（`officialProviders` / `officialBaseURLs` 共用）。
+ *
+ * 与 `peakPolicy.peakWindows` 同一套安全语义：
+ * - 非数组 → 报错并**保留默认**；
+ * - 逐项去首尾空白、丢弃非字符串与空串；
+ * - 数组里一项都不合法（但原本非空）→ 报错并保留默认，避免一个笔误把名单清空；
+ * - **显式空数组是合法意图**（= 不要任何追加项）。
+ *
+ * @param {unknown} value
+ * @param {string} field 报错里显示的字段名
+ * @param {string[]} errors 追加错误
+ * @returns {string[]|undefined} 归一化后的数组；形状不合法返回 undefined（调用方保留默认）
+ */
+function normalizeStringList(value, field, errors) {
+  if (!Array.isArray(value)) {
+    errors.push(`${field} must be an array of strings — ignored`)
+    return undefined
+  }
+  const out = []
+  for (const item of value) {
+    if (typeof item !== 'string') continue
+    const s = item.trim()
+    if (s !== '') out.push(s)
+  }
+  if (out.length === 0 && value.length > 0) {
+    errors.push(`${field} has no valid entry — ignored (default kept)`)
+    return undefined
+  }
+  return out
+}
+
+/**
  * 把 `config/session-guard.json` 的形态转成插件内部的**扁平设置形态**
  * （可直接作为 cordis settings 的 base 层）。
  *
@@ -264,6 +296,23 @@ export function normalizeConfig(raw) {
     settings.weekendMode = weekend.enabled
     settings.weekendPolicyMode = weekend.mode
     if (weekend.days !== undefined) settings.weekendDays = weekend.days
+  }
+
+  // 提供方守卫：这三个字段本来就是设置 schema 的一部分（声明式表单里能改），
+  // 但早先的配置文件白名单漏了它们 —— 于是「写进 JSON 却被静默丢弃」，
+  // 用户按文档配 officialProviders 会毫无效果（实测踩到）。
+  // 补上，并沿用同样的严格风格：形状不合法就报错 + 保留默认。
+  if (raw.providerGuard !== undefined) {
+    if (typeof raw.providerGuard === 'boolean') settings.providerGuard = raw.providerGuard
+    else errors.push('providerGuard must be a boolean — ignored')
+  }
+  if (raw.officialProviders !== undefined) {
+    const list = normalizeStringList(raw.officialProviders, 'officialProviders', errors)
+    if (list !== undefined) settings.officialProviders = list
+  }
+  if (raw.officialBaseURLs !== undefined) {
+    const list = normalizeStringList(raw.officialBaseURLs, 'officialBaseURLs', errors)
+    if (list !== undefined) settings.officialBaseURLs = list
   }
 
   return { settings, errors }

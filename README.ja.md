@@ -2,7 +2,7 @@
   <strong>ピーク自動セッションゲート：週末モード + ピーク自動一時停止 + 公式ソース二次判定 + セッション級凍結 + バックエンド自動リトライ</strong>
 </p>
 <p align="center">
-  <a href="README.en.md">English</a> · <a href="README.md">中文</a> · <strong>日本語</strong> · <a href="README.ko.md">한국어</a>
+  <a href="README.en.md">English</a> · <a href="README.md">中文</a> · <strong>日本語</strong> · <a href="README.ko.md">한국어</a> · <a href="README.fr.md">Français</a> · <a href="README.de.md">Deutsch</a> · <a href="README.it.md">Italiano</a> · <a href="README.ru.md">Русский</a> · <a href="README.es.md">Español</a>
 </p>
 <p align="center">
   <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-263146?style=flat-square"></a>
@@ -16,13 +16,28 @@
 - [中文 README](./README.md)
 - [日本語 README](./README.ja.md)
 - [한국어 README](./README.ko.md)
+- [README en français](./README.fr.md)
+- [README auf Deutsch](./README.de.md)
+- [README in italiano](./README.it.md)
+- [README на русском](./README.ru.md)
+- [README en español](./README.es.md)
 - [Installation guide](./INSTALL.md)
 - [中文安装指南](./INSTALL.zh.md)
 - [日本語インストールガイド](./INSTALL.ja.md)
 - [한국어 설치 안내](./INSTALL.ko.md)
+- [Guide d'installation en français](./INSTALL.fr.md)
+- [Installationsanleitung auf Deutsch](./INSTALL.de.md)
+- [Guida all'installazione in italiano](./INSTALL.it.md)
+- [Руководство по установке на русском](./INSTALL.ru.md)
+- [Guía de instalación en español](./INSTALL.es.md)
 - [Changelog](./CHANGELOG.md)
 - [日本語 changelog](./CHANGELOG.ja.md)
 - [한국어 changelog](./CHANGELOG.ko.md)
+- [Changelog en français](./CHANGELOG.fr.md)
+- [Changelog auf Deutsch](./CHANGELOG.de.md)
+- [Changelog in italiano](./CHANGELOG.it.md)
+- [Changelog на русском](./CHANGELOG.ru.md)
+- [Changelog en español](./CHANGELOG.es.md)
 
 > **互換性について：** v0.1.1 には日本語（`ja`）と韓国語（`ko`）の辞書が含まれていますが、現在の公式 DSH リリースは `LocaleRuntime` 経由で `zh` と `en` のみを提供しています。純正 DSH で `ja` または `ko` を選択すると `locale "<id>" is not registered` で失敗します。公式 DSH が对应的 locale ID を追加するまで利用できません。上級ユーザーは DSH フォークを保守して更新してください。
 

@@ -2,7 +2,7 @@
   <strong>Peak auto session gate: weekend mode + peak auto-pause + official-source guard + session-level freeze + backend auto-retry</strong>
 </p>
 <p align="center">
-  <strong>English</strong> · <a href="README.md">中文</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a>
+  <strong>English</strong> · <a href="README.md">中文</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a> · <a href="README.fr.md">Français</a> · <a href="README.de.md">Deutsch</a> · <a href="README.it.md">Italiano</a> · <a href="README.ru.md">Русский</a> · <a href="README.es.md">Español</a>
 </p>
 <p align="center">
   <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-263146?style=flat-square"></a>
@@ -16,13 +16,28 @@
 - [中文 README](./README.md)
 - [日本語 README](./README.ja.md)
 - [한국어 README](./README.ko.md)
+- [README en français](./README.fr.md)
+- [README auf Deutsch](./README.de.md)
+- [README in italiano](./README.it.md)
+- [README на русском](./README.ru.md)
+- [README en español](./README.es.md)
 - [Installation guide](./INSTALL.md)
 - [中文安装指南](./INSTALL.zh.md)
 - [日本語インストールガイド](./INSTALL.ja.md)
 - [한국어 설치 안내](./INSTALL.ko.md)
+- [Guide d'installation en français](./INSTALL.fr.md)
+- [Installationsanleitung auf Deutsch](./INSTALL.de.md)
+- [Guida all'installazione in italiano](./INSTALL.it.md)
+- [Руководство по установке на русском](./INSTALL.ru.md)
+- [Guía de instalación en español](./INSTALL.es.md)
 - [Changelog](./CHANGELOG.md)
 - [日本語 changelog](./CHANGELOG.ja.md)
 - [한국어 changelog](./CHANGELOG.ko.md)
+- [Changelog en français](./CHANGELOG.fr.md)
+- [Changelog auf Deutsch](./CHANGELOG.de.md)
+- [Changelog in italiano](./CHANGELOG.it.md)
+- [Changelog на русском](./CHANGELOG.ru.md)
+- [Changelog en español](./CHANGELOG.es.md)
 
 > **Compatibility note:** v0.1.1 ships Japanese (`ja`) and Korean (`ko`) dictionaries, but the current official DSH releases expose only `zh` and `en` through `LocaleRuntime`. On stock DSH, selecting `ja` or `ko` fails with `locale "<id>" is not registered`. These languages will work after official DSH adds the locale IDs. Advanced users can use a DSH fork that updates `LOCALE_IDS` and `LOCALES` labels, then rebuild.
 

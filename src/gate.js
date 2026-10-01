@@ -42,7 +42,7 @@ export function createGate({ getCtx: _getCtx, getSettings, store, pauseGate, emi
    * 停掉 session 的下一回合（真实锁定推进）。
    * ① 自研 pauseGate.pause（真暂停）；② 自研失败/agent 不可用 → 按 queueFallback 降级锁队列。
    * @param {string} sessionId
-   * @param {object} [opts] { mode, reason }
+   * @param {object} [opts] { mode, reason, pausedReason }
    */
   async function stopNextTurn(sessionId, opts = {}) {
     const cfg = getSettings()
@@ -50,7 +50,12 @@ export function createGate({ getCtx: _getCtx, getSettings, store, pauseGate, emi
       try {
         const mode = opts.mode ?? cfg.pauseMode ?? 'safe'
         const reason = opts.reason ?? cfg.pauseReason ?? 'wait'
-        const r = pauseGate.pause(sessionId, { mode, reason })
+        const pausedReason = opts.pausedReason ?? cfg.pausedReason
+        const r = pauseGate.pause(sessionId, {
+          mode,
+          reason,
+          ...(typeof pausedReason === 'string' && pausedReason !== '' ? { pausedReason } : {}),
+        })
         if (r && r.kind === 'success') return { ok: true, via: 'pauseGate', result: r }
         // kind === 'error'（如 no live agent）→ 落到降级，语义如实上报。
       } catch {
@@ -68,12 +73,15 @@ export function createGate({ getCtx: _getCtx, getSettings, store, pauseGate, emi
   /**
    * 恢复 session 推进（从暂停点续跑）。
    * ① 自研 resume（confirm + choice）；② 降级清 queueLock。
+   * `opts.auto === true` = 自动释放：只放行峰谷策略暂停的会话，不覆盖用户手动暂停
+   * （pauseGate 返回 kind:'skipped'，此时**不动**队列锁，避免把手动暂停降级成解锁）。
    */
   async function resume(sessionId, opts = {}) {
     if (pauseGate) {
       try {
-        const r = pauseGate.resume(sessionId, { confirm: true, choice: opts.choice ?? 'rerun' })
+        const r = pauseGate.resume(sessionId, { confirm: true, choice: opts.choice ?? 'rerun', auto: opts.auto === true })
         if (r && r.kind === 'success') return { ok: true, via: 'pauseGate', result: r }
+        if (r && r.kind === 'skipped') return { ok: true, via: 'pauseGate', skipped: true, result: r }
       } catch {
         // 降级清队列锁。
       }

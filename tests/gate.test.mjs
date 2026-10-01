@@ -65,13 +65,26 @@ test('有 pauseGate → stopNextTurn 走自研真暂停（via pauseGate）', asy
   assert.equal(store.get('s1'), null)
 })
 
-test('有 pauseGate → resume 走自研真恢复（confirm + choice）', async (t) => {
+test('有 pauseGate → resume 走自研真恢复（confirm + choice + auto）', async (t) => {
   const store = tmpStore(t)
   const calls = []
   const pg = fakePauseGate({ resume: (id, opts) => { calls.push([id, opts]); return { kind: 'success' } } })
   const gate = createGate({ getCtx: () => fakeCtx({}), getSettings: () => CFG, store, pauseGate: pg })
   await gate.resume('s1', { choice: 'skip' })
-  assert.deepEqual(calls[0], ['s1', { confirm: true, choice: 'skip' }])
+  // v0.3.0：auto 默认为 false，显式传入才为 true（退峰自动释放只放行峰谷暂停的会话）
+  assert.deepEqual(calls[0], ['s1', { confirm: true, choice: 'skip', auto: false }])
+  await gate.resume('s1', { choice: 'rerun', auto: true })
+  assert.deepEqual(calls[1], ['s1', { confirm: true, choice: 'rerun', auto: true }])
+})
+
+test('pauseGate.resume 返回 skipped（用户手动暂停）→ 不动队列锁', async (t) => {
+  const store = tmpStore(t)
+  const pg = fakePauseGate({ resume: () => ({ kind: 'skipped', text: 'manually paused' }) })
+  const gate = createGate({ getCtx: () => fakeCtx({}), getSettings: () => CFG, store, pauseGate: pg })
+  const r = await gate.resume('s1', { auto: true })
+  assert.equal(r.ok, true)
+  assert.equal(r.skipped, true)
+  assert.equal(store.get('s1'), null)
 })
 
 test('pauseGate.pause 返回 error（如 agent 不可用）→ fail-open 降级锁队列', async (t) => {

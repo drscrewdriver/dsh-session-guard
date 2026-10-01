@@ -154,6 +154,19 @@ export function createDeferrals({ maxHoldMs = 6 * 60 * 60 * 1000, now = () => Da
     return { released, cleared }
   }
 
+  /**
+   * 放行**单个**会话的挂起（畅跑生效：该会话的请求立刻照常发出）。
+   *
+   * 为什么需要它：畅跑是**单会话**豁免，而 `releaseAll` 是全局的退峰动作，
+   * 用它会把别的会话一起放行。对不存在挂起的会话是 no-op（幂等）。
+   * @param {string} sessionId
+   * @param {string} [reason]
+   * @returns {boolean} 是否真的放行了一条
+   */
+  function release(sessionId, reason = 'free-run') {
+    return settle(sessionId, reason, 'release')
+  }
+
   /** 拒绝全部挂起（插件卸载 / 关闭自动续跑）。 */
   function rejectAll(reason = 'disposed') {
     const rejected = []
@@ -181,6 +194,7 @@ export function createDeferrals({ maxHoldMs = 6 * 60 * 60 * 1000, now = () => Da
   return {
     hold,
     settle,
+    release,
     releaseAll,
     rejectAll,
     remember,

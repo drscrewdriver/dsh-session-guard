@@ -6,7 +6,8 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { parseHHMM, inWindow, wallClock, isWeekend, shouldPause, msUntilOffPeak, localMidnight, BILLING_TIMEZONE } from '../src/time.js'
+import { parseHHMM, inWindow, wallClock, isWeekend, localMidnight, BILLING_TIMEZONE } from '../src/time.js'
+import { shouldPause, msUntilOffPeak } from '../src/time-policy.js'
 
 const SETTINGS = {
   enabled: true,

@@ -5,7 +5,7 @@
     "tag": "dsh-0.1.7"
   },
   "type": "module",
-  "description": "高峰自动会话门：周末模式 + 高峰自动暂停 + 官方源二维判定 + 会话级冻结 + 后端自动重试。",
+  "description": "可配置峰谷自动会话门：config/session-guard.json 驱动 peak 时段 + 周末全天 off-peak + 单会话「畅跑」限时无视峰谷 + 高峰自动暂停/波谷自动恢复。",
   "keywords": [
     "deepseek-harness",
     "dsh",
@@ -16,7 +16,9 @@
     "pause",
     "freeze",
     "retry",
-    "session-gate"
+    "session-gate",
+    "time-policy",
+    "free-run"
   ],
   "license": "MIT",
   "repository": {
@@ -33,6 +35,7 @@
   "files": [
     "src/",
     "lib/",
+    "config/",
     "cordis.patch.yml",
     "dsh.plugin.json",
     "README.md",

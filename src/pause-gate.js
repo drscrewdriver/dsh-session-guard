@@ -26,6 +26,15 @@
 import { readToolResultBlockId, readToolResultCallId } from './tool-call-id.js'
 
 /**
+ * 暂停来源标记（v0.3.0，持久化在 pause 快照的 `pausedReason`）。
+ *
+ * 退峰 / 周末的**自动**释放只放行 `PEAK_WINDOW`，绝不覆盖用户显式暂停
+ * （spec §五「session由guard暂停」才自动 resume）。
+ */
+export const PAUSED_REASON_PEAK = 'peak_window'
+export const PAUSED_REASON_MANUAL = 'manual'
+
+/**
  * 构造一条 plugin-source 的 user 消息（形状与 `dsh-llm` 的 `createUserMessage` 一致：
  * `{ id, role:'user', content, source }`）。
  *
@@ -229,7 +238,7 @@ export function createPauseGate({ ctx, pauseStore, pluginId = 'session-guard', m
     return pauseStore.current(id)
   }
 
-  function markPaused(id, resumeContent, forcedContext, deferredTools) {
+  function markPaused(id, resumeContent, forcedContext, deferredTools, pausedReason) {
     const snapshot = {
       sessionId: String(id),
       paused: true,
@@ -237,6 +246,9 @@ export function createPauseGate({ ctx, pauseStore, pluginId = 'session-guard', m
       forced: forcedContext?.forced === true,
       interruptedTool: forcedContext?.interruptedTool ?? null,
       deferredTools: deferredTools ?? null,
+      // v0.3.0：暂停来源。'peak_window' = 峰谷策略自动暂停；'manual' = 用户显式暂停。
+      // 退峰自动恢复只放行 'peak_window'，绝不覆盖用户的手动暂停（spec §五）。
+      pausedReason: typeof pausedReason === 'string' && pausedReason !== '' ? pausedReason : 'manual',
       updatedAt: Date.now(),
     }
     pauseStore.set(id, snapshot)
@@ -265,7 +277,7 @@ export function createPauseGate({ ctx, pauseStore, pluginId = 'session-guard', m
   // ── 立即落地暂停 ────────────────────────────────────────────────────
 
   /** 立即停止运行回合（agent.cancel 保 inbox）+ 停 goal + 持久化快照。 */
-  function applyPauseNow(id, resumeContent, forcedContext, deferredTools) {
+  function applyPauseNow(id, resumeContent, forcedContext, deferredTools, pausedReason) {
     state.pendingPause.delete(id)
     const current = currentPause(id)
     if (current.paused) return { kind: 'success', text: 'task is already paused' }
@@ -273,15 +285,16 @@ export function createPauseGate({ ctx, pauseStore, pluginId = 'session-guard', m
     if (agent !== undefined && agent.status === 'running') agent.cancel({ kind: 'user' }, { keepInbox: true })
     clearInflight(id)
     if (agent !== undefined) pauseSessionGoal(agent)
-    markPaused(id, resumeContent, forcedContext, deferredTools)
+    markPaused(id, resumeContent, forcedContext, deferredTools, pausedReason)
     return { kind: 'success', text: agent !== undefined && agent.status === 'running' ? 'task paused — the running turn was stopped' : 'task paused' }
   }
 
   // ── 暂停主逻辑（三粒度） ─────────────────────────────────────────────
 
   /**
-   * 暂停一会话。opts: { mode:'safe'|'force', reason:'stop'|'wait' }。
-   * 默认 safe+wait（对齐 DEFAULT_SETTINGS）。返回 { kind, text, needConfirmation? }。
+   * 暂停一会话。opts: { mode:'safe'|'force', reason:'stop'|'wait', pausedReason:string }。
+   * 默认 safe+wait（对齐 DEFAULT_SETTINGS）；pausedReason 默认 'manual'（用户显式暂停）。
+   * 返回 { kind, text, needConfirmation? }。
    */
   function pauseTask(sessionId, opts = {}) {
     // F6：先解开 step 门，否则 safe 模式的 pendingPause 永远等不到安全边界事件。
@@ -292,6 +305,7 @@ export function createPauseGate({ ctx, pauseStore, pluginId = 'session-guard', m
     if (current.paused) return { kind: 'success', text: 'task is already paused' }
     const mode = opts.mode ?? 'safe'
     const reason = opts.reason ?? 'wait'
+    const pausedReason = typeof opts.pausedReason === 'string' && opts.pausedReason !== '' ? opts.pausedReason : 'manual'
     const resumeContent = agent.status === 'running' ? lastUserPrompt(agent) : null
 
     if (mode === 'force') {
@@ -302,7 +316,7 @@ export function createPauseGate({ ctx, pauseStore, pluginId = 'session-guard', m
       markPaused(sessionId, resumeContent, {
         forced: true,
         interruptedTool: interruptedTool ? { name: interruptedTool.name, arguments: interruptedTool.arguments, callId: interruptedTool.callId } : null,
-      })
+      }, undefined, pausedReason)
       return {
         kind: 'success',
         text: interruptedTool !== null
@@ -313,21 +327,25 @@ export function createPauseGate({ ctx, pauseStore, pluginId = 'session-guard', m
 
     // safe mode —— 延迟到安全边界
     if (agent.status === 'running' && inflightOf(sessionId).size > 0) {
-      state.pendingPause.set(sessionId, { resumeContent, mode: 'safe', reason })
+      state.pendingPause.set(sessionId, { resumeContent, mode: 'safe', reason, pausedReason })
       return { kind: 'success', text: 'task pausing — waiting for the running tool to finish (safe boundary), trace keeps recording until then' }
     }
     if (agent.status === 'running' && reason === 'wait') {
-      state.pendingPause.set(sessionId, { resumeContent, mode: 'safe', reason: 'wait' })
+      state.pendingPause.set(sessionId, { resumeContent, mode: 'safe', reason: 'wait', pausedReason })
       return { kind: 'success', text: 'task pausing — waiting for the current reasoning to complete before pausing' }
     }
-    return applyPauseNow(sessionId, resumeContent, { forced: false, interruptedTool: null })
+    return applyPauseNow(sessionId, resumeContent, { forced: false, interruptedTool: null }, undefined, pausedReason)
   }
 
   // ── 恢复主逻辑 ───────────────────────────────────────────────────────
 
   /**
    * 恢复一会话（从暂停点继续，session log 即 trace，不整体重发）。
-   * opts: { confirm:boolean, choice:'rerun'|'skip' }。
+   * opts: { confirm:boolean, choice:'rerun'|'skip', auto:boolean }。
+   *
+   * `auto:true` = 自动释放（退峰 / 目标转非官方 / 周末）。**只放行本插件因峰谷策略
+   * 暂停的会话**（pausedReason !== 'manual'），绝不覆盖用户手动 `/pause` 的会话（spec §五）。
+   * 用户手动点「继续会话」或 `/resume` 时不传 auto，永远生效。
    */
   function resumeTask(sessionId, opts = {}) {
     // F6：step 门挂起时「恢复」等价于放行该 step（回合本来就还开着）。
@@ -337,6 +355,9 @@ export function createPauseGate({ ctx, pauseStore, pluginId = 'session-guard', m
     state.pendingPause.delete(sessionId)
     const current = currentPause(sessionId)
     if (!current.paused) return { kind: 'success', text: 'no paused task to resume' }
+    if (opts?.auto === true && (current.pausedReason ?? 'manual') === 'manual') {
+      return { kind: 'skipped', text: 'session was paused manually — automatic release skipped' }
+    }
     // 0.1.5 compat：source 补 form: 'instructions'（0.1.5 ContextFormed 契约；旧版本忽略未知字段）
     const followup = (blocks) => enqueueFollowup(agent, makeFollowupMessage({ content: blocks, source: { kind: 'plugin', plugin: pluginId, form: 'instructions' } }), ctx)
 
@@ -428,7 +449,7 @@ export function createPauseGate({ ctx, pauseStore, pluginId = 'session-guard', m
 
   // ── 安全边界：session/event 监听落点 ─────────────────────────────────
 
-  function scheduleDeferredPause(sessionId, resumeContent, deferredTools) {
+  function scheduleDeferredPause(sessionId, resumeContent, deferredTools, pausedReason) {
     queueMicrotask(() => {
       try {
         const agent = getAgent(sessionId)
@@ -436,7 +457,7 @@ export function createPauseGate({ ctx, pauseStore, pluginId = 'session-guard', m
           state.pendingPause.delete(sessionId)
           return
         }
-        applyPauseNow(sessionId, resumeContent, { forced: false, interruptedTool: null }, deferredTools)
+        applyPauseNow(sessionId, resumeContent, { forced: false, interruptedTool: null }, deferredTools, pausedReason)
       } catch (e) {
         ctx?.logger?.warn?.('[session-guard] deferred pause failed: ' + String(e))
         state.pendingPause.delete(sessionId)
@@ -449,7 +470,7 @@ export function createPauseGate({ ctx, pauseStore, pluginId = 'session-guard', m
     if (pending === undefined) return
     if (pending.mode !== 'safe') return
     if (inflightOf(sessionId).size > 0) return
-    scheduleDeferredPause(sessionId, pending.resumeContent ?? null, pending.deferredTools ?? null)
+    scheduleDeferredPause(sessionId, pending.resumeContent ?? null, pending.deferredTools ?? null, pending.pausedReason)
   }
 
   /** 会话事件监听：跟踪在途工具 + 在安全边界落地延迟暂停。 */
@@ -506,6 +527,8 @@ export function createPauseGate({ ctx, pauseStore, pluginId = 'session-guard', m
       interruptedTool: current.interruptedTool ?? null,
       deferredTools: current.deferredTools ?? null,
       resumeContent: current.resumeContent ?? null,
+      // v0.3.0：'peak_window' = 峰谷策略暂停（退峰自动恢复）；'manual' = 用户显式暂停。
+      pausedReason: current.pausedReason ?? null,
     }
   }
 

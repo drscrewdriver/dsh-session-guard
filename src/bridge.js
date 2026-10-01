@@ -122,6 +122,8 @@ export function createBridge(ctx, gate, store, pauseGate, stepGate) {
         // 自研会话门真暂停状态（脱离 task-control）。
         paused: pausedState.paused === true,
         pausedForced: pausedState.forced === true,
+        // v0.3.0：'peak_window' = 峰谷策略自动暂停（退峰会自动恢复）；'manual' = 用户显式暂停。
+        pausedReason: pausedState.pausedReason ?? null,
         // step 级门控（v0.2.0）：paused 保持布尔以兼容既有消费者，step 态用独立字段。
         pausedStep: stepState.held === true,
         stepHeldSince: stepState.since ?? null,

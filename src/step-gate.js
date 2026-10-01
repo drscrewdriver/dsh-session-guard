@@ -18,7 +18,7 @@
  * 状态仅存内存：挂起的是 Promise，进程重启必然失效，落盘只会产生幽灵状态。
  * 零 `@deepseek-ai/*` 值导入；所有判定异常 fail-open 放行。
  */
-import { shouldPause } from './time.js'
+import { shouldPause } from './time-policy.js'
 
 /** 默认 step 门控超时（防死锁，与 PRD §2.2 的 5min 一致）。 */
 export const DEFAULT_STEP_TIMEOUT_MS = 300_000

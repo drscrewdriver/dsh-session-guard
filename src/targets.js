@@ -56,6 +56,23 @@ export function createTargets() {
     get(sessionId) {
       return map.get(String(sessionId ?? '')) ?? null
     },
+    /**
+     * 直接用**已经拿到的** provider/model 写入目标。
+     *
+     * 为什么需要它：`session/event` 的 `request/header` 是主信号，但它依赖会话事件管道
+     * 按时送达；某些宿主版本上该事件没有到达插件（实测 dsh 0.2.0 上追踪表恒为空，
+     * 于是判定退化成 `unknown` → 保守暂停 → 连非官方源一起拦）。
+     * 请求级守卫手上本来就有这次请求真正要去的 `config.provider`，把它作为**独立于
+     * 事件管道**的实时信号补写进来，判定就不会再因为事件缺失而全员保守。
+     * @returns {{provider:string,model:string,at:number}|null}
+     */
+    set(sessionId, provider, model, at = Date.now()) {
+      const key = String(sessionId ?? '')
+      if (key === '') return null
+      const rec = { ...shape(provider, model), at }
+      map.set(key, rec)
+      return rec
+    },
     /** provider 值（没有记录 → unknown，保守处理）。 */
     providerOf(sessionId) {
       const rec = map.get(String(sessionId ?? ''))

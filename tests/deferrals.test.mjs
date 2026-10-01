@@ -10,6 +10,25 @@ const CONFIG = Object.freeze({ provider: 'deepseek-official', model: 'deepseek-v
 /** 下一个宏任务，让 abort/超限的 settle 生效。 */
 const tick = () => new Promise((r) => setImmediate(r))
 
+test('hold → release(sessionId) 只放行该会话（畅跑单会话豁免用）', async () => {
+  const d = createDeferrals()
+  const p1 = d.hold('s1', { config: { id: 1 } })
+  const p2 = d.hold('s2', { config: { id: 2 } })
+  assert.equal(d.size(), 2)
+
+  assert.equal(d.release('s1', 'free-run'), true)
+  assert.deepEqual(await p1, { id: 1 })
+  assert.equal(d.size(), 1, 's2 必须仍然挂起')
+  assert.equal(d.has('s2'), true)
+
+  // 幂等：对不存在挂起的会话是 no-op
+  assert.equal(d.release('s1'), false)
+  assert.equal(d.release('nope'), false)
+
+  d.releaseAll('test')
+  assert.deepEqual(await p2, { id: 2 })
+})
+
 test('hold → releaseAll resolve 原 config', async () => {
   const d = createDeferrals()
   const p = d.hold('s1', { provider: 'deepseek-official', model: 'm', config: CONFIG })

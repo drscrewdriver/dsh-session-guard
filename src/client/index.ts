@@ -20,9 +20,19 @@ import { GuardFamilySection, type FamilyTabEntry } from './family-section'
 // （id `dsh-family`）并声明 `dsh-family.tab` 子席位，本插件贡献卡片。宿主缺席
 // 时本插件按下载量排名接管该节（见 apply 内的选举逻辑），节名仍为
 // 「起子插件设置」；宿主在场时本插件只贡献卡片。
+// 类型导入（构建时擦除，bundle 无 value-import 平台包）：让下方 `declare
+// module` 增补能解析到 @deepseek-ai/dsh-client-ui-slots 的 SlotMap。
+import type {} from '@deepseek-ai/dsh-client-ui-slots'
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
     'dsh-family.tab': { kind: 'list'; scope: 'root' }
+    /**
+     * 插件页配置卡（官方 ui-plugin-manager 契约，key = 包名）：DSH 0.2.0 的
+     * Plugins 页不自动渲染 volatile 配置表单，bundle 详情页只渲染注册在本
+     * keyed 席位下的卡片；owner props 由页面给（`{ view: 'page', form }`），
+     * 本卡片改经 inject 工厂拿自己的 scope（与 dsh-family.tab 注册同源）。
+     */
+    'plugins.bundle.config': { kind: 'keyed'; scope: 'root'; owner: Record<string, unknown> }
   }
 }
 
@@ -81,6 +91,17 @@ export function apply(ctx: ClientCtx) {
     order: 20,
     label: '会话守护门禁',
     locale: 'session-guard',
+    inject: () => ({ scope: ctx.configForms.get<Record<string, unknown>>('session-guard') }),
+  }, SessionGuardCard))
+
+  // 插件页配置卡（DSH 0.2.0）：Plugins 页不自动渲染 volatile 配置表单，须注册
+  // `plugins.bundle.config` 席位（key = 包名），配置卡才渲染在 bundle 详情页。
+  // 卡片组件与 props（scope）与上方 dsh-family.tab 注册完全同源：同一张
+  // SessionGuardCard、同一 inject 工厂，配置仍写入 entry `session-guard` 的
+  // volatile config；页面注入的 owner props（form 等）本卡不消费。
+  ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({
+    name: 'plugins.bundle.config',
+    key: 'dsh-session-guard',
     inject: () => ({ scope: ctx.configForms.get<Record<string, unknown>>('session-guard') }),
   }, SessionGuardCard))
 

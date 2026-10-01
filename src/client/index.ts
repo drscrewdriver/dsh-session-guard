@@ -11,6 +11,7 @@
  *
  * 构建：tsdown → lib/client.js（__ModuleLoader__.load 注册，与 input-traffic 同构）。
  */
+import { NS, dictionaries } from './locales'
 import { StatusBadge } from './status-badge'
 import { PauseButton } from './pause-button'
 import { SessionGuardCard } from './settings-card'
@@ -51,12 +52,23 @@ interface SlotsFace {
 interface ConfigFormsFace {
   get: <T>(_entryId: string) => import('./scope-face').SettingsScope<T>
 }
+interface LocaleFace {
+  register(ns: string, dicts: Record<string, Record<string, string>>): () => void
+}
 interface ClientCtx {
   slots: SlotsFace
   configForms: ConfigFormsFace
+  locale?: LocaleFace
+  effect: (fn: () => (() => void) | void, label: string) => void
 }
 
 export function apply(ctx: ClientCtx) {
+  // 注册全部 9 种语言字典（guarded：throw 不会逃逸）。
+  if (ctx.locale) {
+    const locale = ctx.locale
+    ctx.effect(() => locale.register(NS, dictionaries), 'dsh-session-guard: dictionaries')
+  }
+
   // 暂停会话按钮（v0.2.0）：step 级门控的状态显示 + 手动解除。
   // order 20 < input-traffic 冻结按钮的 30 → 排在左侧，两者并列互不取代（ADR-001/002）。
   ctx.slots.inject('conversation.input.right', () => ctx.slots.register({

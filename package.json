@@ -28,11 +28,13 @@
   "exports": {
     ".": "./src/index.js",
     "./client": "./lib/client.js",
+    "./locale/*.json": "./locale/*.json",
     "./package.json": "./package.json"
   },
   "files": [
     "src/",
     "lib/",
+    "locale",
     "cordis.patch.yml",
     "dsh.plugin.json",
     "README.md",

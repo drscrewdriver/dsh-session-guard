@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Guardia de sesión",
+    "description": "Puerta de sesión en hora pico: modo fin de semana, pausa automática, verificación de fuente oficial, congelación de sesión y reintento automático."
+  }
+}

@@ -43,10 +43,12 @@ export function apply(ctx, config = {}) {
   let lastState = null
 
   /** 读实时设置（settings 服务不可用时回退默认）。 */
+  let configSource = config
   /** 组合条目快照：volatile 字段解引，供默认值合并。 */
   function resolveEntryConfig() {
+    const source = configSource ?? config
     const out = {}
-    for (const key of Object.keys(DEFAULT_SETTINGS)) out[key] = readVolatileValue(config[key])
+    for (const key of Object.keys(DEFAULT_SETTINGS)) out[key] = readVolatileValue(source?.[key])
     return out
   }
 
@@ -57,6 +59,39 @@ export function apply(ctx, config = {}) {
     } catch {
       return { ...DEFAULT_SETTINGS }
     }
+  }
+
+  // ── ≤0.1.5(含 0.1.0/0.1.1)设置命名空间 legacy 注册(universal-rc)──────
+  // 0.1.7+ 由 loader 自动注册 ns,无需此块;老线必须经 settings 服务手动注册,
+  // 否则 client 配置卡报「设置命名空间不可用」。两条 legacy 路径按服务能力
+  // 自动分派:0.1.2/0.1.5 = 服务实例 installSection;0.1.0/0.1.1 = 模块级
+  // installSettingsSection + settingsNamespace。fail-open:失败仅告警。
+  try {
+    ctx.inject(['settings'], (sctx) => {
+      const service = sctx.settings
+      if (service === undefined || service === null) return
+      const hooks = {
+        setSource: (source) => {
+          configSource = typeof source === 'function' ? source() : source
+        },
+        onChange: () => {
+          // 状态机按 tick 读 readCfg(),无需即时动作。
+        },
+      }
+      if (typeof service.installSection === 'function') {
+        service.installSection(ctx, NS, SettingsSchema, resolveEntryConfig(), hooks)
+        console.warn('dsh-session-guard: settings registered via service.installSection (<=0.1.5)')
+        return
+      }
+      void import('@deepseek-ai/dsh-settings').then((legacy) => {
+        if (typeof legacy.installSettingsSection === 'function' && typeof legacy.settingsNamespace === 'function') {
+          legacy.installSettingsSection(ctx, legacy.settingsNamespace(NS), SettingsSchema, resolveEntryConfig(), hooks)
+          console.warn('dsh-session-guard: settings registered via module installSettingsSection (0.1.0/0.1.1)')
+        }
+      }).catch(() => {})
+    })
+  } catch (error) {
+    console.warn('dsh-session-guard: legacy settings registration skipped:', error)
   }
 
   // ── SSE 推送（v0.2.0）：step 门状态变化时立刻推给对应会话页面 ──

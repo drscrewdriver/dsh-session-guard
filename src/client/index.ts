@@ -8,13 +8,19 @@
  *   桥接 host 会话门；本插件客户端不注册任何按钮，避免与 input-traffic 冲突。
  * - 0.1.7：旧的插件设置卡已随席位删除 —— 设置表单由 host
  *   侧 Config 的 `.volatile()` 字段自动生成。
+ * - 跨版本（universal-rc）：持久设置经 configForms(0.1.7+)/settingsScope(≤0.1.5)
+ *   双代腰产出同形 scope；无设置页宿主（0.1.0/0.1.1）经 shell.overlay 浮窗
+ *   齿轮提供配置入口（配置存储全在 host 侧，浮层与宿主设置页解耦）。
  *
  * 构建：tsdown → lib/client.js（__ModuleLoader__.load 注册，与 input-traffic 同构）。
  */
 import { StatusBadge } from './status-badge'
 import { PauseButton } from './pause-button'
 import { SessionGuardCard } from './settings-card'
+import { ShellSettingsEntry } from './shell-overlay'
 import { GuardFamilySection, type FamilyTabEntry } from './family-section'
+import type { SessionGuardConfig } from './settings-card'
+import type { SettingsScope } from './scope-face'
 
 // 起子插件族共用设置节：宿主 dsh-thinking-levels 注册顶级 `settings.section`
 // （id `dsh-family`）并声明 `dsh-family.tab` 子席位，本插件贡献卡片。宿主缺席
@@ -33,6 +39,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * 本卡片改经 inject 工厂拿自己的 scope（与 dsh-family.tab 注册同源）。
      */
     'plugins.bundle.config': { kind: 'keyed'; scope: 'root'; owner: Record<string, unknown> }
+    /** 无设置页宿主（0.1.0/0.1.1）的兜底配置入口（壳级 overlay）。 */
+    'shell.overlay': { kind: 'list'; scope: 'root' }
   }
 }
 
@@ -47,8 +55,12 @@ const FAMILY_CHILD_KEY = 'dsh-family.tab'
  */
 const FAMILY_HOST_GRACE_MS = 2000
 
-/** 客户端所需服务：slots（状态徽标）+ locale + configForms（共用 tab 设置卡）。 */
-export const inject = ['slots', 'locale', 'configForms']
+/**
+ * 客户端所需服务：slots（状态徽标）+ locale。持久设置走双代腰
+ * （registerSettingsFaces）：configForms 为 0.1.7+ 独有，顶层注入会在
+ * 0.1.0/0.1.1（无此服务）上让整段 apply 静默死。
+ */
+export const inject = ['slots', 'locale']
 
 /** 轻量 ctx 类型（仅本客户端用到的方法；构建时类型被剥离）。 */
 interface SlotsFace {
@@ -58,73 +70,139 @@ interface SlotsFace {
   getVersion: (_name: string) => number
   subscribe: (_name: string, _listener: () => void) => () => void
 }
-interface ConfigFormsFace {
-  get: <T>(_entryId: string) => import('./scope-face').SettingsScope<T>
+interface ConfigFormsFactoryFace {
+  get: <T>(_entryId: string) => SettingsScope<T>
+}
+interface SettingsScopeFactoryFace {
+  bind: <T>(_opts: { namespace: string }) => SettingsScope<T>
 }
 interface ClientCtx {
   slots: SlotsFace
-  configForms: ConfigFormsFace
+  inject: (
+    _names: string[],
+    _fn: (sctx: { configForms?: ConfigFormsFactoryFace; settingsScope?: SettingsScopeFactoryFace }) => void,
+  ) => void
 }
 
-export function apply(ctx: ClientCtx) {
-  // 暂停会话按钮（v0.2.0）：step 级门控的状态显示 + 手动解除。
-  // order 20 < input-traffic 冻结按钮的 30 → 排在左侧，两者并列互不取代（ADR-001/002）。
-  ctx.slots.inject('conversation.input.right', () => ctx.slots.register({
-    name: 'conversation.input.right',
-    id: 'session-guard-pause',
-    order: 20,
-    locale: 'session-guard',
-  }, PauseButton))
+/** 单面注册护栏：某条宿主线上未知槽名/缺服务的同步异常不得带走其它面。 */
+function safe(tag: string, fn: () => void): void {
+  try {
+    fn()
+  } catch (error) {
+    console.warn(`dsh-session-guard: client surface '${tag}' failed:`, error)
+  }
+}
 
-  // 状态徽标：输入区右侧，纯展示。
-  ctx.slots.inject('conversation.input.right', () => ctx.slots.register({
-    name: 'conversation.input.right',
-    id: 'session-guard-status',
-    order: 40,
-    locale: 'session-guard',
-  }, StatusBadge))
+/**
+ * 双代持久设置腰（移植 input-traffic registerSettingsFaces）：两个 scoped
+ * 子注入各自产出同形 scope 后回调；0.2.0 两代并存时以 configForms 先到为准
+ * （mounted 位防双挂载，ui-slots 同 id 仲裁兜底）。
+ */
+function registerSettingsFaces(
+  ctx: ClientCtx,
+  onScope: (scope: SettingsScope<SessionGuardConfig>, generation: 'configForms' | 'settingsScope') => void,
+): void {
+  let mounted = false
+  ctx.inject(['configForms'], (sctx) => {
+    if (mounted) return
+    mounted = true
+    onScope(sctx.configForms!.get<SessionGuardConfig>('session-guard'), 'configForms')
+  })
+  ctx.inject(['settingsScope'], (sctx) => {
+    if (mounted) return
+    mounted = true
+    onScope(sctx.settingsScope!.bind<SessionGuardConfig>({ namespace: 'session-guard' }), 'settingsScope')
+  })
+}
 
-  // 插件族共用 tab 贡献卡：读写本插件 entry（`session-guard`）的 volatile 配置。
+/** 两张配置卡（family tab + bundle 详情页）挂载；scope 由双代腰产出。 */
+function mountConfigCards(ctx: ClientCtx, scope: SettingsScope<SessionGuardConfig>): void {
+  // 插件族共用 tab 贡献卡：读写本插件 entry（`session-guard`）的持久配置。
   ctx.slots.inject('dsh-family.tab', () => ctx.slots.register({
     name: 'dsh-family.tab',
     id: 'session-guard',
     order: 20,
     label: '会话守护门禁',
     locale: 'session-guard',
-    inject: () => ({ scope: ctx.configForms.get<Record<string, unknown>>('session-guard') }),
+    inject: () => ({ scope }),
   }, SessionGuardCard))
 
   // 插件页配置卡（DSH 0.2.0）：Plugins 页不自动渲染 volatile 配置表单，须注册
   // `plugins.bundle.config` 席位（key = 包名），配置卡才渲染在 bundle 详情页。
-  // 卡片组件与 props（scope）与上方 dsh-family.tab 注册完全同源：同一张
-  // SessionGuardCard、同一 inject 工厂，配置仍写入 entry `session-guard` 的
-  // volatile config；页面注入的 owner props（form 等）本卡不消费。
+  // 卡片组件与 props（scope）与上方 dsh-family.tab 注册完全同源。
   ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({
     name: 'plugins.bundle.config',
     key: 'dsh-session-guard',
-    inject: () => ({ scope: ctx.configForms.get<Record<string, unknown>>('session-guard') }),
+    inject: () => ({ scope }),
   }, SessionGuardCard))
+}
 
-  // 家族节宿主选举：宿主 dsh-thinking-levels 缺席时顶上「起子插件设置」节。
-  // 宽限期后若 `settings.section` 里没有 id `dsh-family` 的条目，则按同一 id
-  // 接管（声明同一个 dsh-family.tab 子席位，节内通用渲染全部贡献卡）。与
-  // session-steward 的并发竞争由 ui-slots 同 id 重复注册抛错仲裁，先到者胜。
-  // 节内各卡（含本插件自己的贡献卡）经子席位 renderSlot 渲染，抽屉默认展开。
-  setTimeout(() => {
-    if (ctx.slots.entries('settings.section').some(e => e.options.id === FAMILY_SECTION_ID)) return
-    try {
-      ctx.slots.register({
-        name: 'settings.section',
-        id: FAMILY_SECTION_ID,
-        order: 40,
-        label: () => '起子插件设置',
-        inject: () => makeGuardFamilyTabsHooks(ctx.slots),
-        children: { [FAMILY_CHILD_KEY]: { kind: 'list', scope: 'root' } },
-      }, GuardFamilySection)
-    } catch {
-      // 并发接管竞争落败（或设置壳未声明席位）：胜出方的节服务整个家族。
-    }
-  }, FAMILY_HOST_GRACE_MS)
+export function apply(ctx: ClientCtx) {
+  // 暂停会话按钮（v0.2.0）：step 级门控的状态显示 + 手动解除。
+  // order 20 < input-traffic 冻结按钮的 30 → 排在左侧，两者并列互不取代（ADR-001/002）。
+  safe('conversation.input.right/pause', () => ctx.slots.inject('conversation.input.right', () => ctx.slots.register({
+    name: 'conversation.input.right',
+    id: 'session-guard-pause',
+    order: 20,
+    locale: 'session-guard',
+  }, PauseButton)))
+
+  // 状态徽标：输入区右侧，纯展示。
+  safe('conversation.input.right/status', () => ctx.slots.inject('conversation.input.right', () => ctx.slots.register({
+    name: 'conversation.input.right',
+    id: 'session-guard-status',
+    order: 40,
+    locale: 'session-guard',
+  }, StatusBadge)))
+
+  // 双代腰：scope 就绪后按代挂载（每条宿主线恰好一代服务）。
+  registerSettingsFaces(ctx, (scope, generation) => {
+    safe(`config-cards/${generation}`, () => {
+      // 两代共有：family tab（0.1.7+ 由 thinking-levels 容器渲染）与
+      // bundle 详情页平铺卡（0.1.7+ 的 plugin-manager 槽）。
+      mountConfigCards(ctx, scope)
+      // 老设置页(≤0.1.5)插件列表配置卡;0.1.7+ 无此槽,注册静默闲置。
+      ctx.slots.inject('settings.plugin.item', () => ctx.slots.register({
+        name: 'settings.plugin.item',
+        id: 'session-guard',
+        key: 'session-guard',
+        order: 60,
+        locale: 'session-guard',
+        inject: () => ({ scope }),
+      }, SessionGuardCard))
+    })
+    // 无设置页宿主（0.1.0/0.1.1）的兜底配置入口：壳级 overlay 浮窗齿轮。
+    safe('shell.overlay', () => ctx.slots.inject('shell.overlay', () => ctx.slots.register(
+      { name: 'shell.overlay', id: 'session-guard-settings' },
+      () => ShellSettingsEntry({ scope }),
+    )))
+  })
+
+  // 家族节宿主选举：仅 configForms 代（0.1.7+；族面容器 thinking-levels 也只在
+  // 该代）。≤0.1.5 的设置壳不渲染 children 子槽，自起只会得到空节（实测），
+  // 故经 configForms 服务探测把选举门在该代之外。宽限期后若 settings.section
+  // 里没有 id `dsh-family` 的条目，则按同一 id 接管；与 session-steward 的
+  // 并发竞争由 ui-slots 同 id 重复注册抛错仲裁，先到者胜。
+  safe('family-section-election', () => {
+    setTimeout(() => {
+      if (ctx.slots.entries('settings.section').some(e => e.options.id === FAMILY_SECTION_ID)) return
+      ctx.inject(['configForms'], () => {
+        if (ctx.slots.entries('settings.section').some(e => e.options.id === FAMILY_SECTION_ID)) return
+        try {
+          ctx.slots.register({
+            name: 'settings.section',
+            id: FAMILY_SECTION_ID,
+            order: 40,
+            label: () => '起子插件设置',
+            inject: () => makeGuardFamilyTabsHooks(ctx.slots),
+            children: { [FAMILY_CHILD_KEY]: { kind: 'list', scope: 'root' } },
+          }, GuardFamilySection)
+        } catch {
+          // 并发接管竞争落败（或设置壳未声明席位）：胜出方的节服务整个家族。
+        }
+      })
+    }, FAMILY_HOST_GRACE_MS)
+  })
 }
 
 /** 接管节的账本投影 hooks（与 thinking-levels 的 FamilySectionInjected 同形）。 */

@@ -4,6 +4,9 @@
  * 轮询 host 的 /session-guard/status（全局当前阶段），显示 高峰/谷时/周末；
  * 高峰期按二维判定区分「只拦官方」与「全部暂停」（文案见 badge-text.ts）。
  * 仅展示，不做任何队列/会话动作；冻结按钮由 input-traffic 经桥接管（D6/D8）。
+ *
+ * 自适应退避（universal-rc）：视口宽度不足（< PEAK_BADGE_MIN_VIEWPORT，窄窗/
+ * 分屏）或新空会话（sessionId 未落盘为 undefined）→ 整体退避隐藏。
  */
 import { useEffect, useState } from 'react'
 import { badgeTitle, peakLabel, type Status } from './badge-text'
@@ -15,10 +18,15 @@ export interface StatusBadgeProps {
 }
 
 const POLL_MS = 15_000
+/** 视口宽度退避阈值：低于此值隐藏徽标（窄窗/分屏下输入区放不下）。 */
+const PEAK_BADGE_MIN_VIEWPORT = 960
 
 /** 状态徽标：轮询全局阶段，显示 高峰/谷时/周末（enabled 关闭或请求失败时静默隐藏）。 */
 export function StatusBadge({ sessionId }: StatusBadgeProps) {
   const [status, setStatus] = useState<Status | null>(null)
+  const [viewportNarrow, setViewportNarrow] = useState(
+    () => typeof window !== 'undefined' && window.innerWidth < PEAK_BADGE_MIN_VIEWPORT,
+  )
 
   injectClientCss()
 
@@ -42,6 +50,15 @@ export function StatusBadge({ sessionId }: StatusBadgeProps) {
     }
   }, [sessionId])
 
+  useEffect(() => {
+    const onResize = () => setViewportNarrow(window.innerWidth < PEAK_BADGE_MIN_VIEWPORT)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
+  // 视口宽度不足:退避隐藏。新空会话隐藏需会话空态信号(UseChat 契约),
+  // 留待后续(sessionId 在新会话同样有值,不能作判定)。
+  if (viewportNarrow) return null
   if (!status || !status.enabled) return null
 
   const cls = status.phase === 'peak' ? 'sg-peak' : status.phase === 'weekend' ? 'sg-weekend' : 'sg-off'

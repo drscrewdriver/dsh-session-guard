@@ -7,3 +7,5 @@ node_modules/
 *.log
 .DS_Store
 .dsh/
+_wt-main/
+_wt-audit/

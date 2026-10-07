@@ -61,6 +61,7 @@
   },
   "scripts": {
     "build": "tsdown",
+    "prepack": "npm run build",
     "lint": "eslint src tests",
     "test": "node --test \"tests/*.test.mjs\""
   },

@@ -1,6 +1,6 @@
 {
   "name": "dsh-session-guard",
-  "version": "4.1.5",
+  "version": "4.1.6",
   "publishConfig": {
     "tag": "latest"
   },

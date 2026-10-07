@@ -14,6 +14,8 @@
  *
  * 构建：tsdown → lib/client.js（__ModuleLoader__.load 注册，与 input-traffic 同构）。
  */
+import { createElement } from 'react'
+import type { JSX } from 'react'
 import { StatusBadge } from './status-badge'
 import { PauseButton } from './pause-button'
 import { SessionGuardCard } from './settings-card'
@@ -66,7 +68,11 @@ export const inject = ['slots', 'locale']
 interface SlotsFace {
   inject: (_name: string, _fn: () => unknown) => () => void
   register: (_options: Record<string, unknown>, _component: unknown) => () => void
-  entries: (_name: string) => Array<{ options: { id?: string; order?: number; label?: unknown } }>
+  entries: (_name: string) => Array<{
+    options: { id?: string; order?: number; label?: unknown }
+    component?: unknown
+    inject?: () => unknown
+  }>
   getVersion: (_name: string) => number
   subscribe: (_name: string, _listener: () => void) => () => void
 }
@@ -178,31 +184,50 @@ export function apply(ctx: ClientCtx) {
     )))
   })
 
-  // 家族节宿主选举：仅 configForms 代（0.1.7+；族面容器 thinking-levels 也只在
-  // 该代）。≤0.1.5 的设置壳不渲染 children 子槽，自起只会得到空节（实测），
-  // 故经 configForms 服务探测把选举门在该代之外。宽限期后若 settings.section
-  // 里没有 id `dsh-family` 的条目，则按同一 id 接管；与 session-steward 的
-  // 并发竞争由 ui-slots 同 id 重复注册抛错仲裁，先到者胜。
+  // 家族节宿主选举（2026-10 对齐 TL route A）：旧版只在 configForms 代开门，
+  // 依据是「≤0.1.5 设置壳不渲染 children 子槽」——该预设已被推翻（TL
+  // beta.22/23 + 五格实测：client 贡献的 settings.section 在 0.1.0/0.1.1/
+  // 0.1.2/0.1.5 全部渲染）。选举改为纯账本仲裁：宽限期后 settings.section
+  // 里没有 id `dsh-family` 条目就接管，不分代；TL 在场时其注册先落座，本
+  // 插件经 entries 查 retreat；并发竞争由 ui-slots 同 id 重复注册抛错仲裁，
+  // 后到者放弃。席位未声明的宿主（如 0.2.0）register 抛错 → catch 放弃。
   safe('family-section-election', () => {
     setTimeout(() => {
       if (ctx.slots.entries('settings.section').some(e => e.options.id === FAMILY_SECTION_ID)) return
-      ctx.inject(['configForms'], () => {
-        if (ctx.slots.entries('settings.section').some(e => e.options.id === FAMILY_SECTION_ID)) return
-        try {
-          ctx.slots.register({
-            name: 'settings.section',
-            id: FAMILY_SECTION_ID,
-            order: 40,
-            label: () => '起子插件设置',
-            inject: () => makeGuardFamilyTabsHooks(ctx.slots),
-            children: { [FAMILY_CHILD_KEY]: { kind: 'list', scope: 'root' } },
-          }, GuardFamilySection)
-        } catch {
-          // 并发接管竞争落败（或设置壳未声明席位）：胜出方的节服务整个家族。
-        }
-      })
+      try {
+        ctx.slots.register({
+          name: 'settings.section',
+          id: FAMILY_SECTION_ID,
+          order: 40,
+          label: () => '起子插件设置',
+          inject: () => ({
+            hooks: makeGuardFamilyTabsHooks(ctx.slots),
+            renderContributor,
+          }),
+          children: { [FAMILY_CHILD_KEY]: { kind: 'list', scope: 'root' } },
+        }, GuardFamilySection)
+      } catch {
+        // 并发接管竞争落败（或设置壳未声明席位）：胜出方的节服务整个家族。
+      }
     }, FAMILY_HOST_GRACE_MS)
   })
+}
+
+/** 直接挂载面（≤0.1.5 壳无 renderSlot 的降级）：从账本原始条目现挂激活卡。
+ * entries 每代都带 component + inject（ui-slots SlotCore.entries 原始记录）；
+ * 任何失败（条目消失/抛错 inject）降级为 null，不炸接管节。 */
+function renderContributor(id: string): JSX.Element | null {
+  try {
+    const entry = ctx.slots.entries(FAMILY_CHILD_KEY).find(e => e.options.id === id)
+    if (entry === undefined || typeof entry.component !== 'function') return null
+    const injected = typeof entry.inject === 'function' ? entry.inject() : undefined
+    return createElement(
+      entry.component as (props: Record<string, unknown>) => JSX.Element | null,
+      (injected ?? {}) as Record<string, unknown>,
+    )
+  } catch {
+    return null
+  }
 }
 
 /** 接管节的账本投影 hooks（与 thinking-levels 的 FamilySectionInjected 同形）。 */

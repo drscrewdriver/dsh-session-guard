@@ -26,10 +26,14 @@ export interface FamilyTabEntry {
   label: string
 }
 
-/** 组件 props：框架注入的子席位 dispatcher + 注册侧 inject 返回的 hooks。 */
+/** 组件 props：框架注入的子席位 dispatcher（0.1.7+ 壳）+ 注册侧 inject 返回
+ * 的 hooks；≤0.1.5 壳不传 renderSlot，走注册侧给的直接挂载面。 */
 export interface GuardFamilySectionProps {
-  renderSlot: (key: 'dsh-family.tab', owner?: object, opts?: { only?: string; fallback?: JSX.Element | null }) => JSX.Element | null
+  renderSlot?: (key: 'dsh-family.tab', owner?: object, opts?: { only?: string; fallback?: JSX.Element | null }) => JSX.Element | null
   hooks: { tabs: HostObservable<readonly FamilyTabEntry[]> }
+  /** 直接挂载面（≤0.1.5 壳无 renderSlot 时）：注册侧从账本原始条目
+   * （entries 自带 component + inject）现挂激活卡。失败一律 null。 */
+  renderContributor?: (id: string) => JSX.Element | null
 }
 
 export function GuardFamilySection(props: GuardFamilySectionProps): JSX.Element {
@@ -38,7 +42,9 @@ export function GuardFamilySection(props: GuardFamilySectionProps): JSX.Element 
     <div style={{ display: 'grid', gap: '12px' }}>
       {tabs.map(row => (
         <div key={row.id}>
-          {props.renderSlot('dsh-family.tab', {}, { only: row.id, fallback: null })}
+          {props.renderSlot
+            ? props.renderSlot('dsh-family.tab', {}, { only: row.id, fallback: null })
+            : props.renderContributor?.(row.id) ?? null}
         </div>
       ))}
     </div>

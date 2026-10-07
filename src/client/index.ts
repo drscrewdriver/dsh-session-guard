@@ -50,6 +50,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 const FAMILY_SECTION_ID = 'dsh-family'
 /** 家族子席位 key（与 thinking-levels 的声明严格一致）。 */
 const FAMILY_CHILD_KEY = 'dsh-family.tab'
+/** 让位宽限：声明批内 TL 的注册微秒级落账，此延迟后查账本足以分辨「TL 在场」。 */
+const FAMILY_YIELD_MS = 500
 
 /**
  * 客户端所需服务：slots（状态徽标）+ locale。持久设置走双代腰
@@ -178,49 +180,55 @@ export function apply(ctx: ClientCtx) {
     )))
   })
 
-  // 家族节接管（2026-10 对齐 TL route A + bindInjectHooks 实证）：遮蔽位选举
-  // —— TL（默认 priority 0）在场时恒为头位（lowest renders），本插件 p10 恒
-  // 为阴影位；TL 缺席时 p10 即头位。不查账本、不靠同 id 抛错仲裁，注册先后
-  // 无关紧要。子席位声明带冲突兜底：TL 先到已声明 → 去掉 children 重试（阴影
-  // 位本就不需要声明）；同 p10 竞争者 → 双双抛错，放弃。inject 必须走
-  // ctx.slots.inject 包装管道（裸 register 的 entry.inject 在 ≤0.1.5 壳上不解，
-  // 4.1.5 的接管节体因此从未渲染成功过——「半补位」的真相）。
+  // 家族节接管（2026-10 对齐 TL route A + bindInjectHooks 实证）：让位选举。
+  // 2026-10-08 T20-a 实证修正：≤0.1.7 壳的设置导航对同 id 异 priority 的遮蔽位
+  // 也各列一行——「TL(p0) 恒头位、本插件 p10 恒阴影不占导航」假设不成立，双注册
+  // = 双「起子插件设置」导航行（0.1.0~0.1.7 五格全现；0.1.0 摘除 guard 实验：
+  // 单行归位、TL 节独座满血）。改为延迟让位：声明批内 TL 同批落账（工厂 fire
+  // 顺序=inject 注册顺序，本插件的 inject 先注册先 fire，TL 同批紧随），延迟
+  // FAMILY_YIELD_MS 再查账本——已有 dsh-family（TL 头位落座）→ 让位退场；仍空
+  // （TL 缺席/落账失败）→ 接管。inject 仍必须 apply 期注册——slots 核只在「声明
+  // 事件」触发工厂，宽限期后注册的 inject 等不到下一次声明（0.1.0 实机日志定案：
+  // 4.1.7/4.1.8 的 grace 后注册工厂零执行）；register 本就是指令式调用，移入
+  // 定时器不改变机制。子席位声明带冲突兜底：TL 先声明 → 去 children 重试（接管
+  // 者不重复声明）；同 id 同 priority 竞争 → 双抛，放弃。register 走本工厂触发
+  // 管道（裸注册的 entry.inject 在 ≤0.1.5 壳上不解，4.1.5「半补位」真相）。
   safe('family-section-election', () => {
     console.log('[dsh-session-guard] election: registering settings.section inject (apply-time)')
-    // inject 必须 apply 期注册——slots 核只在「声明事件」触发工厂，宽限期后
-    // 注册的 inject 等不到下一次声明，接管永远不落座（0.1.0 实机日志定案：
-    // 4.1.7/4.1.8 的 grace 后注册工厂零执行）。选举用同 id 异 priority 遮蔽：
-    // TL（默认 p0）在场恒头位，本插件 p10 恒阴影，TL 缺席时 p10 即头位，
-    // 注册先后无关紧要。子席位声明带冲突兜底：TL 先声明 → 去 children 重试
-    // （阴影位不需要声明）；同 p10 竞争 → 双抛，放弃。
     ctx.slots.inject('settings.section', () => {
       console.log('[dsh-session-guard] election: factory fired (settings.section declared)')
-      const base = {
-        name: 'settings.section',
-        id: FAMILY_SECTION_ID,
-        order: 40,
-        priority: 10,
-        label: () => '起子插件设置',
-        inject: () => ({
-          hooks: makeGuardFamilyTabsHooks(ctx.slots),
-          renderContributor,
-        }),
-      }
-      try {
-        ctx.slots.register({
-          ...base,
-          children: { [FAMILY_CHILD_KEY]: { kind: 'list', scope: 'root' } },
-        }, GuardFamilySection)
-        console.log('[dsh-session-guard] family takeover registered (p10, children declared)')
-      } catch (error) {
-        console.log(`[dsh-session-guard] children decl conflict (${error instanceof Error ? error.message : error}); registering shadow without children`)
-        try {
-          ctx.slots.register(base, GuardFamilySection)
-          console.log('[dsh-session-guard] family takeover registered as shadow (no children)')
-        } catch (secondary) {
-          console.log(`[dsh-session-guard] family takeover abandoned: ${secondary instanceof Error ? secondary.message : secondary}`)
+      setTimeout(() => {
+        if (ctx.slots.entries('settings.section').some(e => e.options.id === FAMILY_SECTION_ID)) {
+          console.log('[dsh-session-guard] election: dsh-family already seated — stand down')
+          return
         }
-      }
+        const base = {
+          name: 'settings.section',
+          id: FAMILY_SECTION_ID,
+          order: 40,
+          priority: 10,
+          label: () => '起子插件设置',
+          inject: () => ({
+            hooks: makeGuardFamilyTabsHooks(ctx.slots),
+            renderContributor,
+          }),
+        }
+        try {
+          ctx.slots.register({
+            ...base,
+            children: { [FAMILY_CHILD_KEY]: { kind: 'list', scope: 'root' } },
+          }, GuardFamilySection)
+          console.log('[dsh-session-guard] family takeover registered (children declared)')
+        } catch (error) {
+          console.log(`[dsh-session-guard] children decl conflict (${error instanceof Error ? error.message : error}); registering without children`)
+          try {
+            ctx.slots.register(base, GuardFamilySection)
+            console.log('[dsh-session-guard] family takeover registered (no children)')
+          } catch (secondary) {
+            console.log(`[dsh-session-guard] family takeover abandoned: ${secondary instanceof Error ? secondary.message : secondary}`)
+          }
+        }
+      }, FAMILY_YIELD_MS)
     })
   })
 }

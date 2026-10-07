@@ -11,6 +11,27 @@ All notable changes to `dsh-session-guard` are recorded here. Versions follow se
 - [Changelog на русском](./CHANGELOG.ru.md)
 - [Changelog en español](./CHANGELOG.es.md)
 
+## 4.1.11 — 2026-10-08
+
+### Fixed — family-section takeover rebuilt (4.1.5 → 4.1.11 arc; none of 4.1.5-4.1.10 was published to npm)
+
+- **4.1.5 "half backfill" root cause**: the takeover body read `props.hooks.tabs`,
+  but the host's `bindInjectHooks` strips an inject face's `hooks` key into
+  `use<Tab>` props on every generation — the component threw, the slot abdicated,
+  and the takeover body never rendered anywhere. It now reads the `useTabs`
+  compartment first, with a raw-hooks `useState`/`useEffect` fallback.
+- **Apply-time inject registration (4.1.10)**: the slots core fires inject
+  factories only on declaration events (= the settings panel opening), so the
+  grace-delayed registration of 4.1.7/4.1.8 waited for a declaration that never
+  came. The `settings.section` inject now registers at apply time.
+- **Deferred yield-election (4.1.11)**: ≤0.1.7 shells give every same-id section
+  entry its own nav row — the old "priority-10 shadow stays invisible" assumption
+  produced a double 起子插件设置 row on all five farm cells. The factory now waits
+  500 ms after the declaration batch and stands down when a `dsh-family` entry is
+  already seated (thinking-levels head); it takes over only when TL is absent.
+  Verified single-row on all five farm cells (0.1.0 → 0.1.7), pairing with
+  dsh-thinking-levels 4.2.0-beta.26's symmetric stand-down.
+
 ## 4.0.0 — 2026-09-29
 
 ### Changed

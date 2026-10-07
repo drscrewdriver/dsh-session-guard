@@ -184,31 +184,36 @@ export function apply(ctx: ClientCtx) {
     )))
   })
 
-  // 家族节宿主选举（2026-10 对齐 TL route A）：旧版只在 configForms 代开门，
-  // 依据是「≤0.1.5 设置壳不渲染 children 子槽」——该预设已被推翻（TL
-  // beta.22/23 + 五格实测：client 贡献的 settings.section 在 0.1.0/0.1.1/
-  // 0.1.2/0.1.5 全部渲染）。选举改为纯账本仲裁：宽限期后 settings.section
-  // 里没有 id `dsh-family` 条目就接管，不分代；TL 在场时其注册先落座，本
-  // 插件经 entries 查 retreat；并发竞争由 ui-slots 同 id 重复注册抛错仲裁，
-  // 后到者放弃。席位未声明的宿主（如 0.2.0）register 抛错 → catch 放弃。
+  // 家族节接管（2026-10 对齐 TL route A + bindInjectHooks 实证）：遮蔽位选举
+  // —— TL（默认 priority 0）在场时恒为头位（lowest renders），本插件 p10 恒
+  // 为阴影位；TL 缺席时 p10 即头位。不查账本、不靠同 id 抛错仲裁，注册先后
+  // 无关紧要。子席位声明带冲突兜底：TL 先到已声明 → 去掉 children 重试（阴影
+  // 位本就不需要声明）；同 p10 竞争者 → 双双抛错，放弃。inject 必须走
+  // ctx.slots.inject 包装管道（裸 register 的 entry.inject 在 ≤0.1.5 壳上不解，
+  // 4.1.5 的接管节体因此从未渲染成功过——「半补位」的真相）。
   safe('family-section-election', () => {
     setTimeout(() => {
-      if (ctx.slots.entries('settings.section').some(e => e.options.id === FAMILY_SECTION_ID)) return
-      try {
-        ctx.slots.register({
+      ctx.slots.inject('settings.section', () => {
+        const base = {
           name: 'settings.section',
           id: FAMILY_SECTION_ID,
           order: 40,
+          priority: 10,
           label: () => '起子插件设置',
           inject: () => ({
             hooks: makeGuardFamilyTabsHooks(ctx.slots),
             renderContributor,
           }),
-          children: { [FAMILY_CHILD_KEY]: { kind: 'list', scope: 'root' } },
-        }, GuardFamilySection)
-      } catch {
-        // 并发接管竞争落败（或设置壳未声明席位）：胜出方的节服务整个家族。
-      }
+        }
+        try {
+          ctx.slots.register({
+            ...base,
+            children: { [FAMILY_CHILD_KEY]: { kind: 'list', scope: 'root' } },
+          }, GuardFamilySection)
+        } catch {
+          try { ctx.slots.register(base, GuardFamilySection) } catch { /* 让位 */ }
+        }
+      })
     }, FAMILY_HOST_GRACE_MS)
   })
 }

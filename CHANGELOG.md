@@ -33,7 +33,12 @@ All notable changes to `dsh-session-guard` are recorded here. Versions follow se
   (getSnapshot/subscribe/set/unset); describe misses retry within a bounded
   budget (settings service resolving later than card mount) before landing on
   `unavailable`. Card faces read `scopeRef.scope ?? bridgeScope()` — native
-  first, bridge fallback (perm-gate T13b dual-track).
+  first, bridge fallback (perm-gate T13b dual-track). **Generation split in the
+  data arm (five-cell empirical, 2026-10-08 night)**: on 0.1.2/0.1.5 the
+  `settingsScope` handle is write-alive but read-dead — `set()` persists to
+  settings.yaml while `getSnapshot().value` stays `undefined`, so that arm
+  deliberately leaves `scopeRef` empty and the card falls to the bridge (bridge
+  mutate lands in the same host service; describe heals the read path).
 
 ### Corrected — 4.1.11 publication note
 

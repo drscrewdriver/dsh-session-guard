@@ -203,10 +203,11 @@ test('BridgeDocHandle：瞬态 settings-unavailable 在重试预算内转 ready'
   assert.equal(handle.getSnapshot().status, 'ready', `瞬态重试后应 ready（attempts=${attempts}）`)
 })
 
-test('P0 结构钉：双代腰回调只写 scopeRef，注册已提 apply 顶层', async () => {
+test('P0/实测裁决结构钉：双代腰按代分流（settingsScope 臂不喂 scopeRef），注册已提 apply 顶层', async () => {
   const src = readFileSync(join(ROOT, 'src', 'client', 'index.ts'), 'utf8')
-  // 回调体 = 纯数据臂（注册若回流回调，此断言即红）
-  assert.match(src, /registerSettingsFaces\(ctx, \(scope\) => \{\s*scopeRef\.scope = scope\s*\}\)/)
+  // 回调体 = 按代分流（settingsScope 句柄写活读死——2026-10-08 深夜实测裁决；
+  // 若改回无条件喂 scopeRef，0.1.2/0.1.5 的读死句柄会顶掉桥，读路径痊愈失效）
+  assert.match(src, /registerSettingsFaces\(ctx, \(scope, generation\) => \{\s*if \(generation === 'configForms'\) scopeRef\.scope = scope\s*\}\)/)
   // 三面 + mountConfigCards 在 apply 顶层无条件注册（不在任何回调字面量内）
   assert.ok(src.includes('safe(\'config-cards/family-tab\', () => mountConfigCards(ctx))'))
   assert.ok(src.includes("safe('config-cards/settings-plugin-item'"))

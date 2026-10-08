@@ -195,9 +195,15 @@ export function apply(ctx: ClientCtx) {
     () => ShellSettingsEntry({ scope: currentScope() }),
   )))
 
-  // 双代腰降级为纯数据臂：scope 解到只填活引用（0.1.7+ 原生优先，桥自动让位）。
-  registerSettingsFaces(ctx, (scope) => {
-    scopeRef.scope = scope
+  // 双代腰 = 纯数据臂，**按代分流**（2026-10-08 深夜五格实测裁决，findings「实测裁决」节）：
+  // - configForms（0.1.7+）：句柄写读皆活 → 入 scopeRef（原生优先，桥自动让位）。
+  // - settingsScope（0.1.2/0.1.5）：句柄**写活读死**——set() 落盘持久化，但
+  //   getSnapshot().value 恒 undefined（卡渲染默认值，磁盘是真值）。留空
+  //   scopeRef → currentScope() 落桥：桥 mutate 同样落宿主服务（写行为等价），
+  //   describe 读到持久化真值（读路径痊愈）。0.1.0/0.1.1 无 client 服务，
+  //   同样落桥。
+  registerSettingsFaces(ctx, (scope, generation) => {
+    if (generation === 'configForms') scopeRef.scope = scope
   })
 
   // 家族节接管（2026-10 对齐 TL route A + bindInjectHooks 实证）：让位选举。

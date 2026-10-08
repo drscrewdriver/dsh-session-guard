@@ -19,7 +19,6 @@ import type { JSX } from 'react'
 import { StatusBadge } from './status-badge'
 import { PauseButton } from './pause-button'
 import { SessionGuardCard } from './settings-card'
-import { ShellSettingsEntry } from './shell-overlay'
 import { BridgeDocHandle } from './settings-bridge.ts'
 import { GuardFamilySection, type FamilyTabEntry } from './family-section'
 import type { SessionGuardConfig } from './settings-card'
@@ -42,8 +41,6 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * 本卡片改经 inject 工厂拿自己的 scope（与 dsh-family.tab 注册同源）。
      */
     'plugins.bundle.config': { kind: 'keyed'; scope: 'root'; owner: Record<string, unknown> }
-    /** 无设置页宿主（0.1.0/0.1.1）的兜底配置入口（壳级 overlay）。 */
-    'shell.overlay': { kind: 'list'; scope: 'root' }
   }
 }
 
@@ -183,11 +180,6 @@ export function apply(ctx: ClientCtx) {
   // 老设置页(≤0.1.5)插件列表配置卡（settings.plugin.item）已于 2026-10-08
   // 撤除（family-insection 第二轮）：与会话守护门禁家族 tab 重复——家族 tab
   // 是唯一设置面（TL/free-search/browser-cdp/preset-manager 同批撤各自 item 卡）。
-  // 无设置页宿主（0.1.0/0.1.1）的兜底配置入口：壳级 overlay 浮窗齿轮。
-  safe('shell.overlay', () => ctx.slots.inject('shell.overlay', () => ctx.slots.register(
-    { name: 'shell.overlay', id: 'session-guard-settings' },
-    () => ShellSettingsEntry({ scope: currentScope() }),
-  )))
 
   // 双代腰 = 纯数据臂，**按代分流**（2026-10-08 深夜五格实测裁决，findings「实测裁决」节）：
   // - configForms（0.1.7+）：句柄写读皆活 → 入 scopeRef（原生优先，桥自动让位）。

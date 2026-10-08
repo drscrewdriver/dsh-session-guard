@@ -11,6 +11,10 @@ Tous les changements notables de `dsh-session-guard` sont consignés ici. Les ve
 - [Changelog en russe](./CHANGELOG.ru.md)
 - [Changelog en español](./CHANGELOG.es.md)
 
+## 4.1.14 — 2026-10-08
+
+### Supprimé
+
 ## 4.1.13 — 2026-10-08
 
 ### Corrigé — squelette de descripteur bridge sur ≤0.1.5 (attrapé par la grille 5 cellules)

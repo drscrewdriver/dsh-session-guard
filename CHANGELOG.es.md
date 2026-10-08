@@ -11,6 +11,10 @@ Todos los cambios notables de `dsh-session-guard` se registran aquí. Las versio
 - [Changelog en ruso](./CHANGELOG.ru.md)
 - [Changelog en español](./CHANGELOG.es.md)
 
+## 4.1.14 — 2026-10-08
+
+### Eliminado
+
 ## 4.1.13 — 2026-10-08
 
 ### Corregido — esqueleto del descriptor bridge en ≤0.1.5 (atrapado por la puerta de 5 celdas)

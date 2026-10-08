@@ -208,9 +208,12 @@ test('P0/实测裁决结构钉：双代腰按代分流（settingsScope 臂不喂
   // 回调体 = 按代分流（settingsScope 句柄写活读死——2026-10-08 深夜实测裁决；
   // 若改回无条件喂 scopeRef，0.1.2/0.1.5 的读死句柄会顶掉桥，读路径痊愈失效）
   assert.match(src, /registerSettingsFaces\(ctx, \(scope, generation\) => \{\s*if \(generation === 'configForms'\) scopeRef\.scope = scope\s*\}\)/)
-  // 三面 + mountConfigCards 在 apply 顶层无条件注册（不在任何回调字面量内）
+  // 三面 + mountConfigCards 在 apply 顶层无条件注册（不在任何回调字面量内）；
+  // settings.plugin.item 卡已撤（2026-10-08 family-insection 第二轮——与家族
+  // tab 重复），结构钉反向断言其不再注册。
   assert.ok(src.includes('safe(\'config-cards/family-tab\', () => mountConfigCards(ctx))'))
-  assert.ok(src.includes("safe('config-cards/settings-plugin-item'"))
+  assert.ok(!src.includes('config-cards/settings-plugin-item'))
+  assert.ok(!/slots\.inject\('settings\.plugin\.item'/.test(src))
   assert.ok(src.includes("safe('shell.overlay'"))
   // 卡面数据源 = currentScope()（scopeRef ?? bridge 桥兜底）
   assert.match(src, /function currentScope\(\): SettingsScope<SessionGuardConfig> \{\s*return scopeRef\.scope \?\? bridgeScope\(\)/)

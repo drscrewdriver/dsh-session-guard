@@ -180,15 +180,9 @@ export function apply(ctx: ClientCtx) {
   // index.ts L160-165 注释点名的反例）。现注册无条件执行，数据经 currentScope()
   // 现取：原生句柄解到即原生，否则桥兜底。
   safe('config-cards/family-tab', () => mountConfigCards(ctx))
-  // 老设置页(≤0.1.5)插件列表配置卡;0.1.7+ 无此槽,注册静默闲置。
-  safe('config-cards/settings-plugin-item', () => ctx.slots.inject('settings.plugin.item', () => ctx.slots.register({
-    name: 'settings.plugin.item',
-    id: 'session-guard',
-    key: 'session-guard',
-    order: 60,
-    locale: 'session-guard',
-    inject: () => ({ scope: currentScope() }),
-  }, SessionGuardCard)))
+  // 老设置页(≤0.1.5)插件列表配置卡（settings.plugin.item）已于 2026-10-08
+  // 撤除（family-insection 第二轮）：与会话守护门禁家族 tab 重复——家族 tab
+  // 是唯一设置面（TL/free-search/browser-cdp/preset-manager 同批撤各自 item 卡）。
   // 无设置页宿主（0.1.0/0.1.1）的兜底配置入口：壳级 overlay 浮窗齿轮。
   safe('shell.overlay', () => ctx.slots.inject('shell.overlay', () => ctx.slots.register(
     { name: 'shell.overlay', id: 'session-guard-settings' },

@@ -58,8 +58,10 @@ test('apply()：契约（name/inject）与关键接线', (t) => {
   assert.ok(events.includes('session/event'))
   assert.ok(events.includes('agent/request'))
   assert.ok(events.includes('agent/pre-step'), 'step 门控监听必须装上')
-  assert.equal(routes.length, 1)
+  // M4/T20-b：settings 桥 describe/mutate 两端点入列（prefix 恒为首）
+  assert.equal(routes.length, 3)
   assert.equal(routes[0].path, '/session-guard')
+  assert.deepEqual(routes.slice(1).map((r) => r.path), ['/api/session-guard/settings/describe', '/api/session-guard/settings/mutate'])
 })
 
 test('apply()：/pause /resume /cancel 注册且无 live agent 时返回 error（不抛错）', (t) => {

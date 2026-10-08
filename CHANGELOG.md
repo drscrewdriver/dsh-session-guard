@@ -11,6 +11,38 @@ All notable changes to `dsh-session-guard` are recorded here. Versions follow se
 - [Changelog на русском](./CHANGELOG.ru.md)
 - [Changelog en español](./CHANGELOG.es.md)
 
+## 4.1.12 — 2026-10-08
+
+### Added — settings webServer bridge (M4/T20-b): dual-track card data plane
+
+- **Top-level card registration refactor (prerequisite)**: the three settings
+  faces (`dsh-family.tab`, `plugins.bundle.config`, `settings.plugin.item`,
+  `shell.overlay`) were registered inside the `onScope` callback of the dual
+  scoped-inject waist — on ≤0.1.5 that callback never fires (settingsScope fiber
+  never resolves; 0.1.0/0.1.1 lack both services), so the cards never registered
+  and a bridge would have had no consumer. All registrations now run at apply
+  top level with a `scopeRef` live reference; the callback degrades to a pure
+  data arm (perm-gate `client/index.ts` L166-257 shape).
+- **Server bridge** (`src/settings-bridge.js`): `describe`/`mutate` endpoints at
+  `/api/session-guard/settings/*` (POST-only, `{ok,value|error}` envelope,
+  redacted describe filtered to the plugin ns, ops forwarded to the host
+  settings service with `expectedRevision` optimistic concurrency, 256 KB cap).
+  Registration is fail-open (error log, never blocks plugin load).
+- **Client bridge handle** (`src/client/settings-bridge.ts`): `BridgeDocHandle`
+  implements the same `SettingsScope` face as the native handles
+  (getSnapshot/subscribe/set/unset); describe misses retry within a bounded
+  budget (settings service resolving later than card mount) before landing on
+  `unavailable`. Card faces read `scopeRef.scope ?? bridgeScope()` — native
+  first, bridge fallback (perm-gate T13b dual-track).
+
+### Corrected — 4.1.11 publication note
+
+- The 4.1.11 entry said "none of 4.1.5-4.1.10 was published to npm"; **4.1.5
+  was published** (npm registry confirms `4.1.5` in versions, and `latest`
+  pointed at it until this release line). 4.1.6-4.1.10 indeed never shipped.
+  The earlier claim came from reading the npmmirror mirror instead of the
+  authoritative registry (registry-pin discipline, B2+).
+
 ## 4.1.11 — 2026-10-08
 
 ### Fixed — family-section takeover rebuilt (4.1.5 → 4.1.11 arc; none of 4.1.5-4.1.10 was published to npm)

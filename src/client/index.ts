@@ -20,6 +20,7 @@ import { StatusBadge } from './status-badge'
 import { PauseButton } from './pause-button'
 import { SessionGuardCard } from './settings-card'
 import { ShellSettingsEntry } from './shell-overlay'
+import { BridgeDocHandle } from './settings-bridge.ts'
 import { GuardFamilySection, type FamilyTabEntry } from './family-section'
 import type { SessionGuardConfig } from './settings-card'
 import type { SettingsScope } from './scope-face'
@@ -97,8 +98,9 @@ function safe(tag: string, fn: () => void): void {
 
 /**
  * 双代持久设置腰（移植 input-traffic registerSettingsFaces）：两个 scoped
- * 子注入各自产出同形 scope 后回调；0.2.0 两代并存时以 configForms 先到为准
- * （mounted 位防双挂载，ui-slots 同 id 仲裁兜底）。
+ * 子注入各自产出同形 scope 后回调。M4 P0 重构后本函数**只承担数据臂**——
+ * 回调仅写 scopeRef 活引用（0.1.7+ 原生优先，mounted 位防双挂），卡面注册
+ * 已全部提到 apply 顶层（≤0.1.5 回调永不触发，注册不能关在这里）。
  */
 function registerSettingsFaces(
   ctx: ClientCtx,
@@ -117,8 +119,23 @@ function registerSettingsFaces(
   })
 }
 
-/** 两张配置卡（family tab + bundle 详情页）挂载；scope 由双代腰产出。 */
-function mountConfigCards(ctx: ClientCtx, scope: SettingsScope<SessionGuardConfig>): void {
+/** scope 活引用（perm-gate client/index.ts L166-257 形态）：回调填、卡面现读。 */
+const scopeRef: { scope: SettingsScope<SessionGuardConfig> | undefined } = { scope: undefined }
+
+/** 桥轨惰性单例：≤0.1.5（settingsScope 死路 / 0.1.0-0.1.1 无服务）的数据源。 */
+let bridgeScopeSingleton: BridgeDocHandle<SessionGuardConfig> | undefined
+function bridgeScope(): BridgeDocHandle<SessionGuardConfig> {
+  if (bridgeScopeSingleton === undefined) bridgeScopeSingleton = new BridgeDocHandle<SessionGuardConfig>('session-guard')
+  return bridgeScopeSingleton
+}
+
+/** 卡面现取数据源：原生句柄解到即原生，否则桥兜底（perm-gate 同式）。 */
+function currentScope(): SettingsScope<SessionGuardConfig> {
+  return scopeRef.scope ?? bridgeScope()
+}
+
+/** 两张配置卡（family tab + bundle 详情页）挂载；数据经 currentScope() 现取。 */
+function mountConfigCards(ctx: ClientCtx): void {
   // 插件族共用 tab 贡献卡：读写本插件 entry（`session-guard`）的持久配置。
   ctx.slots.inject('dsh-family.tab', () => ctx.slots.register({
     name: 'dsh-family.tab',
@@ -126,7 +143,7 @@ function mountConfigCards(ctx: ClientCtx, scope: SettingsScope<SessionGuardConfi
     order: 20,
     label: '会话守护门禁',
     locale: 'session-guard',
-    inject: () => ({ scope }),
+    inject: () => ({ scope: currentScope() }),
   }, SessionGuardCard))
 
   // 插件页配置卡（DSH 0.2.0）：Plugins 页不自动渲染 volatile 配置表单，须注册
@@ -135,7 +152,7 @@ function mountConfigCards(ctx: ClientCtx, scope: SettingsScope<SessionGuardConfi
   ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({
     name: 'plugins.bundle.config',
     key: 'dsh-session-guard',
-    inject: () => ({ scope }),
+    inject: () => ({ scope: currentScope() }),
   }, SessionGuardCard))
 }
 
@@ -157,27 +174,30 @@ export function apply(ctx: ClientCtx) {
     locale: 'session-guard',
   }, StatusBadge)))
 
-  // 双代腰：scope 就绪后按代挂载（每条宿主线恰好一代服务）。
-  registerSettingsFaces(ctx, (scope, generation) => {
-    safe(`config-cards/${generation}`, () => {
-      // 两代共有：family tab（0.1.7+ 由 thinking-levels 容器渲染）与
-      // bundle 详情页平铺卡（0.1.7+ 的 plugin-manager 槽）。
-      mountConfigCards(ctx, scope)
-      // 老设置页(≤0.1.5)插件列表配置卡;0.1.7+ 无此槽,注册静默闲置。
-      ctx.slots.inject('settings.plugin.item', () => ctx.slots.register({
-        name: 'settings.plugin.item',
-        id: 'session-guard',
-        key: 'session-guard',
-        order: 60,
-        locale: 'session-guard',
-        inject: () => ({ scope }),
-      }, SessionGuardCard))
-    })
-    // 无设置页宿主（0.1.0/0.1.1）的兜底配置入口：壳级 overlay 浮窗齿轮。
-    safe('shell.overlay', () => ctx.slots.inject('shell.overlay', () => ctx.slots.register(
-      { name: 'shell.overlay', id: 'session-guard-settings' },
-      () => ShellSettingsEntry({ scope }),
-    )))
+  // ── 配置卡三面（M4 P0 重构：注册提到 apply 顶层）────────────────────
+  // 旧形态把注册关在 onScope 回调里——≤0.1.5 settingsScope 死路/0.1.0-0.1.1
+  // 无服务 → 回调永不触发 → 三面永不注册、桥无消费者（perm-gate client/
+  // index.ts L160-165 注释点名的反例）。现注册无条件执行，数据经 currentScope()
+  // 现取：原生句柄解到即原生，否则桥兜底。
+  safe('config-cards/family-tab', () => mountConfigCards(ctx))
+  // 老设置页(≤0.1.5)插件列表配置卡;0.1.7+ 无此槽,注册静默闲置。
+  safe('config-cards/settings-plugin-item', () => ctx.slots.inject('settings.plugin.item', () => ctx.slots.register({
+    name: 'settings.plugin.item',
+    id: 'session-guard',
+    key: 'session-guard',
+    order: 60,
+    locale: 'session-guard',
+    inject: () => ({ scope: currentScope() }),
+  }, SessionGuardCard)))
+  // 无设置页宿主（0.1.0/0.1.1）的兜底配置入口：壳级 overlay 浮窗齿轮。
+  safe('shell.overlay', () => ctx.slots.inject('shell.overlay', () => ctx.slots.register(
+    { name: 'shell.overlay', id: 'session-guard-settings' },
+    () => ShellSettingsEntry({ scope: currentScope() }),
+  )))
+
+  // 双代腰降级为纯数据臂：scope 解到只填活引用（0.1.7+ 原生优先，桥自动让位）。
+  registerSettingsFaces(ctx, (scope) => {
+    scopeRef.scope = scope
   })
 
   // 家族节接管（2026-10 对齐 TL route A + bindInjectHooks 实证）：让位选举。

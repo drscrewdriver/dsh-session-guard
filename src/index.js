@@ -24,6 +24,7 @@ import { detectTaskControl } from './detect.js'
 import { makeIsRoot } from './request-guard.js'
 import { createWiring } from './wiring.js'
 import { NS, DEFAULT_SETTINGS, SettingsSchema } from './settings.js'
+import { registerSettingsBridgeRoutes } from './settings-bridge.js'
 
 // 0.1.7：声明式设置 —— volatile 字段即自动表单。
 export const Config = SettingsSchema
@@ -66,10 +67,13 @@ export function apply(ctx, config = {}) {
   // 否则 client 配置卡报「设置命名空间不可用」。两条 legacy 路径按服务能力
   // 自动分派:0.1.2/0.1.5 = 服务实例 installSection;0.1.0/0.1.1 = 模块级
   // installSettingsSection + settingsNamespace。fail-open:失败仅告警。
+  /** 宿主 settings 服务活引用（桥的惰性 getter 用；apply 期注入解到即填）。 */
+  let settingsSvcRef
   try {
     ctx.inject(['settings'], (sctx) => {
       const service = sctx.settings
       if (service === undefined || service === null) return
+      settingsSvcRef = service
       const hooks = {
         setSource: (source) => {
           configSource = typeof source === 'function' ? source() : source
@@ -459,5 +463,17 @@ export function apply(ctx, config = {}) {
         ctx.logger?.error?.(`[session-guard] webServer.register failed (routes disabled): ${String(e && e.message || e)}`)
       }
     }, 'session-guard: routes')
+  }
+
+  // ── settings webServer 桥（M4/T20-b 泛化）：describe/mutate 两端点 ──────
+  // 双轨数据源的桥轨：≤0.1.5（settingsScope 死路/无服务）时 client
+  // BridgeDocHandle 经此读写宿主 settings 服务。getSettingsSvc 惰性取
+  // （cordis ctx.get 永不 throw）——宿主 settings 解析早晚不影响注册。
+  // 置于 prefix 路由之后（routes[0] = /session-guard 前缀，契约与测试锚定）。
+  // fail-open：注册失败 error 告警（对齐 L474 风格），不炸插件加载。
+  try {
+    registerSettingsBridgeRoutes(ctx.webServer, () => settingsSvcRef, NS)
+  } catch (error) {
+    ctx.logger?.error?.(`[session-guard] settings bridge registration failed: ${String(error && error.message || error)}`)
   }
 }

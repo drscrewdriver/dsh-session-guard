@@ -11,6 +11,14 @@ Alle nennenswerten Änderungen an `dsh-session-guard` werden hier festgehalten. 
 - [Changelog auf Russisch](./CHANGELOG.ru.md)
 - [Changelog en español](./CHANGELOG.es.md)
 
+## 4.1.13 — 2026-10-08
+
+### Behoben — Bridge-Deskriptor-Skelett auf ≤0.1.5 (durch 5-Zellen-Gate aufgedeckt)
+
+- **Das describe-`value` des Hosts ist auf ≤0.1.5 ein Feldskelett** (empirisch: `{enabled:{},…}`, echte Werte in `base`+`user`-Schichten). Alte Generationen konsumierten `descriptor.value` roh — `officialProviders` kam als `{}` an (truthy, kein Array, für `?? []` unsichtbar), `values.join` in `ListRow` warf, und der ganze `dsh-family.tab`-Slot starb mit. `descriptorPlainValue()` erkennt das Skelett und rekonstruiert `{...base, ...user}`.
+- **Kartenfeld-Sanitisierung (Deep Defense)**: Ein Renderfehler tötet den ganzen Familientab — `ListRow`-Eingaben via `toList()` entschärft, `拦截方式`-Select fällt auf `hold` zurück.
+- Verifiziert am 5-Zellen-Farm-Gate: ge-seedeter Wert `321123` per Bridge (0.1.0/0.1.5) bzw. nativ (0.1.7) zurückgelesen.
+
 ## 4.0.0 — 2026-09-29
 
 ### Geändert

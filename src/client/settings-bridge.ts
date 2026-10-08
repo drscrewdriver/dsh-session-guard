@@ -47,6 +47,31 @@ interface MutateOp {
   value?: unknown
 }
 
+/**
+ * ≤0.1.5 宿主 describe 的 descriptor.value 是「每字段 → {}」骨架（0.1.0/0.1.5
+ * 实测：value={enabled:{},…,officialProviders:{}}，真值拆在 base（合并默认层）
+ * 与 user（用户层））——直接吞 value 会让卡拿到 officialProviders={}，
+ * `?? []` 不兜底（{} 非 nullish）→ ListRow values.join 崩，整族 tab 槽殉葬。
+ * 判特征：对象且每个自有值都是空 plain 对象（guard 字段是标量/数组，不会全空）。
+ * 命中即以 {...base, ...user} 重组有效值（guard 配置全是顶层标量/数组，浅合并即语义）。
+ */
+function isFieldSkeleton(v: unknown): v is Record<string, Record<string, never>> {
+  if (v === null || typeof v !== 'object' || Array.isArray(v)) return false
+  const values = Object.values(v as Record<string, unknown>)
+  return values.length > 0
+    && values.every((x) => x !== null && typeof x === 'object' && !Array.isArray(x) && Object.keys(x as object).length === 0)
+}
+
+function plainObject(v: unknown): Record<string, unknown> {
+  return v !== null && typeof v === 'object' && !Array.isArray(v) ? { ...(v as Record<string, unknown>) } : {}
+}
+
+/** descriptor → 卡面可用 plain 值：正常代际用 value；骨架代际用 base+user 浅合并。 */
+function descriptorPlainValue(d: Descriptor): unknown {
+  if (!isFieldSkeleton(d.value)) return d.value
+  return { ...plainObject(d.base), ...plainObject(d.user) }
+}
+
 /** describe 不可就绪码：宿主 settings 未解析/未注册——值得重试的瞬态。 */
 const RETRYABLE_CODES = new Set(['settings-unavailable', 'ns-not-registered'])
 const RETRY_DELAY_MS = 1500
@@ -103,7 +128,7 @@ export class BridgeDocHandle<T> {
     this.revision = typeof d.revision === 'number' ? d.revision : undefined
     this.snapshot = {
       status: 'ready',
-      value: d.value as T | undefined,
+      value: descriptorPlainValue(d) as T | undefined,
       revision: this.revision,
       writable,
       base: undefined,

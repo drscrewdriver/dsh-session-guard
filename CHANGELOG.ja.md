@@ -11,6 +11,14 @@
 - [Changelog на русском](./CHANGELOG.ru.md)
 - [Changelog en español](./CHANGELOG.es.md)
 
+## 4.1.13 — 2026-10-08
+
+### 修正 — ≤0.1.5 でのブリッジ記述子スケルトン（5セルゲートで発覚）
+
+- **≤0.1.5 ホストの describe `value` はフィールドスケルトン**（実測：`{enabled:{},…}`、実値は `base`＋`user` 層）。旧世代で `descriptor.value` をそのまま消費すると `officialProviders` が `{}` になり `?? []` を素通りして `ListRow` の `values.join` が throw、`dsh-family.tab` スロット全体が殉葬していた。`descriptorPlainValue()` がスケルトンを検出して `{...base, ...user}` を再構築。
+- **カード字段消毒（多層防御）**：スロットは一つの描画エラーで全族タブが死ぬため、`ListRow` 入力を `toList()` で無毒化、`拦截方式` セレクトは非 `error` 値を `hold` にフォールバック。
+- 5セルファームゲートで検証：0.1.0/0.1.5 はブリッジ経由、0.1.7 は configForms 経由でシード値 `321123` の読み返しを確認。
+
 ## 4.0.0 — 2026-09-29
 
 ### Changed

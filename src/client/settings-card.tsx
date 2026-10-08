@@ -223,6 +223,12 @@ function SelectRow<T extends string>(props: {
   )
 }
 
+/** 卡面字段消毒：宿主 describe 形态异常（≤0.1.5 骨架残留等）时槽崩会殉葬全族
+ * tab——ListRow 的 values 非 nullish 非数组（如 {}）会让 `?? []` 失守，逐卡硬护栏。 */
+function toList(v: unknown): string[] {
+  return Array.isArray(v) ? v.map(String) : []
+}
+
 /** 插件配置卡片主体：可展开的 <li> + header 按钮 + pill switch 字段体。 */
 export function SessionGuardCard({ scope }: SettingsCardProps): JSX.Element {
   const snapshot = useSyncExternalStore(
@@ -303,7 +309,7 @@ export function SessionGuardCard({ scope }: SettingsCardProps): JSX.Element {
               <ListRow
                 label="追加官方 provider id"
                 description="精确匹配，优先级最高（逗号分隔）"
-                values={value.officialProviders ?? []}
+                values={toList(value.officialProviders)}
                 placeholder="deepseek-official"
                 disabled={readonly}
                 onCommit={(next) => { void scope.set('officialProviders', next) }}
@@ -311,7 +317,7 @@ export function SessionGuardCard({ scope }: SettingsCardProps): JSX.Element {
               <ListRow
                 label="官方端点名单"
                 description="baseURL 归一化后的 host（逗号分隔）"
-                values={value.officialBaseURLs ?? []}
+                values={toList(value.officialBaseURLs)}
                 placeholder="api.deepseek.com"
                 disabled={readonly}
                 onCommit={(next) => { void scope.set('officialBaseURLs', next) }}
@@ -319,7 +325,7 @@ export function SessionGuardCard({ scope }: SettingsCardProps): JSX.Element {
               <SelectRow<'hold' | 'error'>
                 label="拦截方式"
                 description="挂起等待不报错；或报错并记入延后队列"
-                value={value.deferredMode ?? 'hold'}
+                value={value.deferredMode === 'error' ? 'error' : 'hold'}
                 options={[
                   { value: 'hold', label: '挂起等待（退峰自动放行）' },
                   { value: 'error', label: '报错并延后（退峰续跑）' },

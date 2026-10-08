@@ -11,6 +11,30 @@ All notable changes to `dsh-session-guard` are recorded here. Versions follow se
 - [Changelog на русском](./CHANGELOG.ru.md)
 - [Changelog en español](./CHANGELOG.es.md)
 
+## 4.1.13 — 2026-10-08
+
+### Fixed — bridge descriptor skeleton on ≤0.1.5 (five-cell gate catch, 2026-10-08)
+
+- **Host describe `value` is a field skeleton on ≤0.1.5** (0.1.0/0.1.5 empirical):
+  the old host generations serialize `descriptor.value` as `{enabled:{},…,officialProviders:{}}`
+  (one empty object per schema field) while the real merged config lives in
+  `descriptor.base` (combined defaults) + `descriptor.user` (user layer).
+  `BridgeDocHandle` consumed `value` verbatim, so `officialProviders` arrived as
+  `{}` — truthy non-array, invisible to `?? []` — and `ListRow`'s
+  `values.join` threw, crashing the whole `dsh-family.tab` slot (guard card +
+  IT card + TL nav all died together). `descriptorPlainValue()` now detects the
+  skeleton (object whose every own value is an empty plain object — impossible
+  for guard's scalar/array config) and rebuilds the effective value as
+  `{...base, ...user}` (shallow merge is exact for guard's flat config).
+- **Card-field sanitization (defense in depth)**: any card render error kills
+  the entire family tab slot on these hosts, so `ListRow` inputs are now
+  sanitized at the call sites (`toList()` — non-arrays become `[]`) and the
+  `拦截方式` select falls back to `hold` for any non-`error` value. A malformed
+  descriptor may degrade one field, never the tab.
+- Verified on the five-cell farm gate: describe replays on 0.1.0/0.1.5 now
+  yield plain merged values; the seeded `stepGateTimeoutMs: 321123` reads back
+  through the bridge on ≤0.1.5 and natively (configForms) on 0.1.7.
+
 ## 4.1.12 — 2026-10-08
 
 ### Added — settings webServer bridge (M4/T20-b): dual-track card data plane

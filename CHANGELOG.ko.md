@@ -11,6 +11,14 @@
 - [Changelog на русском](./CHANGELOG.ru.md)
 - [Changelog en español](./CHANGELOG.es.md)
 
+## 4.1.13 — 2026-10-08
+
+### 수정 — ≤0.1.5 브리지 디스크립터 스켈레톤(5셀 게이트 발견)
+
+- **≤0.1.5 호스트의 describe `value`는 필드 스켈레톤**(실측: `{enabled:{},…}`, 실값은 `base`+`user` 레이어). 구세대에서 `descriptor.value`를 그대로 쓰면 `officialProviders`가 `{}`가 되어 `?? []`를 통과하고 `ListRow`의 `values.join`이 throw, `dsh-family.tab` 슬롯 전체가 순직.`descriptorPlainValue()`가 스켈레톤을 감지해 `{...base, ...user}`로 재구성.
+- **카드 필드 소독(다층 방어)**: 슬롯은 렌더 오류 하나로 전체 탭이 죽으므로 `ListRow` 입력을 `toList()`로 무독화, `拦截方式` 셀렉트는 non-`error` 값을 `hold`로 폴백.
+- 5셀 팜 게이트 검증: 0.1.0/0.1.5는 브리지 경유, 0.1.7은 configForms 경유로 시드값 `321123` 재판독 확인.
+
 ## 4.0.0 — 2026-09-29
 
 ### Changed

@@ -11,6 +11,14 @@ Todos los cambios notables de `dsh-session-guard` se registran aquí. Las versio
 - [Changelog en ruso](./CHANGELOG.ru.md)
 - [Changelog en español](./CHANGELOG.es.md)
 
+## 4.1.13 — 2026-10-08
+
+### Corregido — esqueleto del descriptor bridge en ≤0.1.5 (atrapado por la puerta de 5 celdas)
+
+- **El `value` del describe del host es un esqueleto de campos en ≤0.1.5** (empírico: `{enabled:{},…}`, valores reales en las capas `base`+`user`). Las generaciones viejas consumían `descriptor.value` tal cual — `officialProviders` llegaba como `{}` (truthy no-array, invisible para `?? []`), `values.join` en `ListRow` lanzaba, y todo el slot `dsh-family.tab` moría. `descriptorPlainValue()` detecta el esqueleto y reconstruye `{...base, ...user}`.
+- **Saneamiento de campos de tarjeta (defensa en profundidad)**: un error de render mata toda la pestaña familiar — entradas `ListRow` saneadas via `toList()`, el select `拦截方式` cae a `hold` para cualquier valor no-`error`.
+- Verificado en la puerta farm de 5 celdas: el valor sembrado `321123` se relee vía bridge (0.1.0/0.1.5) y nativo (0.1.7).
+
 ## 4.0.0 — 2026-09-29
 
 ### Cambiado

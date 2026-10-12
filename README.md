@@ -375,7 +375,7 @@ v0.2.0 的两值判决保留兼容：`pause === (mode === PEAK)`，`reason` 仍�
 
 - **端点优先于 id**：同名 `deepseek-official` 但把 `baseURL` 指向中转的配置**不会**被误拦；反过来，pi-ai 内置 `deepseek` 路由的默认端点就是官方 API，**不会**被漏拦。
 - **端点来源**：`ctx.get('llm').listConfigurableProviders()` 找目录条目 → `ctx.settings.get(settingsNs)` 按 `settingsPath` 读 `baseURL`（只读非密字段，绝不读 `apiKeyEnv` 的值）。每次请求实时算、不缓存 → provider 配置热改立即生效。
-- **目标转非官方即恢复**：高峰暂停后把该会话切到本地/第三方 provider（0.1.2+ 的 `model/selection` 事件）→ 自动恢复该会话（受 `deferredResume` 约束）；只恢复本插件因入峰暂停的会话，**不会**碰用户手动 `/pause` 的会话。0.1.1 无该事件 → 退化为「下次请求或手动 `/resume`」。
+- **目标转非官方即恢复**：高峰暂停后把该会话切到本地/第三方 provider（0.1.2+ 的 `model/selection` 事件）→ 自动恢复该会话（受 `deferredResume` 约束）；只恢复本插件因入峰暂停的会话，**不会**碰用户手动 `/pause` 的会话。**请求级 hold 也一起放行**，并按新选择重路由（provider/model + 该次选择的 `reasoningEffort`），否则切到本地源也会被挂在官方请求上、只能干等退峰。0.1.1 无该事件 → 退化为「下次请求或手动 `/resume`」。
 - **取不到端点**：`llm` 服务缺失、命名空间结构变化、字段非字符串——一律降级为 id / 内置端点判定并记 `matchedBy`，**绝不抛出**。
 - **排查误判**：`GET /session-guard/provider?provider=<id>` 返回 `{ official, matchedBy, endpoint }`。
 
@@ -383,7 +383,7 @@ v0.2.0 的两值判决保留兼容：`pause === (mode === PEAK)`，`reason` 仍�
 
 - **为什么要请求级**：30s tick 只在 `NORMAL → PAUSED_PEAK` 跳变时处理当时 `running` 的会话；入峰后新启动的会话、会话中途切到官方源的情况都会漏。`agent/request` waterfall 是**每次请求都过**的兜底。
 - **判定基于 `next()` 的返回值**：模型选择中间件会在 waterfall 内把 provider/model 覆盖成 UI 里选的值，所以必须先 `await next()` 再判定。
-- **hold 模式（默认）**：请求挂起、**不发出也不报错**，退峰瞬间自动放行（`msUntilOffPeak` 精确定时，30s tick 兜底）；用户取消（abort）则正常中断。
+- **hold 模式（默认）**：请求挂起、**不发出也不报错**，退峰瞬间自动放行（`msUntilOffPeak` 精确定时，30s tick 兜底）；用户取消（abort）则正常中断，`agent/request` 被拒的收场方式都不会丢输入（见下条）。
 - **error 模式**：抛可识别的 `PEAK_DEFERRED` 错误 + 记入延后队列，退峰按 `deferredResumeText` 续跑（`deferredResume` 关闭则不自动继续）。
 - **上限保护**：`deferredMaxHoldMs`（默认 6h）到期仍未退峰 → 转 error，避免无限挂起。
 - **互斥铁律**：hold 期间**不会**再调会话门暂停（暂停要等安全边界，而请求被挂住就永远到不了安全边界 → 双方互等）。入峰时已挂起的会话会被跳过。
@@ -393,6 +393,8 @@ v0.2.0 的两值判决保留兼容：`pause === (mode === PEAK)`，`reason` 仍�
 
 - **不换 provider / 不做转接**：只拦不路由；
 - **compaction 不走 `agent/request`**：会话被暂停时不会发生压缩；高峰期间若手动触发压缩仍可能打官方源（本插件不拦 `ctx.llm.stream` 层）；
+- **非官方源放行 + 停止不丢输入**：切到非官方源 → 请求级 hold 立即放行并按新选择重路由（插件是该 waterfall 的最外层监听，`{prepend:true}`，否则会被宿主的 `selection.assembled` 快照覆盖回去）；hold 被 abort / 超限 / 顶替（以及 `deferredMode: 'error'` 抛错）时，把该会话「已被 `inbox.claim()` 取走、还没落库」的输入用 `agent.send(msg, 'next-turn', false)` 还回队列（**不唤醒** driver = 不替用户再起一轮）。记录在 `user/message` 落库时作废；回合结束仍带着记录（step 门被取消、放行后又被停止）→ 也还回队列。绝不重复入队、绝不吞消息。
+  代价（知情）：重路由绕过了宿主「切模型下一步才生效」的规则 —— 这次请求带着**上一个模型**组装的提示词发给新路由；宿主那条 `[model changed: …]` 提示也不会出现（落库的 `request/header` 已经是新路由）。
 - **0.1.1 没有 `model/selection` 事件**：切到非官方源后的自动恢复退化为「等下一次请求或手动 `/resume`」（0.1.2+ 立即生效）；
 - **不新增 npm 依赖**、不读写凭据、不动 `dsh-llm-retry` 的 429 / 传输层重试。
 
@@ -496,11 +498,11 @@ npm test   # node --test "tests/*.test.mjs"（397 通过：时区/峰谷策略/�
 | `src/scheduler.js` | 纯状态机 NORMAL ↔ PAUSED_PEAK |
 | `src/provider.js` | 官方源五级判定（纯函数：端点归一化 + 判定矩阵） |
 | `src/provider-directory.js` | 端点目录（`llm.listConfigurableProviders` + `settings.get`，全链路降级） |
-| `src/deferrals.js` | 延后登记表（hold 挂起 / 释放 / 超限 / `PeakDeferredError`） |
-| `src/request-guard.js` | `agent/request` 请求级守卫（hold / error 两模式） |
+| `src/deferrals.js` | 延后登记表（hold 挂起 / 释放（可按新目标重路由）/ 超限 / 拒绝前 `onReject` 回调 / `PeakDeferredError`） |
+| `src/request-guard.js` | `agent/request` 请求级守卫（hold / error 两模式；两路收场都先把未落库输入还回队列） |
 | `src/step-gate.js` | **`agent/pre-step` step 级门控**（v0.2.0：拉门 / 释放 / 超时升级 / bypass，纯判定 `decideStepHold` 可单测） |
-| `src/targets.js` | 会话「最近真实目标」追踪（`request/header` + `model/selection`） |
-| `src/wiring.js` | 接线编排（入峰过滤 / step 门接线 / 退峰释放 / 精确定时 / 卸载清理） |
+| `src/targets.js` | 会话「最近真实目标」追踪（`request/header` + `model/selection`，含 `reasoningEffort`）+ 重路由纯函数 `applyTarget` |
+| `src/wiring.js` | 接线编排（入峰过滤 / step 门接线 / 退峰释放 / 切源释放并重路由 / 未落库输入追踪与还原 / 精确定时 / 卸载清理） |
 | `src/pause-gate.js` | 自研会话门引擎（agent.cancel keepInbox + goals.pause + 安全边界 + followup 续跑；暂停前先释放 step 门） |
 | `src/pause-store.js` | 自研暂停状态持久化 |
 | `src/free-run.js` | **畅跑状态与存储**：窗口归一化 / 重叠与相邻合并 / 上限 8 / 派生状态 / 每会话落盘 |

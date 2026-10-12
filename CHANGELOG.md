@@ -141,7 +141,47 @@ All notable changes to `dsh-session-guard` are recorded here. Versions follow se
 - **No more hardcoding**: changing peak hours, timezone, weekday limits or the weekend rule is just
   editing the config file (or the auto-generated form).
 
+### Fixed
+
+- **Switching the model now releases a held request immediately.** During peak a request whose target
+  is official is held at `agent/request`; previously only the step gate and turn-level pauses were
+  released when the target turned non-official, so a session whose *request* was held stayed stuck
+  until off-peak even after the user switched to a local/third-party model (measured: 50 s of
+  silence, then the user had to press stop). `wiring.maybeAutoResume()` now also calls
+  `deferrals.release(sessionId, 'non-official')`, and the released request is **rerouted** to the new
+  selection (`applyTarget`: provider/model plus the selected `reasoningEffort`, or the inherited
+  effort is dropped, mirroring the host's `installModelSelection`) — otherwise the request would
+  still hit the official endpoint at peak price.
+- **Pressing stop during a peak hold no longer loses the message you just sent.** The host's
+  `preStep()` calls `inbox.claim()` first and appends the durable `user/message` only after the
+  request passes, so an aborted / timed-out / superseded hold (and the `deferredMode: 'error'` path)
+  ended the step with the claimed input dropped — it was neither in the transcript nor in the queue.
+  The new `installClaimTracker()` records the claimed batch at `agent/pre-step`, and
+  `restoreUncommittedInput()` puts it back into the `next-turn` queue via
+  `agent.send(message, 'next-turn', false)` — no driver wake, so stop stays stop and the message
+  waits for you. The batch is discarded once `user/message` is durable; a `turn/end` that still
+  carries a batch (step-gate hold cancelled, hold released and then stopped before the commit) puts
+  it back instead, so nothing is queued twice and nothing is lost.
+- The request guard now registers with `{ prepend: true }` (and the claim tracker likewise on
+  `agent/pre-step`). It has to be the **outermost** listener: the host's own
+  `installModelSelection` handler applies `selection.assembled` (an assembly-time snapshot, i.e.
+  deliberately one step behind), so a plugin loaded inside that handler would see and return the
+  stale route — the reroute would be silently reverted and the request would still hit the official
+  endpoint at peak price.
+
 ### Notes
+
+- **The reroute deliberately bypasses the host's "a switch takes effect on the next step" rule** —
+  that is the whole point of releasing the hold, but two visible consequences follow: the released
+  request carries a prompt assembled for the previous model (now sent to the new route), and the
+  host's `[model changed: …]` notice is suppressed, because the persisted `request/header` already
+  matches the new route. The change is still recorded in `session-guard` state (`target`) and in the
+  plugin log. Reverting to the stock behaviour means going back to waiting for off-peak.
+- **A restored batch is re-queued whole.** The host claims all of `next-step` (including tool
+  `additionalContexts`) plus one `next-turn` message, so anything restored is appended at the tail of
+  `next-turn` and order can move relative to messages queued after it. Losing that input instead
+  would be worse, so it is preserved; a duplicate message id is refused by the host and reported by
+  the per-message `try/catch`.
 
 - **Chinese statutory holidays are intentionally not recognised.** The shipped peak definition is
   "`Asia/Shanghai`, Monday–Friday `09:00–12:00` / `14:00–18:00` are peak, everything else is idle".

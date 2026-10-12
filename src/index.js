@@ -508,6 +508,12 @@ export function apply(ctx, config = {}) {
   // 覆盖缺口：tick 只在状态跳变时处理 running 会话，入峰后新启动 / 中途切官方都会漏。
   ctx.effect(() => wiring.installGuard(), 'session-guard: request guard')
 
+  // ── 「已 claim、未落库」输入批次追踪（agent/pre-step waterfall）──
+  // 宿主 preStep() 先 inbox.claim()、user/message 才在请求通过后落库：hold 被 abort /
+  // 超限 / 顶替（或 step 门被取消）时把那批输入还回队列，否则用户点停止就丢消息。
+  // 必须排在 step 门之前：注册顺序 = waterfall 外层优先，门挂起时我们也要先拿到批次。
+  ctx.effect(() => wiring.installClaimTracker(), 'session-guard: claim tracker')
+
   // ── step 级门控（agent/pre-step waterfall，v0.2.0）──
   // 高峰 + 非周末 + 目标官方 → 在下一个 step 的模型请求前拉门；退峰原地续跑。
   ctx.effect(() => wiring.installStepGuard(), 'session-guard: step guard')

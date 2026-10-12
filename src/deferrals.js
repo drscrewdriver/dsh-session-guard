@@ -3,7 +3,9 @@
  *
  * 两类记录：
  * - **挂起（hold）**：请求被挂在 `agent/request` 上，promise 待退峰 resolve。
- *   退峰 → `resolve(config)` 让请求照常发出；abort / 超限 / 被新 hold 顶替 → reject。
+ *   退峰 → `resolve(config)` 让请求照常发出；目标切非官方 → `release(..., resolveWith)` 放行并按新选择重路由。
+ *   abort / 超限 / 被新 hold 顶替 → reject，且 reject 之前先 `info.onReject(reason)` 把
+ *   「已 claim、未落库」的输入还回队列（否则用户点停止就丢输入，见 wiring.restoreUncommittedInput）。
  * - **延后（deferred）**：error 模式下已经抛错的会话，记下来供退峰 `followup` 续跑。
  *
  * 纪律：
@@ -71,18 +73,35 @@ export function createDeferrals({ maxHoldMs = 6 * 60 * 60 * 1000, now = () => Da
    * @param {string} sessionId
    * @param {string} reason
    * @param {'release'|'reject'} outcome
+   * @param {(config:unknown)=>unknown} [resolveWith] release 时的 config 变换（目标切非官方 → 按新选择重路由）
    * @returns {boolean} 是否真的结算了一条
    */
-  function settle(sessionId, reason, outcome = 'release') {
+  function settle(sessionId, reason, outcome = 'release', resolveWith) {
     const key = String(sessionId ?? '')
     const entry = holds.get(key)
     if (!entry) return false
     holds.delete(key)
     clearTimer(entry)
     if (outcome === 'reject') {
+      // 拒绝前先让持有者把「已 claim、未落库」的输入还回队列（见 wiring.restoreUncommittedInput）：
+      // 宿主 preStep() 先 inbox.claim()、再派发 agent/request，user/message 要等请求通过才落库，
+      // 所以挂起被 abort / 超限 / 顶替时那批输入会凭空消失。恢复失败绝不影响拒绝本身。
+      try {
+        entry.onReject?.(reason)
+      } catch {
+        /* 恢复失败不阻断结算 */
+      }
       entry.reject(new PeakDeferredError(reason, { sessionId: key, provider: entry.provider, model: entry.model }))
     } else {
-      entry.resolve(entry.config)
+      let resolved = entry.config
+      if (typeof resolveWith === 'function') {
+        try {
+          resolved = resolveWith(entry.config)
+        } catch {
+          resolved = entry.config // 变换失败 → 原样放行（绝不因为重路由失败把请求卡死）
+        }
+      }
+      entry.resolve(resolved)
     }
     return true
   }
@@ -90,9 +109,11 @@ export function createDeferrals({ maxHoldMs = 6 * 60 * 60 * 1000, now = () => Da
   /**
    * 挂起一次请求。
    * @param {string} sessionId
-   * @param {{provider?:string, model?:string, config?:unknown}} info
+   * @param {{provider?:string, model?:string, config?:unknown, onReject?:(reason:string)=>void}} info
+   *   `onReject(reason)` 在 `settle(..., 'reject')` 之前回调：把该会话「已 claim、未落库」的输入
+   *   还回队列（见 wiring.restoreUncommittedInput）。抛错会被吞掉，绝不影响拒绝路径。
    * @param {AbortSignal} [signal]
-   * @returns {Promise<unknown>} 退峰 resolve 原 config
+   * @returns {Promise<unknown>} 退峰 / 放行时 resolve（默认原 config）
    */
   function hold(sessionId, info = {}, signal) {
     const key = String(sessionId ?? '')
@@ -110,6 +131,7 @@ export function createDeferrals({ maxHoldMs = 6 * 60 * 60 * 1000, now = () => Da
       provider: info.provider ?? null,
       model: info.model ?? null,
       config: info.config,
+      onReject: typeof info.onReject === 'function' ? info.onReject : null,
       since: now(),
       resolve: resolveFn,
       reject: rejectFn,
@@ -155,16 +177,18 @@ export function createDeferrals({ maxHoldMs = 6 * 60 * 60 * 1000, now = () => Da
   }
 
   /**
-   * 放行**单个**会话的挂起（畅跑生效：该会话的请求立刻照常发出）。
+   * 放行**单个**会话的挂起（畅跑生效 / 目标切非官方）。
    *
    * 为什么需要它：畅跑是**单会话**豁免，而 `releaseAll` 是全局的退峰动作，
    * 用它会把别的会话一起放行。对不存在挂起的会话是 no-op（幂等）。
    * @param {string} sessionId
    * @param {string} [reason]
+   * @param {(config:unknown)=>unknown} [resolveWith] 可选：放行前变换最终 resolve 的 config
+   *   （目标切非官方时用它把这次请求重路由到新选择，见 wiring.maybeAutoResume）
    * @returns {boolean} 是否真的放行了一条
    */
-  function release(sessionId, reason = 'free-run') {
-    return settle(sessionId, reason, 'release')
+  function release(sessionId, reason = 'free-run', resolveWith) {
+    return settle(sessionId, reason, 'release', resolveWith)
   }
 
   /** 拒绝全部挂起（插件卸载 / 关闭自动续跑）。 */

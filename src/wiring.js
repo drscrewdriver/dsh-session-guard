@@ -7,13 +7,17 @@
  * - 入峰：只暂停「最近目标为官方或 unknown」的 running 会话；**已 hold 的跳过**（互斥铁律）
  * - 退峰：先 `releaseAll` 放行挂起的请求，再按 `deferredResume` / `offPeakAutoResume` 决定续跑
  * - 精确释放：`msUntilOffPeak` 定时器在退峰瞬间放行（30s tick 只是兜底）
+ * - 目标转非官方（`maybeAutoResume`）：step 门 + 回合级暂停 + **请求级 hold** 一起放行，
+ *   并把放行的请求按新选择重路由（`applyTarget`）—— 否则切到本地源也只能干等退峰
+ * - 输入不丢（`installClaimTracker` / `restoreUncommittedInput`）：宿主 `preStep()` 先
+ *   `inbox.claim()`、`user/message` 才在请求通过后落库；hold 被拒时把这一批还回队列
  *
  * 本模块不做任何 `@deepseek-ai/*` 值导入；所有上游服务缺失都 fail-open 降级。
  */
 import { createProviderDirectory } from './provider-directory.js'
 import { createDeferrals } from './deferrals.js'
 import { createRequestGuard } from './request-guard.js'
-import { createTargets, UNKNOWN } from './targets.js'
+import { createTargets, applyTarget, UNKNOWN } from './targets.js'
 import { msUntilOffPeak, shouldPause } from './time-policy.js'
 import { PAUSED_REASON_PEAK } from './pause-gate.js'
 
@@ -65,6 +69,61 @@ export function createWiring({
   let releaseTimer = null
   /** 本插件因入峰而暂停的会话（只自动恢复这些，绝不碰用户手动暂停的会话）。 */
   const pausedByPeak = new Set()
+  /** 每个会话「本轮 step 已 claim、尚未落库」的输入批次（`agent/pre-step` payload.messages）。 */
+  const claimedInput = new Map()
+
+  /**
+   * 记录 / 作废「已 claim、尚未落库」的输入批次。
+   *
+   * 为什么需要：宿主 `preStep()` 先 `inbox.claim()` 再派发 waterfall，`user/message` 要等
+   * `agent/request` 通过之后才落库。任何在这个窗口里结束这一步的收场方式（我们的 hold 被
+   * abort / 超限 / 顶替，或 error 模式抛错）都会让用户刚发的消息凭空消失 —— 记下这批输入，
+   * 收场前还回 next-turn 队列即可（见 `restoreUncommittedInput`）。
+   */
+  function rememberClaimedInput(sessionId, messages) {
+    const key = String(sessionId ?? '')
+    if (key === '') return
+    if (Array.isArray(messages) && messages.length > 0) claimedInput.set(key, messages)
+    else claimedInput.delete(key) // 新 step 没有 claim 任何输入 → 旧批次作废（保守：宁可少还）
+  }
+
+  /** 该会话的输入已落库（`user/message`）或回合已结束 → 记录作废。 */
+  function forgetClaimedInput(sessionId) {
+    claimedInput.delete(String(sessionId ?? ''))
+  }
+
+  /**
+   * 把该会话「已 claim、未落库」的输入还回 next-turn 队列（幂等：取走即删除）。
+   *
+   * `send(message, 'next-turn', false)`：**不唤醒 driver** —— 用户刚点了停止，不能立刻
+   * 又替他起一轮（那一轮还会被高峰拦下）。消息留在队列里可见、可手动再发，留给用户决定。
+   * @param {string} sessionId
+   * @param {string} reason
+   * @returns {number} 实际还回的条数
+   */
+  function restoreUncommittedInput(sessionId, reason) {
+    const key = String(sessionId ?? '')
+    const messages = claimedInput.get(key)
+    if (messages === undefined || messages.length === 0) return 0
+    claimedInput.delete(key)
+    const agents = ctx && ctx.agents
+    const agent = agents && typeof agents.get === 'function' ? agents.get(key) : undefined
+    if (!agent || typeof agent.send !== 'function') {
+      warn(`cannot restore ${messages.length} uncommitted input message(s) for ${key}: no live agent`)
+      return 0
+    }
+    let restored = 0
+    for (const message of messages) {
+      try {
+        agent.send(message, 'next-turn', false)
+        restored += 1
+      } catch (e) {
+        warn(`restoring input for ${key} failed: ${String((e && e.message) || e)}`)
+      }
+    }
+    if (restored > 0) logger?.info?.(`[session-guard] deferred request ended (${reason}) — restored ${restored} uncommitted input message(s) for ${key}`)
+    return restored
+  }
 
   /** 安排一次「退峰瞬间」的释放检查（幂等：重复调用只保留最新一个定时器）。 */
   function scheduleRelease() {
@@ -107,6 +166,8 @@ export function createWiring({
       const rec = targets.set(sessionId, provider, model)
       if (rec !== null) maybeAutoResume(sessionId, rec)
     },
+    // hold 被 abort / 超限 / 顶替（或 error 模式抛错）时，先把已 claim 未落库的输入还回队列
+    restoreInput: restoreUncommittedInput,
   })
 
   /** `session/event` → 目标追踪（形状异常降级 unknown，不抛出）+ 目标转非官方时自动恢复。 */
@@ -114,6 +175,11 @@ export function createWiring({
     try {
       const id = session && session.id
       if (typeof id !== 'string' || id === '') return
+      // 「已 claim、未落库」批次的收尾：落库即作废；回合结束仍有记录 = 这批输入没成为
+      // 对话内容（step 门/回合级暂停被中止、hold 放行后用户立刻停止等）→ 还回队列，
+      // 否则就是又一次「消息凭空消失」。
+      if (event && event.type === 'turn/end') restoreUncommittedInput(id, 'turn-end-uncommitted')
+      else if (event && (event.type === 'user/message' || event.type === 'turn/start')) forgetClaimedInput(id)
       const rec = targets.update(id, event)
       if (rec !== null) maybeAutoResume(id, rec)
     } catch (e) {
@@ -126,13 +192,25 @@ export function createWiring({
    * v0.2.0：先释放 step 门控（幂等，无门则 no-op）；turn 级只对 `pausedByPeak` 里的
    * 会话生效（不碰用户手动暂停的）；受 `deferredResume` 约束；
    * 用 queueMicrotask 跳出当前事件派发，避免 resume→followup→事件 的重入。
+   *
+   * v3.1.2：**请求级 hold 也必须一起放行**，否则「切到本地源」只解开 step 门/回合暂停，
+   * 而被挂起的那个请求永远等不到退峰（用户实测卡死 50s 后只能点停止）。
+   * 放行时用 `applyTarget` 按新选择重路由：不改路由的话，这次请求会照旧打到官方源
+   * （高峰 2 倍单价），正是本插件要避免的事。
    */
   function maybeAutoResume(sessionId, rec) {
     const cfg = safeCfg()
-    if (cfg.providerGuard !== true || cfg.deferredResume === false) return
-    if (!shouldPause(cfg, clock()).pause) return
+    if (cfg.providerGuard !== true || cfg.deferredResume === false) return { releasedHold: false, resumed: false }
+    if (!shouldPause(cfg, clock()).pause) return { releasedHold: false, resumed: false }
     const cls = directory.classify(rec.provider)
-    if (cls.official) return
+    if (cls.official) return { releasedHold: false, resumed: false }
+    // 请求级 hold：放行 + 重路由到这次选择（幂等，无 hold 时 no-op）
+    const releasedHold = deferrals.release(sessionId, 'non-official', (config) => applyTarget(config, rec))
+    if (releasedHold) {
+      logger?.info?.(
+        `[session-guard] target switched to non-official "${rec.provider}/${rec.model}" (matchedBy=${cls.matchedBy}) — released held request of ${sessionId} (rerouted)`,
+      )
+    }
     // step 门控：目标转非官方 → 放行被挂起的 step（step gate 自身按目标判定，无需 pausedByPeak）
     if (stepGate) {
       const r = stepGate.release(sessionId, 'non-official')
@@ -140,7 +218,7 @@ export function createWiring({
         logger?.info?.(`[session-guard] target switched to non-official "${rec.provider}" (matchedBy=${cls.matchedBy}) — releasing step gate for ${sessionId}`)
       }
     }
-    if (!pausedByPeak.has(sessionId)) return
+    if (!pausedByPeak.has(sessionId)) return { releasedHold, resumed: false }
     pausedByPeak.delete(sessionId)
     logger?.info?.(`[session-guard] target switched to non-official "${rec.provider}" (matchedBy=${cls.matchedBy}) — auto-resuming ${sessionId}`)
     queueMicrotask(() => {
@@ -148,6 +226,7 @@ export function createWiring({
         warn(`auto-resume failed for ${sessionId}: ${String(e && e.message || e)}`)
       })
     })
+    return { releasedHold, resumed: true }
   }
 
   /** 该会话此刻是否处于畅跑豁免中（唯一的畅跑判定入口）。 */
@@ -303,6 +382,33 @@ export function createWiring({
     }
   }
 
+  /**
+   * 安装「已 claim、未落库」输入批次追踪（`agent/pre-step` waterfall）。
+   *
+   * 只记录、不拦：`payload.messages` 就是这一步 `inbox.claim()` 拿走的那批输入。
+   * `prepend` → 永远排在 step 门（以及宿主任何监听）之前：门挂起时我们也要先拿到批次，
+   * 否则门被取消时同样丢输入。
+   */
+  function installClaimTracker() {
+    if (!ctx || typeof ctx.on !== 'function') return () => {}
+    const off = ctx.on(
+      'agent/pre-step',
+      (payload, next) => {
+        try {
+          rememberClaimedInput(payload && payload.agent && payload.agent.id, payload && payload.messages)
+        } catch {
+          /* 记录失败绝不影响这一步 */
+        }
+        return next()
+      },
+      { prepend: true },
+    )
+    return () => {
+      if (typeof off === 'function') off()
+      claimedInput.clear()
+    }
+  }
+
   /** 插件卸载：清定时器 + 拒绝全部挂起（不泄漏 promise）。 */
   function dispose() {
     if (releaseTimer !== null) {
@@ -315,6 +421,7 @@ export function createWiring({
       stepGate.clearAllBypass()
     }
     deferrals.rejectAll('disposed')
+    claimedInput.clear()
   }
 
   return {
@@ -328,6 +435,8 @@ export function createWiring({
     scheduleRelease,
     shouldPauseSession,
     installGuard,
+    installClaimTracker,
+    restoreUncommittedInput,
     installStepGuard,
     dispose,
   }

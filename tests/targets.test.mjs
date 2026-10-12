@@ -3,7 +3,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { createTargets, readTarget, UNKNOWN } from '../src/targets.js'
+import { createTargets, readTarget, applyTarget, UNKNOWN } from '../src/targets.js'
 
 const headerEvent = (provider, model) => ({ type: 'request/header', data: { header: { config: { provider, model } }, reason: 'initial' } })
 
@@ -98,4 +98,37 @@ test('targets.set 与事件更新共用同一张表（后写覆盖先写）', ()
   assert.equal(t.providerOf('s1'), 'deepseek-official')
   t.set('s1', 'local', 'qwen')
   assert.equal(t.providerOf('s1'), 'local', '请求级信号应能纠正事件信号')
+})
+
+// ── v3.1.2：放行被 hold 的请求时按新选择重路由 ──
+
+test('readTarget：带 reasoningEffort 的选择被完整记录；后续事件不带则清掉', () => {
+  const t = createTargets()
+  t.update('s1', { type: 'model/selection', data: { provider: 'local', model: 'ocg/deepseek-flash', reasoningEffort: 'max' } })
+  assert.equal(t.get('s1').reasoningEffort, 'max')
+  t.update('s1', { type: 'model/selection', data: { provider: 'local', model: 'ocg/glm-5.3-flash' } })
+  assert.equal(t.get('s1').reasoningEffort, undefined, '整体替换：上一轮 effort 不能留')
+  assert.deepEqual(readTarget({ type: 'model/selection', data: { provider: 'p', model: 'm' } }), { provider: 'p', model: 'm' })
+})
+
+test('applyTarget：覆盖 provider/model/effort，并删掉继承的 effort', () => {
+  const config = { provider: 'deepseek-account', model: 'deepseek-flash', reasoningEffort: 'max', maxTokens: 256000 }
+  const routed = applyTarget(config, { provider: 'local', model: 'ocg/deepseek-flash' })
+  assert.deepEqual(routed, { provider: 'local', model: 'ocg/deepseek-flash', maxTokens: 256000 })
+  assert.equal('reasoningEffort' in routed, false, '新选择没带 effort → 必须清掉旧 provider 的 effort')
+  assert.equal(config.provider, 'deepseek-account', '不修改入参')
+  assert.deepEqual(applyTarget(config, { provider: 'local', model: 'm', reasoningEffort: 'low' }), {
+    provider: 'local',
+    model: 'm',
+    reasoningEffort: 'low',
+    maxTokens: 256000,
+  })
+})
+
+test('applyTarget：UNKNOWN / 形状异常不覆盖，也不抛', () => {
+  const config = { provider: 'deepseek-account', model: 'deepseek-flash' }
+  assert.deepEqual(applyTarget(config, { provider: UNKNOWN, model: UNKNOWN }), config)
+  assert.deepEqual(applyTarget(undefined, { provider: 'local', model: 'm' }), { provider: 'local', model: 'm' })
+  assert.deepEqual(applyTarget(config, null), config)
+  assert.deepEqual(applyTarget(config, { provider: '', model: 42 })['provider'], 'deepseek-account')
 })

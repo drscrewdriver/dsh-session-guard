@@ -16,6 +16,11 @@
  * **互斥铁律**（findings F7）：hold 路径**严禁**调用 `gate.stopNextTurn` /
  * `pauseGate.pause`——暂停要等安全边界，而请求被挂住后永远到不了安全边界，双方互等。
  *
+ * **拒绝路径不丢输入**：hold 被 abort / 超限 / 顶替（以及 error 模式抛错）时，先调用
+ * `restoreInput` 把该会话「已 claim、未落库」的用户输入还回 next-turn 队列 —— 宿主
+ * `preStep()` 先 `inbox.claim()` 再派发本 waterfall，`user/message` 要等请求通过才落库，
+ * 不还就是真丢（用户点停止后消息凭空消失）。
+ *
  * 任何判定异常都 fail-open 放行（绝不因为本插件让正常请求失败）。
  */
 import { shouldPause } from './time-policy.js'
@@ -58,6 +63,10 @@ export function makeIsRoot(ctx) {
  * @param {(sessionId:string, date:Date)=>boolean} [deps.isFreeRunActive] 畅跑生效中的会话不拦
  * @param {(sessionId:string, provider?:unknown, model?:unknown)=>void} [deps.recordTarget]
  *   把这次请求的真实目标写入目标表（独立于 session/event 事件管道，供二维判定使用）
+ * @param {(sessionId:string, reason:string)=>void} [deps.restoreInput]
+ *   挂起被拒（abort / 超限 / 顶替 / 卸载）或 error 模式落地前，把该会话「已 claim、未落库」
+ *   的输入还回队列——宿主 preStep() 先 claim 再派发本 waterfall，user/message 要等请求
+ *   通过才落库，因此这两种收场方式都会让用户刚发的消息凭空消失。实现见 wiring.js。
  * @returns {{install:()=>()=>void, handle:(payload:object, next:Function)=>Promise<unknown>, stats:()=>object}}
  */
 export function createRequestGuard({
@@ -72,6 +81,7 @@ export function createRequestGuard({
   scheduleRelease,
   isFreeRunActive,
   recordTarget,
+  restoreInput,
 }) {
   const rootCheck = isRoot ?? makeIsRoot(ctx)
   const counters = { pass: 0, hold: 0, error: 0, skippedSubagent: 0, failOpen: 0 }
@@ -82,6 +92,16 @@ export function createRequestGuard({
       return v && typeof v === 'object' ? v : {}
     } catch {
       return {}
+    }
+  }
+
+  /** 把「已 claim、未落库」的输入还回队列；异常绝不影响判定。 */
+  function restoreUncommitted(sessionId, reason) {
+    if (typeof restoreInput !== 'function') return
+    try {
+      restoreInput(sessionId, reason)
+    } catch (e) {
+      logger?.warn?.(`[session-guard] restoring uncommitted input failed for ${sessionId}: ${String((e && e.message) || e)}`)
     }
   }
 
@@ -148,7 +168,12 @@ export function createRequestGuard({
     if (mode === 'hold' && resume) {
       counters.hold += 1
       logger?.info?.(`[session-guard] peak + official "${info.provider}/${info.model}" — holding request of ${sessionId} (matchedBy=${cls.matchedBy})`)
-      const promise = deferrals.hold(sessionId, info, payload && payload.signal)
+      const promise = deferrals.hold(
+        sessionId,
+        // onReject：abort / 超限 / 顶替 / 卸载时先把未落库输入还回队列（否则用户点停止即丢输入）
+        { ...info, onReject: (reason) => restoreUncommitted(sessionId, reason) },
+        payload && payload.signal,
+      )
       if (scheduleRelease) {
         try {
           scheduleRelease()
@@ -162,6 +187,8 @@ export function createRequestGuard({
     // error 模式（或 deferredResume=false）：记延后 + 抛可识别的错误
     counters.error += 1
     deferrals.remember(sessionId, info)
+    // 抛错同样在 user/message 落库之前结束这一步 → 已 claim 的输入也必须还回队列
+    restoreUncommitted(sessionId, 'deferred-error')
     // 互斥铁律只约束 hold 路径；error 路径回合立刻结束，调门控是安全的。
     if (gate && typeof gate.stopNextTurn === 'function') {
       try {
@@ -205,7 +232,11 @@ export function createRequestGuard({
   /** 注册 waterfall 监听；返回 disposer（同时释放全部挂起，避免 promise 泄漏）。 */
   function install() {
     if (!ctx || typeof ctx.on !== 'function') return () => {}
-    const off = ctx.on('agent/request', (payload, next) => handle(payload, next))
+    // `prepend`：本守卫必须是最外层。hold 放行时我们按新选择重路由 config —— 若宿主
+    // `installModelSelection` 的 `agent/request` 监听套在我们外面，它会用
+    // `selection.assembled`（组装期快照，滞后一步）覆盖掉重路由结果，等于没重路由。
+    // 附带好处：`next()` 拿到的也一定是宿主链路应用完选择后的 config，判定不会读到种子路由。
+    const off = ctx.on('agent/request', (payload, next) => handle(payload, next), { prepend: true })
     return () => {
       if (typeof off === 'function') off()
       try {

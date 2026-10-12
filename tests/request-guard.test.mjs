@@ -39,7 +39,7 @@ const BASE_CFG = {
 
 const silent = { info() {}, warn() {}, error() {} }
 
-function harness({ cfg = {}, agents, classify, now = PEAK_NOW, isRoot, isFreeRunActive, recordTarget } = {}) {
+function harness({ cfg = {}, agents, classify, now = PEAK_NOW, isRoot, isFreeRunActive, recordTarget, restoreInput } = {}) {
   let listener = null
   const ctx = {
     on: (name, fn) => {
@@ -69,6 +69,7 @@ function harness({ cfg = {}, agents, classify, now = PEAK_NOW, isRoot, isFreeRun
     isRoot,
     isFreeRunActive,
     recordTarget,
+    restoreInput,
   })
   const off = guard.install()
   return {
@@ -204,8 +205,58 @@ test('deferredMaxHoldMs 到期 → 转 PeakDeferredError（延后表清空）', 
   assert.equal(deferrals.size(), 0)
 })
 
-// ── task_12：error 路径 ──
+// ── task_30（v3.1.2）：两路收场都要把「已 claim、未落库」的输入还回队列 ──
+// 现场事故：高峰 hold 中用户点停止 → 宿主在 user/message 落库前 abort 这一步 →
+// 刚发的消息既不在对话里也不在队列里（用户只能重打一遍）。
 
+test('abort：拒绝前调 restoreInput（且只在这一刻调）', async () => {
+  const restored = []
+  const h = harness({ restoreInput: (sessionId, reason) => restored.push([sessionId, reason]) })
+  const ac = new AbortController()
+  const p = h.call({ ...PAYLOAD, signal: ac.signal })
+  await assertPending(p)
+  assert.deepEqual(restored, [], '还挂着时不能提前还输入')
+  ac.abort()
+  await assert.rejects(p, /aborted/)
+  assert.deepEqual(restored, [['s1', 'aborted']])
+})
+
+test('deferredMode=error：抛错前同样还回未落库输入', async () => {
+  const restored = []
+  const h = harness({
+    cfg: { deferredMode: 'error' },
+    restoreInput: (sessionId, reason) => restored.push([sessionId, reason]),
+  })
+  await assert.rejects(h.call(PAYLOAD), (e) => e.code === PEAK_DEFERRED_CODE)
+  assert.deepEqual(restored, [['s1', 'deferred-error']])
+})
+
+test('退峰 releaseAll 不是拒绝 → 不还输入（避免与已落库消息重复）', async () => {
+  const restored = []
+  const h = harness({ restoreInput: (sessionId, reason) => restored.push([sessionId, reason]) })
+  const p = h.call(PAYLOAD)
+  await assertPending(p)
+  h.deferrals.releaseAll('off-peak')
+  await p
+  assert.deepEqual(restored, [])
+})
+
+test('restoreInput 抛错 → 判定不受影响（仍 reject / 仍抛 PEAK_DEFERRED）', async () => {
+  const boom = () => {
+    throw new Error('restore boom')
+  }
+  const h = harness({ restoreInput: boom })
+  const ac = new AbortController()
+  const p = h.call({ ...PAYLOAD, signal: ac.signal })
+  await assertPending(p)
+  ac.abort()
+  await assert.rejects(p, /aborted/)
+
+  const h2 = harness({ cfg: { deferredMode: 'error' }, restoreInput: boom })
+  await assert.rejects(h2.call(PAYLOAD), (e) => e.code === PEAK_DEFERRED_CODE)
+})
+
+// ── task_12：error 路径 ──
 test('deferredMode=error → 抛 PEAK_DEFERRED + 调 stopNextTurn + 记延后', async () => {
   const h = harness({ cfg: { deferredMode: 'error' } })
   await assert.rejects(h.call(PAYLOAD), (e) => {

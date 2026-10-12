@@ -144,3 +144,78 @@ test('多会话并发挂起互不影响', async () => {
   d.releaseAll()
   assert.deepEqual(await p2, { provider: 'b' })
 })
+
+// ── v3.1.2：目标切非官方时的放行（重路由）+ 拒绝前还回未落库输入 ──
+
+test('release(sid, reason, resolveWith)：放行时把 config 重路由到新选择', async () => {
+  const d = createDeferrals()
+  const held = { provider: 'deepseek-account', model: 'deepseek-flash', reasoningEffort: 'max', maxTokens: 256000 }
+  const p = d.hold('s1', { provider: 'deepseek-account', model: 'deepseek-flash', config: held })
+  assert.equal(
+    d.release('s1', 'non-official', (config) => ({ ...config, provider: 'local', model: 'ocg/deepseek-flash', reasoningEffort: undefined })),
+    true,
+  )
+  const got = await p
+  assert.equal(got.provider, 'local', '必须按新选择重路由，否则这次请求照旧打到高峰价的官方源')
+  assert.equal(got.model, 'ocg/deepseek-flash')
+  assert.equal(got.maxTokens, 256000, '其它字段原样保留')
+  assert.deepEqual(held, { provider: 'deepseek-account', model: 'deepseek-flash', reasoningEffort: 'max', maxTokens: 256000 }, '不修改原 config')
+})
+
+test('release：resolveWith 抛错 → 原样放行（绝不因为重路由失败把请求卡死）', async () => {
+  const d = createDeferrals()
+  const p = d.hold('s1', { config: CONFIG })
+  d.release('s1', 'non-official', () => {
+    throw new Error('boom')
+  })
+  assert.equal(await p, CONFIG)
+})
+
+test('onReject：abort / 顶替 / 超限 时回调一次；release / releaseAll 不回调', async () => {
+  const seen = []
+  const ac = new AbortController()
+  const d = createDeferrals()
+  const p1 = d.hold('s1', { config: CONFIG, onReject: (reason) => seen.push(['s1', reason]) }, ac.signal)
+  ac.abort()
+  await assert.rejects(p1, /aborted/)
+  assert.deepEqual(seen, [['s1', 'aborted']])
+
+  const p2 = d.hold('s2', { config: CONFIG, onReject: (reason) => seen.push(['s2', reason]) })
+  d.hold('s2', { config: CONFIG }) // 顶替
+  await assert.rejects(p2, /superseded/)
+  assert.deepEqual(seen[1], ['s2', 'superseded'])
+
+  const d3 = createDeferrals({ maxHoldMs: 5, unrefTimers: false })
+  const p3 = d3.hold('s3', { config: CONFIG, onReject: (reason) => seen.push(['s3', reason]) })
+  await assert.rejects(p3, /max-hold-exceeded/)
+
+  seen.length = 0
+  const d4 = createDeferrals()
+  const p4 = d4.hold('s4', { config: CONFIG, onReject: (reason) => seen.push(['s4', reason]) })
+  d4.release('s4', 'non-official')
+  d4.releaseAll('off-peak')
+  await p4
+  assert.deepEqual(seen, [], '放行不是拒绝 → 不能还输入（否则和已落库的消息重复）')
+})
+
+test('onReject 抛错 → 仍以 PeakDeferredError reject（恢复失败不阻断结算）', async () => {
+  const d = createDeferrals()
+  const ac = new AbortController()
+  const p = d.hold(
+    's1',
+    {
+      config: CONFIG,
+      onReject: () => {
+        throw new Error('restore failed')
+      },
+    },
+    ac.signal,
+  )
+  ac.abort()
+  await assert.rejects(p, (e) => {
+    assert.ok(e instanceof PeakDeferredError)
+    assert.equal(e.code, PEAK_DEFERRED_CODE)
+    return true
+  })
+  assert.equal(d.size(), 0)
+})

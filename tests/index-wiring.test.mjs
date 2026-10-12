@@ -262,6 +262,162 @@ test('目标仍为官方 → 不自动恢复', async () => {
   assert.equal(h.resumed.length, 0)
 })
 
+// ── task_30（v3.1.2）：切模型必须放行请求级 hold；停止/abort 不能丢输入 ──
+// 现场事故（session-30c25e4b，2026-10-12 09:43）：
+//   1) 高峰 hold 中用户把模型切到 local（model/selection 事件已到）→ 插件无任何动作，
+//      只能干等退峰（before: maybeAutoResume 只解 step 门 + 回合级暂停）；
+//   2) 用户随后点停止 → 宿主在 user/message 落库前 abort 这一步 → 刚发的消息凭空消失。
+
+/** 记录 send / followup 的假 running agent。 */
+function recordingAgent(id) {
+  return {
+    id,
+    status: 'running',
+    sent: [],
+    send(message, target, wakeup) {
+      this.sent.push([message, target, wakeup])
+    },
+    followup(message) {
+      this.sent.push([message, 'next-turn', true])
+    },
+    cancel() {},
+  }
+}
+
+const INPUT_MSG = { id: 'm1', role: 'user', content: [{ type: 'text', text: '切到本地模型再跑' }], source: { kind: 'user', rpcId: 'r1' } }
+
+test('v3.1.2 回归：高峰 hold 中切到非官方源 → 立即放行并按新选择重路由', async () => {
+  const h = harness()
+  h.wiring.installGuard()
+  const listener = h.listeners['agent/request']
+  const held = listener(REQ_PAYLOAD, async () => OFFICIAL_CFG)
+  await assertPending(held)
+  assert.equal(h.wiring.deferrals.has('s1'), true)
+
+  h.wiring.onSessionEvent({ id: 's1' }, { type: 'model/selection', data: { provider: 'local', model: 'ocg/deepseek-flash', reasoningEffort: 'max' } })
+  const cfg = await held
+  assert.equal(cfg.provider, 'local', '必须放行（现场表现为卡死 50s 后只能点停止）')
+  assert.equal(cfg.model, 'ocg/deepseek-flash')
+  assert.equal(cfg.reasoningEffort, 'max', 'reasoningEffort 也要跟随新选择')
+  assert.equal(h.wiring.deferrals.size(), 0)
+})
+
+test('v3.1.2 回归：切到非官方源但没带 effort → 清掉继承的 effort（对齐宿主 installModelSelection）', async () => {
+  const h = harness()
+  h.wiring.installGuard()
+  const held = h.listeners['agent/request'](REQ_PAYLOAD, async () => ({ ...OFFICIAL_CFG, reasoningEffort: 'max' }))
+  await assertPending(held)
+  h.wiring.onSessionEvent({ id: 's1' }, { type: 'model/selection', data: { provider: 'local', model: 'ocg/glm-5.3-flash' } })
+  const cfg = await held
+  assert.equal(cfg.provider, 'local')
+  assert.equal('reasoningEffort' in cfg, false)
+})
+
+test('v3.1.2 回归：切回官方源（仍是峰内）→ 不放行', async () => {
+  const h = harness()
+  h.wiring.installGuard()
+  const held = h.listeners['agent/request'](REQ_PAYLOAD, async () => OFFICIAL_CFG)
+  await assertPending(held)
+  h.wiring.onSessionEvent({ id: 's1' }, { type: 'model/selection', data: { provider: OFFICIAL_CFG.provider, model: OFFICIAL_CFG.model } })
+  await assertPending(held)
+  h.wiring.dispose()
+  await assert.rejects(held, /disposed/)
+})
+
+test('v3.1.2 回归：hold 被停止（abort）→ 已 claim 未落库的输入还回 next-turn 队列（不唤醒 driver）', async () => {
+  const agent = recordingAgent('s1')
+  const h = harness({ roots: [agent] })
+  h.wiring.installGuard()
+  h.wiring.installClaimTracker()
+
+  // 宿主 preStep()：先 claim 输入，再派发 agent/pre-step（我们只记录）
+  const preStep = h.listeners['agent/pre-step']
+  await preStep({ agent, messages: [INPUT_MSG], turn: 1, step: 1 }, async () => ({ kind: 'enter', messages: [INPUT_MSG] }))
+
+  const ac = new AbortController()
+  const held = h.listeners['agent/request']({ agent, turn: 1, step: 1, signal: ac.signal }, async () => OFFICIAL_CFG)
+  await assertPending(held)
+  assert.deepEqual(agent.sent, [], '还挂着时不能提前还输入')
+
+  ac.abort() // 用户点「停止」
+  await assert.rejects(held, /aborted/)
+  assert.deepEqual(agent.sent, [[INPUT_MSG, 'next-turn', false]], '必须原样还回队列，且不替用户立刻起一轮')
+  assert.deepEqual(await h.wiring.restoreUncommittedInput('s1', 'again'), 0, '幂等：同一批次只还一次')
+
+  h.wiring.dispose()
+})
+
+test('v3.1.2 回归：输入已落库（user/message）→ 停止后不再还（避免重复）', async () => {
+  const agent = recordingAgent('s1')
+  const h = harness({ roots: [agent] })
+  h.wiring.installGuard()
+  h.wiring.installClaimTracker()
+  const preStep = h.listeners['agent/pre-step']
+  await preStep({ agent, messages: [INPUT_MSG], turn: 1, step: 1 }, async () => ({ kind: 'enter', messages: [INPUT_MSG] }))
+  // 请求通过 → 宿主把 user/message 落库
+  h.wiring.onSessionEvent({ id: 's1' }, { type: 'user/message', data: { content: INPUT_MSG.content } })
+
+  const ac = new AbortController()
+  const held = h.listeners['agent/request']({ agent, turn: 1, step: 1, signal: ac.signal }, async () => OFFICIAL_CFG)
+  await assertPending(held)
+  ac.abort()
+  await assert.rejects(held, /aborted/)
+  assert.deepEqual(agent.sent, [], '已落库的消息不能再插回队列')
+  h.wiring.dispose()
+})
+
+test('v3.1.2 回归：没有 claim 记录时 abort → 零入队、不抛', async () => {
+  const agent = recordingAgent('s1')
+  const h = harness({ roots: [agent] })
+  h.wiring.installGuard()
+  h.wiring.installClaimTracker()
+  const ac = new AbortController()
+  const held = h.listeners['agent/request']({ agent, turn: 1, step: 1, signal: ac.signal }, async () => OFFICIAL_CFG)
+  await assertPending(held)
+  ac.abort()
+  await assert.rejects(held, /aborted/)
+  assert.deepEqual(agent.sent, [])
+  h.wiring.dispose()
+})
+
+test('v3.1.2 回归：回合结束仍有未落库批次（step 门挂起后被停止）→ 还回队列一次', async () => {
+  const agent = recordingAgent('s1')
+  const h = harness({ roots: [agent] })
+  h.wiring.installGuard()
+  h.wiring.installClaimTracker()
+  // step 门挂起（stepLevelPause 路径）：只走到 agent/pre-step，请求尚未发出
+  await h.listeners['agent/pre-step']({ agent, messages: [INPUT_MSG], turn: 1, step: 1 }, async () => ({ kind: 'enter', messages: [INPUT_MSG] }))
+  h.wiring.onSessionEvent({ id: 's1' }, { type: 'turn/end', data: { reason: 'cancelled' } })
+  assert.deepEqual(agent.sent, [[INPUT_MSG, 'next-turn', false]])
+  h.wiring.onSessionEvent({ id: 's1' }, { type: 'turn/end', data: { reason: 'cancelled' } })
+  assert.equal(agent.sent.length, 1, '幂等：同一批次只还一次')
+  h.wiring.dispose()
+})
+
+test('v3.1.2 回归：正常回合的 turn/end（输入已落库）→ 零入队、不抛', async () => {
+  const agent = recordingAgent('s1')
+  const h = harness({ roots: [agent] })
+  h.wiring.installGuard()
+  h.wiring.installClaimTracker()
+  await h.listeners['agent/pre-step']({ agent, messages: [INPUT_MSG], turn: 1, step: 1 }, async () => ({ kind: 'enter', messages: [INPUT_MSG] }))
+  h.wiring.onSessionEvent({ id: 's1' }, { type: 'user/message', data: { content: INPUT_MSG.content } })
+  h.wiring.onSessionEvent({ id: 's1' }, { type: 'turn/end', data: { reason: 'done' } })
+  assert.deepEqual(agent.sent, [])
+  // 没有记录时 turn/end 也不该抛
+  h.wiring.onSessionEvent({ id: 's1' }, { type: 'turn/end', data: { reason: 'done' } })
+  assert.deepEqual(agent.sent, [])
+  h.wiring.dispose()
+})
+
+test('v3.1.2：会话已无存活 agent → 还原降级为 0 条（warn，不抛）', async () => {
+  const h = harness({ roots: [] })
+  h.wiring.installGuard()
+  h.wiring.installClaimTracker()
+  await h.listeners['agent/pre-step']({ agent: recordingAgent('s1'), messages: [INPUT_MSG], turn: 1, step: 1 }, async () => ({ kind: 'enter', messages: [INPUT_MSG] }))
+  assert.equal(h.wiring.restoreUncommittedInput('s1', 'test'), 0)
+  h.wiring.dispose()
+})
+
 // ── task_17：退峰释放与续跑 ──
 
 test('onLeavePeak：先释放挂起请求，再对 error 模式延后会话 followup', async () => {

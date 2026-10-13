@@ -18,7 +18,7 @@
  *
  * 本模块零 `@deepseek-ai/*` 值导入；文件系统访问可注入，便于单测。
  */
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   DAY_TOKENS,
@@ -387,4 +387,69 @@ export function loadConfigFile({ env = process.env, cwd = process.cwd(), pluginD
 
   const { settings, errors } = normalizeConfig(raw)
   return { path, candidates, settings, errors, raw }
+}
+
+/**
+ * 把 `officialModelPatterns` 写回**配置文件**（状态徽标面板的「高峰拦截列表」勾选用）。
+ *
+ * 为什么是本线的写入口：0.1.7 的客户端没有 settingsScope，写不了 dsh 的设置层；配置文件
+ * 是本线既有的用户可编辑面（也是 `loadConfigFile` 的默认层），写完立刻 `reloadConfig` 生效。
+ *
+ * 安全语义（与读取侧同一套「绝不静默毁配置」风格）：
+ * - 目标文件 = 已存在的候选（`$DSH_SESSION_GUARD_CONFIG` → `$DSH_HOME/config` → `<cwd>/config`
+ *   → 包内），都不存在则**新建** `$DSH_HOME/config/session-guard.json`；
+ * - 只改这一个键，**保留文件里其它键**与未知键；
+ * - 现有文件读不出 / JSON 坏 → **拒绝写入**并报错（绝不覆盖用户内容）；
+ * - 条目一律过一遍正则安全线（语法错 / 超长 / 灾难性回溯 → 拒绝）。
+ *
+ * @param {string[]} patterns 新的关键字列表（`[]` = 关闭按模型名判定）
+ * @param {{env?:object, cwd?:string, pluginDir?:string, exists?:(p:string)=>boolean, readFile?:(p:string)=>string, writeFile?:(p:string,text:string)=>void, mkdir?:(p:string)=>void}} [deps]
+ * @returns {{ok:boolean, path?:string, patterns?:string[], error?:string}}
+ */
+export function writeModelPatterns(patterns, { env = process.env, cwd = process.cwd(), pluginDir, exists = existsSync, readFile = (p) => readFileSync(p, 'utf8'), writeFile = (p, text) => writeFileSync(p, text, 'utf8'), mkdir = (p) => mkdirSync(p, { recursive: true }) } = {}) {
+  if (!Array.isArray(patterns)) return { ok: false, error: 'patterns must be an array' }
+  const cleaned = []
+  for (const item of patterns) {
+    if (typeof item !== 'string') return { ok: false, error: 'patterns must contain strings only' }
+    const s = item.trim()
+    if (s === '') continue
+    try {
+      new RegExp(s)
+    } catch {
+      return { ok: false, error: `"${s}" is not a valid regular expression` }
+    }
+    if (isUnsafePattern(s)) return { ok: false, error: `"${s}" is not a safe regular expression` }
+    if (!cleaned.includes(s)) cleaned.push(s)
+  }
+
+  const candidates = candidateConfigPaths({ env, cwd, pluginDir })
+  const existing = selectConfigPath(candidates, exists)
+  const path = existing ?? candidates[0]
+
+  let raw = {}
+  if (existing !== null) {
+    let text
+    try {
+      text = readFile(existing)
+    } catch (e) {
+      return { ok: false, error: `cannot read config file: ${String((e && e.message) || e)}` }
+    }
+    try {
+      const parsed = JSON.parse(text)
+      if (!isPlainObject(parsed)) return { ok: false, error: 'config root is not a JSON object — refusing to overwrite' }
+      raw = parsed
+    } catch (e) {
+      return { ok: false, error: `config file is not valid JSON — refusing to overwrite (${String((e && e.message) || e)})` }
+    }
+  }
+
+  const next = { ...raw, officialModelPatterns: cleaned }
+  try {
+    const dir = path.slice(0, Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')))
+    if (dir !== '' && !exists(path)) mkdir(dir)
+    writeFile(path, `${JSON.stringify(next, null, 2)}\n`)
+  } catch (e) {
+    return { ok: false, error: `cannot write config file: ${String((e && e.message) || e)}` }
+  }
+  return { ok: true, path, patterns: cleaned }
 }

@@ -357,7 +357,7 @@ v0.2.0 的两值判决保留兼容：`pause === (mode === PEAK)`，`reason` 仍�
 
 - **颜色即语义（v3.1.3）**：**拦截态红、放行态绿**（边框与文字同色，走 dsh 的 `--dsw-alias-state-*` 令牌）；文案本身仍是上面那张表。
 - **高峰与谷时是同一个按钮（v3.1.4）**：**每个阶段**（`peak` / `off-peak` / `weekend`）都是同一个可点击按钮，切到谷时**只换文案与颜色**，交互形态一致 —— 点开都是同一个「高峰拦截列表」面板，不因不是高峰就退化成不可点的展示元素。类名不变量由 `badgeClassNames()`（纯函数）给出并被单测钉住：三个阶段都是 `sg-status sg-status-btn <配色变体>`。
-- **面板内容（v3.1.4）**：展开时自动拉 `GET /session-guard/models`（各路由自报的模型 + 本插件观察到的真实目标）与 `GET /session-guard/settings`（生效中的 `officialModelPatterns`），按 provider 分组列出模型，并标注当前是否被拦（`●` 拦 / `○` 放行）与命中的关键字。本线（0.1.7）客户端没有设置写入口，所以面板是**只读**的 —— 改列表走 `config/session-guard.json` 或设置表单；读不到设置时按内置默认展示并给提示。
+- **面板内容（v3.1.5：模型列表形态）**：展开时自动拉 `GET /session-guard/models`（DSH 当前全部模型：各路由自报 + 本插件观察到的真实目标）与 `GET /session-guard/settings`（生效中的 `officialModelPatterns`）。形态 = **列表顶部关键词过滤框**（按 `provider/model` 子串、大小写不敏感）+ **全选 / 取消全选**（只作用于当前过滤结果）+ **每行右侧一个复选框**，按 provider 分组；**勾选即联动** —— 该模型名写进高峰拦截列表并经 `POST /session-guard/rpc {action:'setModelPatterns'}` 落到 `config/session-guard.json`（写完立即 reload，本线唯一写入口，只改这一个键、保留文件其它内容；坏 JSON 拒绝覆盖、非法正则拒绝写入）。**过滤只影响展示与「全选」范围，不改模型集合、也不改拦截列表**；被更宽关键字（默认 `deepseek`）盖住的行只读并提示是哪个关键字。
 
 - **轮询**：每 15 秒请求 `GET /session-guard/status`，获取全局 `phase`、`providerGuard`、`held`、`deferred`、`stepHeld`（`/status` 另报 `mode`/`reason`/`windowName`/`minutesUntilPeak`/`peakTimezone`/`weekendDays`/`configFile`；`phase` 为兼容保留）；
 - **fail-open**：路由不可达、网络错误、或 `enabled` 关闭时→ 徽标静默隐藏，不影响任何会话；

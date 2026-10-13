@@ -429,6 +429,122 @@ test('normalizeConfig：officialModelPatterns 全非法 / 形状不对 → 报�
   assert.match(notArray.errors[0], /officialModelPatterns must be an array of strings/)
 })
 
+// ── v3.1.5：writeModelPatterns —— 状态徽标面板勾选的写入口（本线唯一能写的地方）──
+
+/** 可写内存文件系统（记录写入内容）。 */
+function writableFs(files) {
+  const map = new Map(Object.entries(files))
+  const written = []
+  return {
+    written,
+    exists: (p) => map.has(p),
+    readFile: (p) => {
+      if (!map.has(p)) throw new Error(`ENOENT: ${p}`)
+      return map.get(p)
+    },
+    writeFile: (p, text) => {
+      written.push([p, text])
+      map.set(p, text)
+    },
+    mkdir: () => undefined,
+    get: (p) => map.get(p),
+  }
+}
+
+test('writeModelPatterns：只改 officialModelPatterns，保留文件里的其它键', async () => {
+  const { writeModelPatterns } = await import('../src/config-file.js')
+  const path = j('D:\\dsh', 'config', CONFIG_FILE_NAME)
+  const fs = writableFs({
+    [path]: JSON.stringify({ timezone: 'Asia/Tokyo', officialModelPatterns: ['deepseek'], customKey: 1 }, null, 2),
+  })
+  const r = writeModelPatterns(['deepseek', 'ocg/glm-5.3-flash'], { env: { DSH_HOME: 'D:\\dsh' }, cwd: 'D:\\none', ...fs })
+  assert.equal(r.ok, true)
+  assert.equal(r.path, path)
+  assert.deepEqual(r.patterns, ['deepseek', 'ocg/glm-5.3-flash'])
+  const saved = JSON.parse(fs.get(path))
+  assert.deepEqual(saved.officialModelPatterns, ['deepseek', 'ocg/glm-5.3-flash'])
+  assert.equal(saved.timezone, 'Asia/Tokyo')
+  assert.equal(saved.customKey, 1, '未知键必须保留')
+  assert.ok(fs.get(path).endsWith('\n'), '文件以换行结尾')
+})
+
+test('writeModelPatterns：没有配置文件时新建到 $DSH_HOME/config', async () => {
+  const { writeModelPatterns } = await import('../src/config-file.js')
+  const fs = writableFs({})
+  const r = writeModelPatterns(['deepseek'], { env: { DSH_HOME: 'D:\\dsh' }, cwd: 'D:\\proj', ...fs })
+  assert.equal(r.ok, true)
+  assert.equal(r.path, j('D:\\dsh', 'config', CONFIG_FILE_NAME))
+  assert.deepEqual(JSON.parse(fs.get(r.path)), { officialModelPatterns: ['deepseek'] })
+})
+
+test('writeModelPatterns：显式空数组 = 关闭该层（写入 []）', async () => {
+  const { writeModelPatterns } = await import('../src/config-file.js')
+  const path = j('D:\\dsh', 'config', CONFIG_FILE_NAME)
+  const fs = writableFs({ [path]: '{}' })
+  const r = writeModelPatterns([], { env: { DSH_HOME: 'D:\\dsh' }, cwd: 'D:\\none', ...fs })
+  assert.equal(r.ok, true)
+  assert.deepEqual(JSON.parse(fs.get(path)), { officialModelPatterns: [] })
+})
+
+test('writeModelPatterns：现有文件坏 JSON / 读不出 → 拒绝写入（绝不覆盖用户内容）', async () => {
+  const { writeModelPatterns } = await import('../src/config-file.js')
+  const path = j('D:\\dsh', 'config', CONFIG_FILE_NAME)
+  const bad = writableFs({ [path]: '{ not json' })
+  const r1 = writeModelPatterns(['deepseek'], { env: { DSH_HOME: 'D:\\dsh' }, cwd: 'D:\\none', ...bad })
+  assert.equal(r1.ok, false)
+  assert.match(r1.error, /not valid JSON — refusing to overwrite/)
+  assert.equal(bad.written.length, 0, '不得落盘')
+
+  const unreadable = writableFs({})
+  const r2 = writeModelPatterns(['deepseek'], {
+    env: { DSH_HOME: 'D:\\dsh' },
+    cwd: 'D:\\none',
+    exists: (p) => p === path,
+    readFile: () => {
+      throw new Error('EACCES')
+    },
+    writeFile: () => {
+      throw new Error('should not be called')
+    },
+  })
+  assert.equal(r2.ok, false)
+  assert.match(r2.error, /cannot read config file/)
+  assert.equal(unreadable.written.length, 0)
+})
+
+test('writeModelPatterns：条目形状/安全线不合法 → 拒绝（不落盘）', async () => {
+  const { writeModelPatterns } = await import('../src/config-file.js')
+  const path = j('D:\\dsh', 'config', CONFIG_FILE_NAME)
+  for (const [patterns, re] of [
+    ['deepseek', /must be an array/],
+    [[7], /strings only/],
+    [['['], /not a valid regular expression/],
+    [['(a+)+$'], /not a safe regular expression/],
+  ]) {
+    const fs = writableFs({ [path]: '{}' })
+    const r = writeModelPatterns(patterns, { env: { DSH_HOME: 'D:\\dsh' }, cwd: 'D:\\none', ...fs })
+    assert.equal(r.ok, false, `${JSON.stringify(patterns)} 应被拒`)
+    assert.match(r.error, re)
+    assert.equal(fs.written.length, 0)
+  }
+})
+
+test('writeModelPatterns：写盘抛错 → ok:false + 错误信息（不抛给调用方）', async () => {
+  const { writeModelPatterns } = await import('../src/config-file.js')
+  const r = writeModelPatterns(['deepseek'], {
+    env: { DSH_HOME: 'D:\\dsh' },
+    cwd: 'D:\\none',
+    exists: () => true,
+    readFile: () => '{}',
+    writeFile: () => {
+      throw new Error('EROFS')
+    },
+    mkdir: () => undefined,
+  })
+  assert.equal(r.ok, false)
+  assert.match(r.error, /cannot write config file: EROFS/)
+})
+
 test('loadConfigFile：真实文件里的 officialProviders 能被读出（端到端）', () => {
   const { exists, readFile } = memFs({
     'C:\\dsh\\config\\session-guard.json': JSON.stringify({

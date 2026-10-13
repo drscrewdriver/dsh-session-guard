@@ -173,6 +173,22 @@ All notable changes to `dsh-session-guard` are recorded here. Versions follow se
 
 ### Fixed
 
+- **v3.1.5 — the panel is a real model list now (and it can write).** The expand area is a **list of
+  every model DSH currently offers** (one row per model, grouped by provider) with a **keyword filter
+  box on top** (case-insensitive substring over `provider/model`), a **select-all / clear-select-all**
+  button that applies to the *filtered* result only, and **one checkbox at the right of each row**;
+  ticking a row adds that model name to `officialModelPatterns` and unticking removes the same-name
+  entry. The filter only affects presentation and the select-all scope — the model set and the
+  interception list are untouched. New pure helpers `filterRows()` / `allCovered()` /
+  `bulkToggle()` (plus `toggleModel()`) in `model-list.ts` are unit-tested; select-all skips rows
+  that are already covered, so the list does not fill up with redundant entries.
+- **v3.1.5 — a write path for this line.** Since the 0.1.7 client has no settingsScope, ticking a box
+  now goes through `POST /session-guard/rpc {action:'setModelPatterns', patterns}` →
+  `writeModelPatterns()` rewrites **only** the `officialModelPatterns` key of the resolved
+  `config/session-guard.json` (other keys and unknown keys preserved, created under
+  `$DSH_HOME/config/` when absent) and reloads the config so it takes effect immediately. Safety
+  mirrors the read side: an unreadable / non-JSON file is **refused** rather than overwritten, and
+  invalid or catastrophic regex entries are refused with the exact reason (HTTP 400).
 - **v3.1.4 — the badge is one and the same button in every phase.** `peak` / `off-peak` /
   `weekend` now all render the *same* clickable element (`sg-status sg-status-btn <variant>`); only
   the wording and the colour change, and the panel opens identically — the off-peak badge no longer

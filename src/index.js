@@ -11,7 +11,7 @@
  */
 import { computeState, transition } from './scheduler.js'
 import { MODES, createTimePolicyResolver, stableStringify } from './time-policy.js'
-import { loadConfigFile } from './config-file.js'
+import { loadConfigFile, writeModelPatterns } from './config-file.js'
 import { fileURLToPath } from 'node:url'
 import { createStore } from './store.js'
 import { createGate } from './gate.js'
@@ -902,6 +902,21 @@ export function apply(ctx, config = {}) {
               return json(200, {
                 ok: true,
                 result: { path: cfg.path, keys: Object.keys(cfg.settings || {}), errors: cfg.errors },
+              })
+            }
+            // 状态徽标面板的「高峰拦截列表」勾选：写回配置文件的 officialModelPatterns + 立即生效。
+            // 本线客户端没有 settingsScope，这是唯一的写入口；只改这一个键，保留文件里其它内容。
+            if (action === 'setModelPatterns') {
+              const written = writeModelPatterns(parsed.patterns, { pluginDir: PLUGIN_DIR })
+              if (!written.ok) return json(400, { ok: false, error: written.error })
+              const cfg = reloadConfigFile()
+              return json(200, {
+                ok: true,
+                result: {
+                  path: written.path,
+                  patterns: cfg.settings?.officialModelPatterns ?? written.patterns,
+                  errors: cfg.errors,
+                },
               })
             }
             if (!sessionId) return json(400, { ok: false, error: 'missing sessionId' })

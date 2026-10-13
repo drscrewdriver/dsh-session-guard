@@ -34,6 +34,11 @@ All notable changes to `dsh-session-guard` are recorded here. Versions follow se
 
 ### Changed
 
+- **v0.3.2 — 面板改成「模型列表」形态**：列出 DSH 当前全部模型（每行一个、**复选框在行右侧**、按
+  provider 分组），顶部加**关键词过滤框**（`provider/model` 子串、大小写不敏感）与**全选 /
+  取消全选**（只作用于当前过滤结果）。**过滤只影响展示与「全选」范围**，模型集合与拦截列表都不变；
+  勾选仍即写 `officialModelPatterns`（settingsScope），全选会跳过已被覆盖的行以免塞满冗余条目。
+  纯函数 `filterRows()` / `allCovered()` / `bulkToggle()` 与 `toggleModel()` 单测覆盖。
 - **v0.3.2 — 徽标在所有阶段都是同一个按钮**：`peak` / `off-peak` / `weekend` 渲染同一个可点击元素
   （`sg-status sg-status-btn <配色变体>`），只有文案与配色随阶段变，展开的面板完全一致 —— 谷时不会
   退化成不可点的展示元素。不变量收进 `badgeClassNames()`（`badge-text.ts`）并由三个阶段各自单测钉住。

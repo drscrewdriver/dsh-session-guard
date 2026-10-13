@@ -31,6 +31,10 @@ export const CLIENT_CSS = `
 /* 「高峰拦截列表」模型勾选面板（状态徽标与设置卡片共用 .sgMl* 类） */
 .sgMlBody{margin-top:8px;padding:8px 10px;border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.1));border-radius:8px;background:var(--dsw-alias-bg-layer-2,transparent)}
 .sgMlBody *{box-sizing:border-box}
+.sgMlFilterRow{display:flex;align-items:center;gap:6px;padding-bottom:6px}
+.sgMlInput{flex:1;min-width:0;height:24px;padding:0 8px;border:1px solid var(--dsw-alias-border-l3,rgba(0,0,0,.12));border-radius:6px;background:var(--dsw-alias-bg-layer-2,transparent);color:inherit;font:inherit;font-size:12px}
+.sgMlInput:disabled{opacity:.6;cursor:not-allowed}
+.sgMlError{color:var(--dsw-alias-state-error-primary,#dc2626);font-size:12px;line-height:18px;margin:6px 0 0;word-break:break-word}
 .sgMlPatterns{display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding-bottom:6px;border-bottom:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.08))}
 .sgMlSentinel{color:var(--dsw-alias-label-tertiary,#6b7280);font-size:12px}
 .sgMlChip{font-size:12px;padding:1px 6px;border:1px solid var(--dsw-alias-border-l3,rgba(0,0,0,.12));border-radius:4px;font-variant-numeric:tabular-nums}
@@ -42,7 +46,7 @@ export const CLIENT_CSS = `
 .sgMlProvider{margin:8px 0 2px;font-size:12px;font-weight:600;color:var(--dsw-alias-label-secondary,#6b7280)}
 .sgMlItem{display:flex;align-items:center;padding:2px 0}
 .sgMlCheck{display:flex;align-items:center;gap:6px;min-width:0;font-size:12px;cursor:pointer}
-.sgMlCheck>input{cursor:pointer;flex:none}
+.sgMlCheck>input{cursor:pointer;flex:none;margin-left:auto}
 .sgMlCheck>input:disabled{cursor:not-allowed}
 .sgMlModel{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sgMlTag{flex:none;font-size:11px;color:var(--dsw-alias-label-tertiary,#6b7280);border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.08));border-radius:4px;padding:0 4px}

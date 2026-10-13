@@ -1,16 +1,20 @@
 /**
- * dsh-session-guard — 「高峰拦截列表」模型勾选面板（设置卡片 与 状态徽标 共用）。
+ * dsh-session-guard — 「模型列表」面板（状态徽标 与 设置卡片 共用）。
  *
- * 挂载即拉取：父组件只在**展开时**挂载本面板，于是「展开区域自动获取当前模型列表」
- * 不需要额外的开关。数据来自 `GET /session-guard/models`（各路由自报的模型 + 本插件
- * 观察到的真实目标），全链路 fail-open（失败只显示提示，不影响任何会话）。
+ * 形态（v0.3.2）：
+ *   - 列表 = **DSH 当前的全部模型**（`GET /session-guard/models`：各路由自报 + 本插件观察到的
+ *     真实目标），每行一个模型，**复选框在行右侧**；
+ *   - 顶部**关键词过滤框**：按 `provider/model` 子串过滤（大小写不敏感）—— 只影响展示与
+ *     「全选」范围，**不改模型集合、也不改拦截列表**；
+ *   - **全选 / 取消全选**：作用于当前过滤结果（`bulkToggle`）；
+ *   - **勾选即联动**：经 `onCommit` 写回 `officialModelPatterns`（本线走 settingsScope；
+ *     写入是异步往返，期间禁用交互，避免连点把两次变更叠在同一份旧列表上）。
  *
- * 勾选动作与行状态都在 `model-list.ts`（纯函数、可单测）；面板只负责渲染与提交，
- * **判定与存储逻辑不变**：提交的是同一份 `officialModelPatterns` 设置项。
+ * 行状态与过滤/批量逻辑都在 `model-list.ts`（纯函数、可单测）；host 侧判定逻辑不变。
  */
 import { useEffect, useState } from 'react'
 import type { JSX } from 'react'
-import { rowHint, rowState, toggleModel } from './model-list'
+import { allCovered, bulkToggle, filterRows, rowHint, rowState, toggleModel } from './model-list'
 
 /** `GET /session-guard/models` 的一行。 */
 export interface CatalogModel {
@@ -32,8 +36,9 @@ export function ModelListPanel({ patterns, disabled = false, onCommit }: ModelLi
   const [loading, setLoading] = useState(true)
   const [models, setModels] = useState<readonly CatalogModel[]>([])
   const [error, setError] = useState<string | null>(null)
-  /** 正在写入的行：写入是异步往返，期间禁用该行，避免连点把两次变更叠在同一份旧列表上。 */
-  const [pending, setPending] = useState('')
+  const [keyword, setKeyword] = useState('')
+  /** 正在写入：写入是异步往返，期间禁用交互，避免连点把两次变更叠在同一份旧列表上。 */
+  const [pending, setPending] = useState(false)
 
   const load = async () => {
     setLoading(true)
@@ -56,18 +61,47 @@ export function ModelListPanel({ patterns, disabled = false, onCommit }: ModelLi
   }, [])
 
   // 父层的列表变了（写入生效）→ 解除 pending。
+  // 用拼接出的稳定键做依赖：父层可能传 `value.x ?? []` 这种每次渲染都新建的数组。
+  const patternKey = patterns.join('\u0000')
   useEffect(() => {
-    setPending('')
-  }, [patterns])
+    setPending(false)
+  }, [patternKey])
 
-  const rows = models.map((m) => ({ ...m, state: rowState(m.model, patterns) }))
-  const covered = rows.filter((r) => r.state.covered).length
-  const providers = [...new Set(rows.map((r) => r.provider))].sort()
+  const commit = (next: string[]) => {
+    setPending(true)
+    onCommit(next)
+  }
+
+  const filtered = filterRows(models, keyword)
+  const providers = [...new Set(filtered.map((r) => r.provider))].sort()
+  const covered = filtered.filter((r) => rowState(r.model, patterns).covered).length
+  const everyCovered = allCovered(patterns, filtered)
 
   return (
     <div className="sgMlBody">
+      <div className="sgMlFilterRow">
+        <input
+          className="sgMlInput"
+          type="text"
+          value={keyword}
+          placeholder="过滤模型（provider/model 子串）"
+          onChange={(e) => setKeyword(e.currentTarget.value)}
+        />
+        <button
+          type="button"
+          className="sgMlRefresh"
+          disabled={disabled || pending || filtered.length === 0}
+          onClick={() => commit(bulkToggle(patterns, filtered, !everyCovered))}
+          title="只作用于当前过滤结果"
+        >
+          {everyCovered ? '取消全选' : '全选'}
+        </button>
+        <button type="button" className="sgMlRefresh" disabled={loading} onClick={() => void load()} title="重新获取模型列表">
+          {loading ? '获取中…' : '刷新'}
+        </button>
+      </div>
       <div className="sgMlPatterns">
-        <span className="sgMlSentinel">关键字</span>
+        <span className="sgMlSentinel">已拦截关键字</span>
         {patterns.length === 0 ? (
           <span className="sgMlSentinel">（空：不按模型名判定）</span>
         ) : (
@@ -77,37 +111,34 @@ export function ModelListPanel({ patterns, disabled = false, onCommit }: ModelLi
             </span>
           ))
         )}
-        <button type="button" className="sgMlRefresh" disabled={loading} onClick={() => void load()} title="重新获取模型列表">
-          {loading ? '获取中…' : '刷新'}
-        </button>
       </div>
       {error !== null && <p className="sgMlHint">{error}（可稍后刷新重试）</p>}
-      {error === null && !loading && rows.length === 0 && <p className="sgMlHint">没有可枚举的模型。</p>}
-      {rows.length > 0 && (
+      {error === null && !loading && filtered.length === 0 && (
+        <p className="sgMlHint">{models.length === 0 ? '没有可枚举的模型。' : '没有匹配的模型。'}</p>
+      )}
+      {filtered.length > 0 && (
         <ul className="sgMlList">
           {providers.map((provider) => (
             <li key={provider}>
               <div className="sgMlProvider">{provider}</div>
               <ul className="sgMlList">
-                {rows
+                {filtered
                   .filter((r) => r.provider === provider)
                   .map((r) => {
-                    const locked = r.state.covered && !r.state.explicit
-                    const hint = rowHint(r.state)
+                    const state = rowState(r.model, patterns)
+                    const locked = state.covered && !state.explicit
+                    const hint = rowHint(state)
                     return (
                       <li key={`${provider}/${r.model}`} className="sgMlItem">
-                        <label className="sgMlCheck" title={locked ? hint : '加入 / 移出高峰拦截列表'}>
-                          <input
-                            type="checkbox"
-                            checked={r.state.covered}
-                            disabled={disabled || locked || pending === r.model}
-                            onChange={() => {
-                              setPending(r.model)
-                              onCommit(toggleModel(patterns, r.model))
-                            }}
-                          />
+                        <label className="sgMlCheck" title={locked ? hint : '勾选 = 加入高峰拦截列表'}>
                           <span className="sgMlModel">{r.model}</span>
                           {hint !== '' && <span className="sgMlTag">{hint}</span>}
+                          <input
+                            type="checkbox"
+                            checked={state.covered}
+                            disabled={disabled || pending || locked}
+                            onChange={() => commit(toggleModel(patterns, r.model))}
+                          />
                         </label>
                       </li>
                     )
@@ -118,11 +149,12 @@ export function ModelListPanel({ patterns, disabled = false, onCommit }: ModelLi
         </ul>
       )}
       <p className="sgMlHint">
-        勾选 = 该模型名加入列表（高峰一律拦）；默认关键字 deepseek 会把名字带 deepseek 的模型全部算进来
-        {rows.length > 0 ? `（当前 ${covered}/${rows.length} 已被拦截）` : ''}。
-        只读行是被**更宽的关键字**盖住的 —— 要放行得改「官方模型名关键字」（设置 → 插件 →
-        会话守护门禁，或 `config/session-guard.json` 的 `officialModelPatterns`），置空即关闭按模型名判定。
+        勾选 = 该模型名加入列表（高峰一律拦）；默认关键字 deepseek 会把名字带 deepseek 的模型全部算进来，
+        这些行只读 —— 要放行得改上面的「官方模型名关键字」（或 `config/session-guard.json` 的
+        `officialModelPatterns`），置空即关闭按模型名判定。
+        {filtered.length > 0 ? ` 当前 ${covered}/${filtered.length} 已拦截。` : ''}
       </p>
+      {disabled && <p className="sgMlHint">当前只读：设置命名空间不可写。</p>}
     </div>
   )
 }

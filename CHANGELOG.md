@@ -173,6 +173,18 @@ All notable changes to `dsh-session-guard` are recorded here. Versions follow se
 
 ### Fixed
 
+- **v3.1.4 — the badge is one and the same button in every phase.** `peak` / `off-peak` /
+  `weekend` now all render the *same* clickable element (`sg-status sg-status-btn <variant>`); only
+  the wording and the colour change, and the panel opens identically — the off-peak badge no longer
+  is a display-only element. The invariant lives in `badgeClassNames()` (`badge-text.ts`) and is
+  pinned by tests for all three phases.
+- **v3.1.4 — the panel now shows the real list and the real models on this line too.** Expanding
+  fetches `GET /session-guard/models` (new route: adapter-advertised models via `llm.listModels`
+  with a 3 s per-route timeout, merged with the plugin's observed targets, deduped, fail-open) plus
+  `GET /session-guard/settings` for the effective `officialModelPatterns`, and renders the models
+  grouped by provider with `●`/`○` interception state and the matching keyword. The 0.1.7 client has
+  no settingsScope, so rows are **read-only** here (the write path stays `config/session-guard.json`
+  / the settings form) and the panel says so.
 - **Switching the model now releases a held request immediately.** During peak a request whose target
   is official is held at `agent/request`; previously only the step gate and turn-level pauses were
   released when the target turned non-official, so a session whose *request* was held stayed stuck

@@ -5,9 +5,40 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { peakLabel, badgeTitle, PHASE_LABELS } from '../src/client/badge-text.ts'
+import { peakLabel, badgeTitle, badgeClassNames, PHASE_LABELS } from '../src/client/badge-text.ts'
 
 const BASE = { enabled: true, weekendMode: true, timezone: 'Asia/Shanghai' }
+
+// ── v3.1.4：高峰与谷时必须是**同一个按钮**，只有文案与配色变 ──
+
+test('badgeClassNames：三个阶段都是同一个按钮（不因状态退化）', () => {
+  const peak = badgeClassNames({ phase: 'peak' })
+  const off = badgeClassNames({ phase: 'off-peak' })
+  const weekend = badgeClassNames({ phase: 'weekend' })
+  for (const [name, cls] of [
+    ['peak', peak],
+    ['off-peak', off],
+    ['weekend', weekend],
+  ]) {
+    assert.ok(cls.startsWith('sg-status sg-status-btn '), `${name} 必须带按钮类：${cls}`)
+    assert.equal(cls.split(' ').length, 3, `${name} 的类名个数固定：${cls}`)
+  }
+  // 交互形态一致：按钮类没有任何差异，只有配色变体不同
+  assert.equal(peak.replace('sg-peak', ''), off.replace('sg-off', ''))
+  assert.equal(off.replace('sg-off', ''), weekend.replace('sg-weekend', ''))
+})
+
+test('badgeClassNames：配色变体与阶段一一对应（拦截红 / 放行绿）', () => {
+  assert.equal(badgeClassNames({ phase: 'peak' }), 'sg-status sg-status-btn sg-peak')
+  assert.equal(badgeClassNames({ phase: 'off-peak' }), 'sg-status sg-status-btn sg-off')
+  assert.equal(badgeClassNames({ phase: 'weekend' }), 'sg-status sg-status-btn sg-weekend')
+})
+
+test('文案随阶段变、交互不变：peak 与 off-peak 的类名同构，文案不同', () => {
+  const asButton = (phase) => badgeClassNames({ phase })
+  assert.equal(asButton('peak'), asButton('off-peak').replace('sg-off', 'sg-peak'))
+  assert.notEqual(peakLabel({ phase: 'peak', providerGuard: true }), peakLabel({ phase: 'off-peak' }))
+})
 
 test('peakLabel：高峰期 + 二维判定开启 → 只拦官方', () => {
   assert.equal(peakLabel({ phase: 'peak', providerGuard: true }), '高峰·拦官方')

@@ -26,12 +26,31 @@ function pickPath(root, path) {
   return cur
 }
 
+/** 单个路由的模型发现超时（毫秒）。 */
+const DISCOVERY_TIMEOUT_MS = 3000
+
+/** 超时哨兵（不是数组，调用侧的 `Array.isArray` 会自然忽略它）。 */
+const DISCOVERY_TIMEOUT = Symbol('model-discovery-timeout')
+
+/**
+ * 给模型发现加超时。
+ *
+ * `llm.listModels` 是**可能不 settle** 的外部调用（适配器里可能带网络发现）：没有超时的话
+ * `GET /session-guard/models` 会一直挂着，状态徽标面板就永远停在「获取中…」。
+ */
+function timeoutAfter(ms) {
+  return new Promise((resolve) => {
+    const t = setTimeout(() => resolve(DISCOVERY_TIMEOUT), ms)
+    if (t && typeof t.unref === 'function') t.unref()
+  })
+}
+
 /**
  * @param {object} deps
  * @param {object} deps.ctx host context（需 `get` / `settings`，两者缺失均降级）
- * @param {()=>object} deps.getSettings 读实时配置（officialProviders / officialBaseURLs）
+ * @param {()=>object} deps.getSettings 读实时配置（officialProviders / officialModelPatterns / officialBaseURLs）
  * @param {(msg:string)=>void} [deps.warn] 诊断日志
- * @returns {{classify:(providerId:string)=>{official:boolean,matchedBy:string}, describe:(providerId:string)=>object, endpointOf:(providerId:string)=>string|null, entries:()=>object[]}}
+ * @returns {{classify:(providerId:string, model?:string|null)=>{official:boolean,matchedBy:string}, describe:(providerId:string, model?:string|null)=>object, endpointOf:(providerId:string)=>string|null, entries:()=>object[], models:()=>Promise<object[]>}}
  */
 export function createProviderDirectory({ ctx, getSettings, warn }) {
   function readCfg() {
@@ -127,5 +146,42 @@ export function createProviderDirectory({ ctx, getSettings, warn }) {
     return { provider: providerId, model: model ?? null, official: r.official, matchedBy: r.matchedBy, endpoint: endpointOf(providerId) }
   }
 
-  return { classify, describe, endpointOf, entries }
+  /**
+   * 当前可用模型目录：各路由**自报**的模型（`llm.listModels`）。
+   *
+   * 给状态徽标面板（「高峰拦截列表」）勾选/查看用。逐路由独立 try/catch + 3s 超时 ——
+   * 单个路由发现失败或不 settle 只丢它自己；`llm` 服务缺失 → 空数组。模型项形状兼容
+   * `LlmModelInfo` 对象（取 `id`）与裸字符串。
+   *
+   * @returns {Promise<Array<{provider:string, model:string, source:'catalog'}>>}
+   */
+  async function models() {
+    const out = []
+    let llm
+    try {
+      llm = ctx && typeof ctx.get === 'function' ? ctx.get('llm') : null
+    } catch {
+      return out
+    }
+    if (!llm || typeof llm.listModels !== 'function') return out
+    for (const entry of entries()) {
+      const provider = entry && typeof entry.provider === 'string' ? entry.provider : ''
+      if (provider === '') continue
+      let list
+      try {
+        const raced = await Promise.race([llm.listModels(provider), timeoutAfter(DISCOVERY_TIMEOUT_MS)])
+        list = raced === DISCOVERY_TIMEOUT ? [] : raced
+      } catch (e) {
+        if (warn) warn(`model discovery failed for "${provider}": ${String(e && e.message || e)}`)
+        list = []
+      }
+      for (const item of Array.isArray(list) ? list : []) {
+        const model = typeof item === 'string' ? item : item && typeof item.id === 'string' ? item.id : ''
+        if (model !== '') out.push({ provider, model, source: 'catalog' })
+      }
+    }
+    return out
+  }
+
+  return { classify, describe, endpointOf, entries, models }
 }

@@ -34,6 +34,17 @@ export function peakLabel(status: Pick<Status, 'phase' | 'providerGuard'>): stri
   return status.providerGuard === true ? '高峰·拦官方' : '高峰·全部暂停'
 }
 
+/**
+ * 徽标的 CSS 类：**每个阶段都是同一个按钮**（`sg-status sg-status-btn` + 配色变体）。
+ *
+ * 这条不变量要钉住：高峰（拦截）与谷时/周末（放行）**只有文案与颜色变**，交互形态一致 ——
+ * 都是可点击按钮，点开同一个「高峰拦截列表」面板，绝不因为不是高峰就退化成不可点的展示元素。
+ */
+export function badgeClassNames(status: Pick<Status, 'phase'>): string {
+  const variant = status.phase === 'peak' ? 'sg-peak' : status.phase === 'weekend' ? 'sg-weekend' : 'sg-off'
+  return `sg-status sg-status-btn ${variant}`
+}
+
 /** 悬浮说明：把判定口径与当前挂起/延后数量写清楚。 */
 export function badgeTitle(status: Status): string {
   const base = `${PHASE_LABELS[status.phase]} · ${status.timezone}${status.weekendMode ? ' · 周末模式' : ''}`

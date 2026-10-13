@@ -356,6 +356,8 @@ v0.2.0 的两值判决保留兼容：`pause === (mode === PEAK)`，`reason` 仍�
 | `weekend` | 周末 | `sg-weekend` | **绿** | 周末（周末模式开启时），无视峰谷畅快跑 |
 
 - **颜色即语义（v3.1.3）**：**拦截态红、放行态绿**（边框与文字同色，走 dsh 的 `--dsw-alias-state-*` 令牌）；文案本身仍是上面那张表。
+- **高峰与谷时是同一个按钮（v3.1.4）**：**每个阶段**（`peak` / `off-peak` / `weekend`）都是同一个可点击按钮，切到谷时**只换文案与颜色**，交互形态一致 —— 点开都是同一个「高峰拦截列表」面板，不因不是高峰就退化成不可点的展示元素。类名不变量由 `badgeClassNames()`（纯函数）给出并被单测钉住：三个阶段都是 `sg-status sg-status-btn <配色变体>`。
+- **面板内容（v3.1.4）**：展开时自动拉 `GET /session-guard/models`（各路由自报的模型 + 本插件观察到的真实目标）与 `GET /session-guard/settings`（生效中的 `officialModelPatterns`），按 provider 分组列出模型，并标注当前是否被拦（`●` 拦 / `○` 放行）与命中的关键字。本线（0.1.7）客户端没有设置写入口，所以面板是**只读**的 —— 改列表走 `config/session-guard.json` 或设置表单；读不到设置时按内置默认展示并给提示。
 
 - **轮询**：每 15 秒请求 `GET /session-guard/status`，获取全局 `phase`、`providerGuard`、`held`、`deferred`、`stepHeld`（`/status` 另报 `mode`/`reason`/`windowName`/`minutesUntilPeak`/`peakTimezone`/`weekendDays`/`configFile`；`phase` 为兼容保留）；
 - **fail-open**：路由不可达、网络错误、或 `enabled` 关闭时→ 徽标静默隐藏，不影响任何会话；

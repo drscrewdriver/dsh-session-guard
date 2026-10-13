@@ -731,6 +731,25 @@ export function apply(ctx, config = {}) {
             const model = url.searchParams.get('model')
             return json(200, { ok: true, verdict: wiring.directory.describe(provider, model) })
           }
+          // GET /session-guard/models —— 当前可用模型目录（状态徽标面板的「高峰拦截列表」用）
+          // 两个来源合并：① 各路由自报的模型（llm.listModels，可能为空）② 本插件观察到的
+          // 真实目标（会话里实际用过的 provider/model，事件管道缺失时仍有兜底）。全链路 fail-open。
+          if (method === 'GET' && url.pathname === '/session-guard/models') {
+            const models = []
+            const dedup = new Set()
+            const push = (provider, model, source) => {
+              const p = typeof provider === 'string' ? provider : ''
+              const m = typeof model === 'string' ? model : ''
+              if (p === '' || m === '') return
+              const k = `${p}\u0000${m}`
+              if (dedup.has(k)) return
+              dedup.add(k)
+              models.push({ provider: p, model: m, source })
+            }
+            for (const item of await wiring.directory.models()) push(item.provider, item.model, item.source)
+            for (const [, rec] of wiring.targets.entries()) push(rec.provider, rec.model, 'seen')
+            return json(200, { ok: true, models })
+          }
           // GET /session-guard/settings
           if (method === 'GET' && url.pathname === '/session-guard/settings') {
             const cfg = readCfg()

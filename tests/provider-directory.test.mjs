@@ -18,12 +18,17 @@ function fakeCtx({ services = {}, settings } = {}) {
   }
 }
 
-/** fake llm 服务：listConfigurableProviders 返回给定目录。 */
-function fakeLlm(entries, { throwOnList = false } = {}) {
+/** fake llm 服务：listConfigurableProviders 返回给定目录；listModels 按 provider 返回模型。 */
+function fakeLlm(entries, { throwOnList = false, models = {}, throwOnModels = [], hangOnModels = [] } = {}) {
   return {
     listConfigurableProviders: () => {
       if (throwOnList) throw new Error('boom')
       return entries
+    },
+    listModels: (provider) => {
+      if (hangOnModels.includes(provider)) return new Promise(() => {})
+      if (throwOnModels.includes(provider)) return Promise.reject(new Error('discovery boom'))
+      return Promise.resolve(models[provider] ?? [])
     },
   }
 }
@@ -240,4 +245,79 @@ test('describe 带端点与 matchedBy（可解释诊断）', () => {
     matchedBy: 'unknown',
     endpoint: null,
   })
+})
+
+// ── v3.1.4：models() —— 状态徽标「高峰拦截列表」的模型目录来源 ──
+
+test('models：逐路由取 listModels（对象取 id、裸字符串也接受）', async () => {
+  const entries = [
+    { provider: 'deepseek-official', settingsNs: 'llm-deepseek', settingsPath: [] },
+    { provider: 'local', settingsNs: 'llm-local', settingsPath: [] },
+  ]
+  const ctx = {
+    get: (name) =>
+      name === 'llm'
+        ? fakeLlm(entries, {
+            models: {
+              'deepseek-official': [{ id: 'deepseek-v4-pro' }, { id: 'deepseek-flash' }, { nope: 1 }],
+              local: ['ocg/deepseek-flash', 7, ''],
+            },
+          })
+        : undefined,
+  }
+  const d = createProviderDirectory({ ctx, getSettings: () => CFG })
+  assert.deepEqual(await d.models(), [
+    { provider: 'deepseek-official', model: 'deepseek-v4-pro', source: 'catalog' },
+    { provider: 'deepseek-official', model: 'deepseek-flash', source: 'catalog' },
+    { provider: 'local', model: 'ocg/deepseek-flash', source: 'catalog' },
+  ])
+})
+
+test('models：单个路由发现失败只丢它自己（fail-open，不抛）', async () => {
+  const entries = [
+    { provider: 'a', settingsNs: 'ns-a', settingsPath: [] },
+    { provider: 'b', settingsNs: 'ns-b', settingsPath: [] },
+  ]
+  const warnings = []
+  const ctx = { get: (n) => (n === 'llm' ? fakeLlm(entries, { models: { b: ['b-model'] }, throwOnModels: ['a'] }) : undefined) }
+  const d = createProviderDirectory({ ctx, getSettings: () => CFG, warn: (m) => warnings.push(m) })
+  assert.deepEqual(await d.models(), [{ provider: 'b', model: 'b-model', source: 'catalog' }])
+  assert.match(warnings[0], /model discovery failed for "a"/)
+})
+
+test('models：listModels 不 settle → 3s 超时后只丢该路由（不挂死 HTTP 响应）', async () => {
+  const entries = [
+    { provider: 'hang', settingsNs: 'ns-h', settingsPath: [] },
+    { provider: 'ok', settingsNs: 'ns-o', settingsPath: [] },
+  ]
+  const ctx = { get: (n) => (n === 'llm' ? fakeLlm(entries, { models: { ok: ['ok-model'] }, hangOnModels: ['hang'] }) : undefined) }
+  const d = createProviderDirectory({ ctx, getSettings: () => CFG })
+  const started = Date.now()
+  const got = await d.models()
+  assert.deepEqual(got, [{ provider: 'ok', model: 'ok-model', source: 'catalog' }])
+  assert.ok(Date.now() - started < 5000, '必须在超时窗口内返回')
+})
+
+test('models：llm 缺失 / 无 listModels / 目录枚举抛错 → 空数组（绝不抛）', async () => {
+  const noLlm = createProviderDirectory({ ctx: { get: () => undefined }, getSettings: () => CFG })
+  assert.deepEqual(await noLlm.models(), [])
+
+  const bareLlm = createProviderDirectory({ ctx: { get: (n) => (n === 'llm' ? {} : undefined) }, getSettings: () => CFG })
+  assert.deepEqual(await bareLlm.models(), [])
+
+  const throwingGet = createProviderDirectory({
+    ctx: {
+      get: () => {
+        throw new Error('no inject')
+      },
+    },
+    getSettings: () => CFG,
+  })
+  assert.deepEqual(await throwingGet.models(), [])
+
+  const boom = createProviderDirectory({
+    ctx: { get: (n) => (n === 'llm' ? fakeLlm([{ provider: 'x' }], { throwOnList: true }) : undefined) },
+    getSettings: () => CFG,
+  })
+  assert.deepEqual(await boom.models(), [])
 })

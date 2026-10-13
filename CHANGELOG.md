@@ -96,6 +96,22 @@ All notable changes to `dsh-session-guard` are recorded here. Versions follow se
   `tests/time-policy.test.mjs`, `tests/config-file.test.mjs`, `tests/free-run.test.mjs`,
   `tests/free-run-isolation.test.mjs`, `tests/free-run-button-text.test.mjs`,
   `tests/date-range.test.mjs`. The suite is **397 passing** (`node --test "tests/*.test.mjs"`).
+- **v3.1.3 — new `officialModelPatterns` setting** (settings form + `config/session-guard.json` +
+  `DEFAULT_SETTINGS`, default `["deepseek"]`): the keyword/regex list behind the model-name tier.
+  Entries are compiled as regular expressions (`new RegExp(entry, 'i')`, i.e. containment), so
+  **every model whose name contains `deepseek` — including models added later — is picked up
+  automatically, with no list to maintain**. Malformed entries are skipped and reported in
+  `configFile.errors` (`… is not a valid regular expression`); an explicitly empty array disables the
+  tier; if no entry survives, the built-in default is kept.
+  **ReDoS screen**: a syntactically valid but catastrophic pattern (`(a+)+$` froze the verdict for
+  88 s on a 41-character model name) is refused at the config boundary as well
+  (`… is not a safe regular expression (too long or catastrophic backtracking)`), and the matching
+  side skips such entries — a pattern that nests a quantifier inside a quantified group, or exceeds
+  200 characters, never reaches the request path. Residual risk: overlapping alternation (`(a|a)+`)
+  is not detected. The screen plus a compiled-regex cache live in `provider.js`
+  (`isUnsafePattern`, `MAX_PATTERN_LENGTH`); `configFile.errors` carries the exact entry.
+  Note that containment is literal: any id that merely contains the keyword matches
+  (`my-deepseek-proxy`, and models on relays as described above).
 
 ### Changed
 
@@ -140,6 +156,20 @@ All notable changes to `dsh-session-guard` are recorded here. Versions follow se
   itself is global and unchanged by free-run.
 - **No more hardcoding**: changing peak hours, timezone, weekday limits or the weekend rule is just
   editing the config file (or the auto-generated form).
+- **v3.1.3 — the official-source verdict now also looks at the model name.** A new tier sits directly
+  after the explicit `officialProviders` list: if the request's **`model`** matches
+  `officialModelPatterns` (regex source, default `["deepseek"]`, containment semantics,
+  case-insensitive), the target counts as official — **whichever route serves it**. A relay or local
+  provider forwarding `ocg/deepseek-flash` is peak-priced like the official endpoint, so it is now
+  held too; `matchedBy` reports `model-pattern`. Consequences worth knowing: the documented
+  "`deepseek-official` pointed at a relay is not blocked" rule now only holds when the model name
+  does not match a keyword, and a `model/selection` switch to a deepseek-named model **no longer
+  releases** a held request (switch to a non-matching model, or set `officialModelPatterns: []` to
+  disable the tier entirely). New: `matchesModelPattern()`, `BUILTIN_OFFICIAL_MODEL_PATTERNS`, the
+  `model` parameter on `directory.classify()`/`describe()`, and `GET /session-guard/provider?provider=<id>&model=<name>`.
+- **v3.1.3 — status badge colours follow the verdict**: blocking phases (peak, both modes) render
+  **red** (`--dsw-alias-state-error-primary`), allowing phases (`off-peak`, `weekend`) render
+  **green** (`--dsw-alias-state-success-primary`); wording is unchanged.
 
 ### Fixed
 

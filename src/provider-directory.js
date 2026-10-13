@@ -105,23 +105,26 @@ export function createProviderDirectory({ ctx, getSettings, warn }) {
   }
 
   /**
-   * 判定某路由是否官方源（端点优先 + id 兜底）。
+   * 判定某路由 + 模型是否官方源（模型名关键字 → 端点 → id 兜底）。
    * @param {string} providerId
-   * @returns {{official:boolean, matchedBy:'explicit'|'endpoint'|'endpoint-default'|'route-id'|'unknown'}}
+   * @param {string|null} [model] 这次请求真正要用的模型名（判定「名字带 deepseek」用）
+   * @returns {{official:boolean, matchedBy:'explicit'|'model-pattern'|'endpoint'|'endpoint-default'|'route-id'|'unknown'}}
    */
-  function classify(providerId) {
+  function classify(providerId, model) {
     const cfg = readCfg()
     return classifyProvider(providerId, {
+      model,
       endpoint: endpointOf(providerId),
       officialProviders: cfg.officialProviders,
+      officialModelPatterns: cfg.officialModelPatterns,
       officialHosts: cfg.officialBaseURLs,
     })
   }
 
   /** 带可解释信息的判定结果（日志 / 路由诊断用）。 */
-  function describe(providerId) {
-    const r = classify(providerId)
-    return { provider: providerId, official: r.official, matchedBy: r.matchedBy, endpoint: endpointOf(providerId) }
+  function describe(providerId, model) {
+    const r = classify(providerId, model)
+    return { provider: providerId, model: model ?? null, official: r.official, matchedBy: r.matchedBy, endpoint: endpointOf(providerId) }
   }
 
   return { classify, describe, endpointOf, entries }

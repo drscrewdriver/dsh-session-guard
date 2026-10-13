@@ -29,6 +29,7 @@ import {
   parseDays,
 } from './time-policy.js'
 import { parseHHMM } from './time.js'
+import { BUILTIN_OFFICIAL_MODEL_PATTERNS, isUnsafePattern } from './provider.js'
 
 /** 配置文件基名（spec §一）。 */
 export const CONFIG_FILE_NAME = 'session-guard.json'
@@ -237,6 +238,43 @@ function normalizeStringList(value, field, errors) {
 }
 
 /**
+ * 关键字/正则名单的过滤（`officialModelPatterns` 专用）。
+ *
+ * 每项按正则源码编译（判定侧同样是 `new RegExp(entry, 'i')`）；编译失败的项**不生效**
+ * 但也不让整份配置失效 —— 记进 `errors`，其余条目照常生效。一条都不剩就退回默认。
+ *
+ * @param {string[]} list
+ * @param {string} field 报错里显示的字段名
+ * @param {string[]} errors 追加错误
+ * @returns {string[]} 可用的正则源码数组（全坏则返回内置默认）
+ */
+function validPatterns(list, field, errors) {
+  // 显式空数组是合法意图（= 关闭「按模型名判官方」），照抄 `normalizeStringList` 的语义。
+  if (list.length === 0) return []
+  const out = []
+  for (const item of list) {
+    // 两类都在配置边界拦下：① 语法错 ② 合法但会灾难性回溯（见 provider.isUnsafePattern）。
+    // 判定侧同样会跳过这两类 —— 这里只是把它们变成可见的配置错误。
+    try {
+      new RegExp(item)
+    } catch {
+      errors.push(`${field} entry ${JSON.stringify(item)} is not a valid regular expression — ignored`)
+      continue
+    }
+    if (isUnsafePattern(item)) {
+      errors.push(`${field} entry ${JSON.stringify(item)} is not a safe regular expression (too long or catastrophic backtracking) — ignored`)
+      continue
+    }
+    out.push(item)
+  }
+  if (out.length === 0) {
+    errors.push(`${field} has no valid entry — default kept`)
+    return [...BUILTIN_OFFICIAL_MODEL_PATTERNS]
+  }
+  return out
+}
+
+/**
  * 把 `config/session-guard.json` 的形态转成插件内部的**扁平设置形态**
  * （可直接作为 cordis settings 的 base 层）。
  *
@@ -309,6 +347,10 @@ export function normalizeConfig(raw) {
   if (raw.officialProviders !== undefined) {
     const list = normalizeStringList(raw.officialProviders, 'officialProviders', errors)
     if (list !== undefined) settings.officialProviders = list
+  }
+  if (raw.officialModelPatterns !== undefined) {
+    const list = normalizeStringList(raw.officialModelPatterns, 'officialModelPatterns', errors)
+    if (list !== undefined) settings.officialModelPatterns = validPatterns(list, 'officialModelPatterns', errors)
   }
   if (raw.officialBaseURLs !== undefined) {
     const list = normalizeStringList(raw.officialBaseURLs, 'officialBaseURLs', errors)

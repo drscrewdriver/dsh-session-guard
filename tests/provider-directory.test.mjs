@@ -220,8 +220,24 @@ test('describe 带端点与 matchedBy（可解释诊断）', () => {
   const d = createProviderDirectory({ ctx, getSettings: () => CFG })
   assert.deepEqual(d.describe('deepseek-official'), {
     provider: 'deepseek-official',
+    model: null,
     official: true,
     matchedBy: 'endpoint',
     endpoint: 'https://api.deepseek.com',
+  })
+  // 带模型名时同口径：中转路由 + 名字带 deepseek 的模型 → 官方（模型名先于端点判定）
+  assert.deepEqual(d.describe('my-relay', 'ocg/deepseek-flash'), {
+    provider: 'my-relay',
+    model: 'ocg/deepseek-flash',
+    official: true,
+    matchedBy: 'model-pattern',
+    endpoint: null,
+  })
+  assert.deepEqual(d.describe('my-relay', 'qwen3.5-flash'), {
+    provider: 'my-relay',
+    model: 'qwen3.5-flash',
+    official: false,
+    matchedBy: 'unknown',
+    endpoint: null,
   })
 })

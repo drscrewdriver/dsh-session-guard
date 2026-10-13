@@ -294,12 +294,46 @@ test('v3.1.2 回归：高峰 hold 中切到非官方源 → 立即放行并按�
   await assertPending(held)
   assert.equal(h.wiring.deferrals.has('s1'), true)
 
-  h.wiring.onSessionEvent({ id: 's1' }, { type: 'model/selection', data: { provider: 'local', model: 'ocg/deepseek-flash', reasoningEffort: 'max' } })
+  h.wiring.onSessionEvent({ id: 's1' }, { type: 'model/selection', data: { provider: 'local', model: 'ocg/glm-5.3-flash', reasoningEffort: 'max' } })
   const cfg = await held
   assert.equal(cfg.provider, 'local', '必须放行（现场表现为卡死 50s 后只能点停止）')
-  assert.equal(cfg.model, 'ocg/deepseek-flash')
+  assert.equal(cfg.model, 'ocg/glm-5.3-flash')
   assert.equal(cfg.reasoningEffort, 'max', 'reasoningEffort 也要跟随新选择')
   assert.equal(h.wiring.deferrals.size(), 0)
+})
+
+test('v3.1.3：切到非官方路由、但模型名带 deepseek → 仍算官方（不放行）', async () => {
+  const h = harness()
+  h.wiring.installGuard()
+  const held = h.listeners['agent/request'](REQ_PAYLOAD, async () => OFFICIAL_CFG)
+  await assertPending(held)
+  // 中转/本地源转发 deepseek 模型同样吃官方计费 → 默认关键字命中 → 继续挂起
+  h.wiring.onSessionEvent({ id: 's1' }, { type: 'model/selection', data: { provider: 'local', model: 'ocg/deepseek-flash' } })
+  await assertPending(held)
+  h.wiring.dispose()
+  await assert.rejects(held, /disposed/)
+})
+
+test('v3.1.3：officialModelPatterns 置空 → 关闭「按模型名判官方」，只按 provider 判', async () => {
+  const h = harness({ cfg: { officialModelPatterns: [] } })
+  h.wiring.installGuard()
+  const held = h.listeners['agent/request'](REQ_PAYLOAD, async () => OFFICIAL_CFG)
+  await assertPending(held)
+  h.wiring.onSessionEvent({ id: 's1' }, { type: 'model/selection', data: { provider: 'local', model: 'ocg/deepseek-flash' } })
+  const cfg = await held
+  assert.equal(cfg.provider, 'local', '关掉关键字后，deepseek 名字不再算官方 → 放行')
+})
+
+test('v3.1.3：shouldPauseSession 也用模型名判定（本地路由 + deepseek 模型 → 暂停）', () => {
+  const h = harness()
+  h.wiring.targets.update('s1', { type: 'model/selection', data: { provider: 'local', model: 'ocg/deepseek-flash' } })
+  assert.equal(
+    h.wiring.shouldPauseSession({ ...BASE_CFG }, 's1'),
+    true,
+    '名字带 deepseek 的模型在哪条路由上都算官方 → 入峰/step 门同样要拦',
+  )
+  h.wiring.targets.update('s2', { type: 'model/selection', data: { provider: 'local', model: 'ocg/glm-5.3-flash' } })
+  assert.equal(h.wiring.shouldPauseSession({ ...BASE_CFG }, 's2'), false)
 })
 
 test('v3.1.2 回归：切到非官方源但没带 effort → 清掉继承的 effort（对齐宿主 installModelSelection）', async () => {

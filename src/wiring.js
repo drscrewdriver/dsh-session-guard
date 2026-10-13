@@ -202,7 +202,9 @@ export function createWiring({
     const cfg = safeCfg()
     if (cfg.providerGuard !== true || cfg.deferredResume === false) return { releasedHold: false, resumed: false }
     if (!shouldPause(cfg, clock()).pause) return { releasedHold: false, resumed: false }
-    const cls = directory.classify(rec.provider)
+    // 判定与请求级守卫同口径：带上 model（名字带 deepseek 的模型在哪条路由上都算官方，
+    // 因此「切到本地源 + deepseek 模型」不会被误放行）。
+    const cls = directory.classify(rec.provider, rec.model)
     if (cls.official) return { releasedHold: false, resumed: false }
     // 请求级 hold：放行 + 重路由到这次选择（幂等，无 hold 时 no-op）
     const releasedHold = deferrals.release(sessionId, 'non-official', (config) => applyTarget(config, rec))
@@ -244,10 +246,9 @@ export function createWiring({
     // 畅跑（单会话限时豁免）优先级最高：窗口内一律不拦。
     if (freeRunAllows(sessionId)) return false
     if (cfg.providerGuard !== true) return true // 退回现有纯时间判定：全部暂停
-    const provider = targets.providerOf(sessionId)
-    if (provider === UNKNOWN) return true // 未知保守处理
-    const cls = directory.classify(provider)
-    return cls.official
+    const rec = targets.get(sessionId)
+    if (rec === null || rec.provider === UNKNOWN) return true // 未知保守处理
+    return directory.classify(rec.provider, rec.model).official
   }
 
   /** 入峰：暂停 running 会话（跳过已 hold / 目标非官方 / 畅跑生效中）。 */

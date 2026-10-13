@@ -723,11 +723,13 @@ export function apply(ctx, config = {}) {
             res.on?.('close', cleanup)
             return undefined
           }
-          // GET /session-guard/provider?provider=<id> —— 官方判定诊断（排查误判用）
+          // GET /session-guard/provider?provider=<id>[&model=<name>] —— 官方判定诊断（排查误判用）
+          // 带上 model 才能复现「按模型名判官方」这一层（默认关键字 deepseek）。
           if (method === 'GET' && url.pathname === '/session-guard/provider') {
             const provider = url.searchParams.get('provider') ?? ''
             if (!provider) return json(400, { ok: false, error: 'missing provider' })
-            return json(200, { ok: true, verdict: wiring.directory.describe(provider) })
+            const model = url.searchParams.get('model')
+            return json(200, { ok: true, verdict: wiring.directory.describe(provider, model) })
           }
           // GET /session-guard/settings
           if (method === 'GET' && url.pathname === '/session-guard/settings') {

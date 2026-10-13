@@ -256,6 +256,67 @@ test('restoreInput 抛错 → 判定不受影响（仍 reject / 仍抛 PEAK_DEFE
   await assert.rejects(h2.call(PAYLOAD), (e) => e.code === PEAK_DEFERRED_CODE)
 })
 
+// ── v3.1.3：判定必须带上 model（模型名关键字层）──
+
+test('守卫把 config.model 传给目录判定（模型名关键字层的前提）', async () => {
+  const seen = []
+  const h = harness({
+    classify: (id, model) => {
+      seen.push([id, model])
+      return { official: false, matchedBy: 'unknown' }
+    },
+  })
+  const cfg = { provider: 'local', model: 'ocg/glm-5.3-flash' }
+  assert.equal(await h.call(PAYLOAD, cfg), cfg)
+  assert.deepEqual(seen, [['local', 'ocg/glm-5.3-flash']])
+})
+
+test('守卫（真实目录）：本地路由 + 名字带 deepseek 的模型 → 被 hold，不再「非官方放行」', async () => {
+  const { createProviderDirectory } = await import('../src/provider-directory.js')
+  let listener = null
+  const ctx = {
+    on: (_n, fn) => {
+      listener = fn
+      return () => {
+        listener = null
+      }
+    },
+    get: () => undefined,
+  }
+  const deferrals = createDeferrals({ maxHoldMs: 0 })
+  const guard = createRequestGuard({
+    ctx,
+    getSettings: () => BASE_CFG,
+    directory: createProviderDirectory({ ctx, getSettings: () => BASE_CFG }),
+    deferrals,
+    logger: silent,
+    clock: PEAK_NOW,
+  })
+  guard.install()
+  const p = listener({ agent: { id: 's1' }, turn: 1, step: 0 }, async () => ({
+    provider: 'local',
+    model: 'ocg/deepseek-flash',
+  }))
+  await assertPending(p)
+  assert.equal(deferrals.has('s1'), true, '名字带 deepseek → 官方 → hold')
+  deferrals.releaseAll('test')
+  await p
+})
+
+test('守卫：目标追踪发生在判定之后（recordTarget 会触发放行/恢复，不能先于判定）', async () => {
+  const order = []
+  const h = harness({
+    classify: (id, model) => {
+      order.push(`classify:${id}/${model}`)
+      return { official: false, matchedBy: 'endpoint' }
+    },
+    recordTarget: (id, provider, model) => order.push(`record:${id}/${provider}/${model}`),
+  })
+  const cfg = { provider: 'local', model: 'ocg/glm-5.3-flash' }
+  assert.equal(await h.call(PAYLOAD, cfg), cfg)
+  assert.deepEqual(order, ['classify:local/ocg/glm-5.3-flash', 'record:s1/local/ocg/glm-5.3-flash'])
+})
+
 // ── task_12：error 路径 ──
 test('deferredMode=error → 抛 PEAK_DEFERRED + 调 stopNextTurn + 记延后', async () => {
   const h = harness({ cfg: { deferredMode: 'error' } })

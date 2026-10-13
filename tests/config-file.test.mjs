@@ -344,6 +344,9 @@ test('0.1.7 声明式设置：Config 导出 schema，volatile 字段解析成 li
     value.peakWindows.map((w) => w.name),
     ['morning', 'afternoon'],
   )
+  // v3.1.3：模型名关键字默认「deepseek」——所有名字带 deepseek 的模型自动算官方
+  assert.deepEqual(value.officialModelPatterns, ['deepseek'])
+  assert.equal(typeof raw.officialModelPatterns.get, 'function', 'officialModelPatterns 应是 volatile ref')
 })
 
 // ── 回归：提供方守卫字段必须能从配置文件设置 ──
@@ -383,6 +386,47 @@ test('normalizeConfig：officialBaseURLs 与 providerGuard 同样支持', () => 
   const bad = normalizeConfig({ providerGuard: 'yes' })
   assert.equal('providerGuard' in bad.settings, false)
   assert.match(bad.errors[0], /providerGuard must be a boolean/)
+})
+
+// ── v3.1.3：officialModelPatterns（模型名关键字/正则，「名字带 deepseek」自动算官方）──
+
+test('normalizeConfig：officialModelPatterns 读入并去空白', () => {
+  const r = normalizeConfig({ officialModelPatterns: [' deepseek ', '^my-'] })
+  assert.deepEqual(r.settings.officialModelPatterns, ['deepseek', '^my-'])
+  assert.deepEqual(r.errors, [])
+})
+
+test('normalizeConfig：officialModelPatterns 显式空数组是合法意图（关闭按模型名判官方）', () => {
+  const r = normalizeConfig({ officialModelPatterns: [] })
+  assert.deepEqual(r.settings.officialModelPatterns, [])
+  assert.deepEqual(r.errors, [])
+})
+
+test('normalizeConfig：officialModelPatterns 非法正则 → 记错误、跳过该项、其余照常生效', () => {
+  const r = normalizeConfig({ officialModelPatterns: ['[', 'deepseek'] })
+  assert.deepEqual(r.settings.officialModelPatterns, ['deepseek'])
+  assert.match(r.errors[0], /officialModelPatterns entry "\[" is not a valid regular expression/)
+})
+
+test('normalizeConfig：officialModelPatterns 灾难性回溯写法 → 同样在配置边界被拒', () => {
+  const r = normalizeConfig({ officialModelPatterns: ['(a+)+$', 'deepseek'] })
+  assert.deepEqual(r.settings.officialModelPatterns, ['deepseek'], '指数级写法不得进入生效名单')
+  assert.match(r.errors[0], /catastrophic backtracking/)
+})
+
+test('normalizeConfig：officialModelPatterns 全非法 / 形状不对 → 报错并保留默认', () => {
+  const allBad = normalizeConfig({ officialModelPatterns: ['('] })
+  assert.deepEqual(
+    allBad.settings.officialModelPatterns,
+    ['deepseek'],
+    '一条可用正则都没有 → 退回内置默认（deepseek 仍然自动匹配）',
+  )
+  assert.match(allBad.errors[0], /is not a valid regular expression/)
+  assert.match(allBad.errors[1], /has no valid entry — default kept/)
+
+  const notArray = normalizeConfig({ officialModelPatterns: 'deepseek' })
+  assert.equal('officialModelPatterns' in notArray.settings, false)
+  assert.match(notArray.errors[0], /officialModelPatterns must be an array of strings/)
 })
 
 test('loadConfigFile：真实文件里的 officialProviders 能被读出（端到端）', () => {

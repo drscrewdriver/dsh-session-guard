@@ -85,7 +85,7 @@
 - **畅跑（free-run）**：输入区一个「畅跑」按钮，给**单个会话**排一段或几段限时豁免——窗口内无视峰谷照常跑，到点自动结束并回到常规峰谷判定；排期落盘，重启不丢。
 - **周末模式**：识别周末（基于配置时区 `Intl.DateTimeFormat`，不踩裸 `getUTCDay()` 的北京边界 8 小时 bug）→ 周末无视峰谷、畅快跑。
 - **高峰自动暂停（全局）**：进入高峰（且非周末）时，对所有 running root session 自动暂停；退峰只自动恢复**本插件暂停的**会话（手动 `/pause` 的不动）——**全局开关，无需手动**。
-- **官方源二维判定（providerGuard）**：高峰期**只在请求目标是 DeepSeek 官方源时**才拦；用本地/第三方 provider（如 `local-35b`）照常跑，不受高峰门影响。判定口径 = 显式 id 名单 → `baseURL` 端点 → catalog 默认端点 → 内置 id。
+- **官方源二维判定（providerGuard）**：高峰期**只在请求目标是 DeepSeek 官方源时**才拦；用本地/第三方 provider（如 `local-35b`）照常跑，不受高峰门影响。判定口径 = 显式 id 名单 → **模型名关键字（默认 `deepseek`）** → `baseURL` 端点 → catalog 默认端点 → 内置 id。
 - **请求级兜底 + 延后队列**：入峰后才启动的会话、会话中途被切到官方源的情况，由 `agent/request` 请求级守卫拦住（默认 `hold`：请求挂起不报错，退峰自动放行）。
 - **会话级冻结 / 恢复**：`sessionGuard` 冗余端口 + `POST /session-guard/rpc`，input-traffic 冻结按钮逐会话透传接入；也提供 `/pause /resume /cancel` 手动命令。
 - **后端自动重试（D9）**：turn/end 瞬时失败（error/429/max-tokens）自适应退避自动续跑；永久失败停止；**冻结/门控期间让路**，绝不绕过会话门。
@@ -156,7 +156,7 @@ dsh plugin --profile web add dsh-session-guard@dsh-0.1.2
 - `peakWindows`（默认 09:00–12:00 / 14:00–18:00，工作日）——峰谷窗口与周末策略的权威来源现在是配置文件 `config/session-guard.json`；表单里改过的值仍是最高优先级；
 - `pauseMode`（`safe`/`force`）、`pauseReason`（`wait`/`stop`）——暂停推进方式；
 - `stepGateTimeoutMs`（默认 300000）——step 门挂起超时；到期释放门并**升级为回合级暂停**（防死锁，不会形成「每 5 分钟一个 step」的 token 滴漏）；
-- 官方源判定：`officialProviders`（追加官方 provider id，逗号分隔，优先级最高）、`officialBaseURLs`（官方端点 host 名单，默认 `api.deepseek.com`）；
+- 官方源判定：`officialProviders`（追加官方 provider id，逗号分隔，优先级最高）、`officialModelPatterns`（**官方模型名关键字**，正则源码、包含语义、大小写不敏感，默认 `["deepseek"]` —— 名字带 deepseek 的模型自动算官方，含将来新增的；`[]` = 关闭该层）、`officialBaseURLs`（官方端点 host 名单，默认 `api.deepseek.com`）；
 - 延后队列：`deferredMode`（`hold` 挂起等待 / `error` 报错并延后）、`deferredResumeText`（退峰续跑文案）、`deferredMaxHoldMs`（挂起上限，默认 6 小时，到期转 error）；
 - 重试参数：`retryText`、`retryGraceMs`、`retryCooldownMs`、`retryBackoffFactor`、`retryBackoffMaxMs`、`retryMaxConsecutive`。
 
@@ -348,12 +348,14 @@ v0.2.0 的两值判决保留兼容：`pause === (mode === PEAK)`，`reason` 仍�
 
 输入区右侧显示一个**纯展示**状态徽标，实时反映当前所处阶段：
 
-| 阶段 | 徽标文案 | CSS 类 | 含义 |
-|---|---|---|---|
-| `peak`（二维判定开） | 高峰·拦官方 | `sg-peak` | 高峰期，只拦 DeepSeek 官方源请求 |
-| `peak`（二维判定关） | 高峰·全部暂停 | `sg-peak` | 高峰期，全部会话暂停 |
-| `off-peak` | 谷时 | `sg-off` | 非高峰时段，会话正常运行 |
-| `weekend` | 周末 | `sg-weekend` | 周末（周末模式开启时），无视峰谷畅快跑 |
+| 阶段 | 徽标文案 | CSS 类 | 颜色 | 含义 |
+|---|---|---|---|---|
+| `peak`（二维判定开） | 高峰·拦官方 | `sg-peak` | **红**（`state-error`） | 高峰期，只拦 DeepSeek 官方源请求 |
+| `peak`（二维判定关） | 高峰·全部暂停 | `sg-peak` | **红** | 高峰期，全部会话暂停 |
+| `off-peak` | 谷时 | `sg-off` | **绿**（`state-success`） | 非高峰时段，会话正常运行 |
+| `weekend` | 周末 | `sg-weekend` | **绿** | 周末（周末模式开启时），无视峰谷畅快跑 |
+
+- **颜色即语义（v3.1.3）**：**拦截态红、放行态绿**（边框与文字同色，走 dsh 的 `--dsw-alias-state-*` 令牌）；文案本身仍是上面那张表。
 
 - **轮询**：每 15 秒请求 `GET /session-guard/status`，获取全局 `phase`、`providerGuard`、`held`、`deferred`、`stepHeld`（`/status` 另报 `mode`/`reason`/`windowName`/`minutesUntilPeak`/`peakTimezone`/`weekendDays`/`configFile`；`phase` 为兼容保留）；
 - **fail-open**：路由不可达、网络错误、或 `enabled` 关闭时→ 徽标静默隐藏，不影响任何会话；
@@ -368,16 +370,19 @@ v0.2.0 的两值判决保留兼容：`pause === (mode === PEAK)`，`reason` 仍�
 | 优先级 | 依据 | `matchedBy` | 例子 |
 |---|---|---|---|
 | 1 | `officialProviders` 显式 id 名单 | `explicit` | 用户把自建网关声明为官方 |
-| 2 | 实时 `baseURL` 归一化后的 host | `endpoint` | `deepseek-official` 改到中转 → **不拦** |
-| 3 | catalog 内置默认端点 | `endpoint-default` | pi-ai 的 `deepseek` 路由默认就打官方 API → **拦** |
-| 4 | 内置 id 名单（`deepseek-official`） | `route-id` | 读不到端点时的兜底 |
-| 5 | 其他 | `unknown` | 非官方，放行 |
+| 2 | **模型名关键字**（`officialModelPatterns`，默认 `deepseek`，按正则判包含） | `model-pattern` | 本地/中转源转发 `ocg/deepseek-flash` → **拦**（同样吃官方计费） |
+| 3 | 实时 `baseURL` 归一化后的 host | `endpoint` | `deepseek-official` 改到中转且模型名不含 deepseek → **不拦** |
+| 4 | catalog 内置默认端点 | `endpoint-default` | pi-ai 的 `deepseek` 路由默认就打官方 API → **拦** |
+| 5 | 内置 id 名单（`deepseek-official`） | `route-id` | 读不到端点时的兜底 |
+| 6 | 其他 | `unknown` | 非官方，放行 |
 
-- **端点优先于 id**：同名 `deepseek-official` 但把 `baseURL` 指向中转的配置**不会**被误拦；反过来，pi-ai 内置 `deepseek` 路由的默认端点就是官方 API，**不会**被漏拦。
+- **模型名关键字先于端点（v3.1.3）**：判定依据是这次请求真正要用的 **`model`** —— 名字里带 `deepseek`（默认关键字，正则、大小写不敏感、包含语义）的模型，**无论跑在哪条路由上**都算官方。将来新增的 `deepseek-*` 模型自动纳入，不需要维护名单；要放行某类名字，把 `officialModelPatterns` 收窄或置空（`[]` = 关闭该层）。**包含即命中**：`my-deepseek-proxy` 这种只是名字带关键字的 id 同样会被拦。
+- **关键字安全线（v3.1.3）**：正则条目在配置边界做静态筛查 —— 语法错、超长（>200 字符）、以及「量词套在已含量词的组上」这类**灾难性回溯**写法（`(a+)+$` 实测能卡死判定 88s）一律被拒并记进 `configFile.errors`，判定侧也跳过它们。残留风险：分支重叠的交替（如 `(a|a)+`）识别不出来，别在关键字里写这种。
+- **端点优先于 id**：同名 `deepseek-official` 但把 `baseURL` 指向中转、且模型名不含关键字的配置**不会**被误拦；反过来，pi-ai 内置 `deepseek` 路由的默认端点就是官方 API，**不会**被漏拦。
 - **端点来源**：`ctx.get('llm').listConfigurableProviders()` 找目录条目 → `ctx.settings.get(settingsNs)` 按 `settingsPath` 读 `baseURL`（只读非密字段，绝不读 `apiKeyEnv` 的值）。每次请求实时算、不缓存 → provider 配置热改立即生效。
 - **目标转非官方即恢复**：高峰暂停后把该会话切到本地/第三方 provider（0.1.2+ 的 `model/selection` 事件）→ 自动恢复该会话（受 `deferredResume` 约束）；只恢复本插件因入峰暂停的会话，**不会**碰用户手动 `/pause` 的会话。**请求级 hold 也一起放行**，并按新选择重路由（provider/model + 该次选择的 `reasoningEffort`），否则切到本地源也会被挂在官方请求上、只能干等退峰。0.1.1 无该事件 → 退化为「下次请求或手动 `/resume`」。
 - **取不到端点**：`llm` 服务缺失、命名空间结构变化、字段非字符串——一律降级为 id / 内置端点判定并记 `matchedBy`，**绝不抛出**。
-- **排查误判**：`GET /session-guard/provider?provider=<id>` 返回 `{ official, matchedBy, endpoint }`。
+- **排查误判**：`GET /session-guard/provider?provider=<id>&model=<name>` 返回 `{ provider, model, official, matchedBy, endpoint }`（带 `model` 才能复现模型名关键字这一层）。
 
 ### 请求级守卫与延后队列
 
@@ -496,7 +501,7 @@ npm test   # node --test "tests/*.test.mjs"（397 通过：时区/峰谷策略/�
 | `src/time-policy.js` | **时间策略解析器（`TimePolicyResolver`）**：三模式判定（OFF_PEAK / PEAK / NORMAL）+ 配置文件解析与归一化（`peakPolicy` / `weekendPolicy`）+ IANA 时区校验 |
 | `src/config-file.js` | **`config/session-guard.json` 加载**：四级搜索顺序、归一化、坏值收集到 `errors`（永不抛异常，fail-open） |
 | `src/scheduler.js` | 纯状态机 NORMAL ↔ PAUSED_PEAK |
-| `src/provider.js` | 官方源五级判定（纯函数：端点归一化 + 判定矩阵） |
+| `src/provider.js` | 官方源六级判定（纯函数：端点归一化 + 模型名关键字正则 + 判定矩阵） |
 | `src/provider-directory.js` | 端点目录（`llm.listConfigurableProviders` + `settings.get`，全链路降级） |
 | `src/deferrals.js` | 延后登记表（hold 挂起 / 释放（可按新目标重路由）/ 超限 / 拒绝前 `onReject` 回调 / `PeakDeferredError`） |
 | `src/request-guard.js` | `agent/request` 请求级守卫（hold / error 两模式；两路收场都先把未落库输入还回队列） |

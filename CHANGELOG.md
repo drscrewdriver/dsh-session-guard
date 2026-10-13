@@ -34,6 +34,9 @@ All notable changes to `dsh-session-guard` are recorded here. Versions follow se
 
 ### Changed
 
+- **v0.3.2 — 徽标在所有阶段都是同一个按钮**：`peak` / `off-peak` / `weekend` 渲染同一个可点击元素
+  （`sg-status sg-status-btn <配色变体>`），只有文案与配色随阶段变，展开的面板完全一致 —— 谷时不会
+  退化成不可点的展示元素。不变量收进 `badgeClassNames()`（`badge-text.ts`）并由三个阶段各自单测钉住。
 - **官方源判定顺序**：`explicit` → **`model-pattern`** → `endpoint` → `endpoint-default` → `route-id`
   → `unknown`。文档里「`deepseek-official` 指向中转就不拦」的口径**只在模型名不含关键字时成立**：
   `deepseek-official` + `deepseek-v4-pro` 走中转现在也会被拦（名字即计费口径）。

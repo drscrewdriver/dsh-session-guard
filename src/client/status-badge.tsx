@@ -11,7 +11,7 @@
  */
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
-import { badgeTitle, peakLabel, type Status } from './badge-text'
+import { badgeClassNames, badgeTitle, peakLabel, type Status } from './badge-text'
 import { ModelListPanel } from './model-panel'
 import { injectClientCss } from './styles'
 
@@ -65,15 +65,14 @@ export function StatusBadge({ sessionId, scope }: StatusBadgeProps) {
 
   if (!status || !status.enabled) return null
 
-  const cls = status.phase === 'peak' ? 'sg-peak' : status.phase === 'weekend' ? 'sg-weekend' : 'sg-off'
   const patterns = (snapshot.value as BadgeConfig | undefined)?.officialModelPatterns ?? []
   const readonly = snapshot.status === 'unavailable' || snapshot.writable !== true
   return (
     <div className="sg-status-root">
       <button
         type="button"
-        className={`sg-status sg-status-btn ${cls}`}
-        title={`${badgeTitle(status)} — 点击展开「高峰拦截列表」`}
+        className={badgeClassNames(status)}
+        title={`${badgeTitle(status)} — 点击展开/收起「高峰拦截列表」`}
         aria-expanded={open}
         data-sg-phase={status.phase}
         data-sg-provider-guard={status.providerGuard === true ? 'on' : 'off'}

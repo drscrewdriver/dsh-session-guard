@@ -297,6 +297,7 @@ v0.2.0 的两值判决保留兼容：`pause === (mode === PEAK)`，`reason` 仍�
 | `weekend` | 周末 | `sg-weekend` | **绿** | 周末（周末模式开启时），无视峰谷畅快跑 |
 
 - **颜色即语义**：**拦截态红、放行态绿**（边框与文字同色，走 dsh 的 `--dsw-alias-state-*` 令牌）；
+- **高峰与谷时是同一个按钮（v0.3.2）**：**每个阶段**（`peak` / `off-peak` / `weekend`）都是同一个可点击按钮，切到谷时只换文案与颜色，交互形态一致 —— 点开都是同一个「高峰拦截列表」面板，不因不是高峰就退化成不可点的展示元素。类名不变量由 `badgeClassNames()`（纯函数）给出并被单测钉住；
 - **徽标即按钮**：点开的面板列出当前模型（来源 `GET /session-guard/models`：各路由自报的模型 + 本插件观察到的真实目标），按 provider 分组；**勾选 = 该模型名加入列表**（高峰一律拦），取消勾选 = 删掉同名条目；被更宽关键字（默认 `deepseek`）盖住的行显示为只读并提示是哪个关键字 —— 那种情况改关键字，而不是逐个模型取消。面板与「插件配置 → 会话守护门禁」里的同名区块共用同一套逻辑（`src/client/model-list.ts` 纯函数），**判定与存储逻辑不变**：写的都是同一个设置项；
 - **轮询**：每 15 秒请求 `GET /session-guard/status`，获取全局 `phase`、`providerGuard`、`held`、`deferred`、`stepHeld`（v0.3.0 起 `/status` 另报 `mode`/`reason`/`windowName`/`minutesUntilPeak`/`peakTimezone`/`weekendDays`/`configFile`；`phase` 为兼容保留）；
 - **fail-open**：路由不可达、网络错误、或 `enabled` 关闭时→ 徽标静默隐藏，不影响任何会话；面板拿不到模型目录时只显示提示；**没有 settingsScope（旧宿主）时面板只读**；

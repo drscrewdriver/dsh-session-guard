@@ -13,6 +13,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import type { JSX } from 'react'
 import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
+import { ModelListPanel } from './model-panel'
 
 /** 命名空间值形状（与 host 的 DEFAULT_SETTINGS 对应）。 */
 export interface SessionGuardConfig {
@@ -30,6 +31,8 @@ export interface SessionGuardConfig {
   // ── 官方 provider 二维判定（高峰 × 目标源）──
   providerGuard: boolean
   officialProviders: string[]
+  /** 官方模型名关键字 / 正则（默认 `['deepseek']`）：名字带关键字的模型一律算官方。 */
+  officialModelPatterns: string[]
   officialBaseURLs: string[]
   deferredResume: boolean
   deferredResumeText: string
@@ -76,6 +79,11 @@ const CARD_CSS = `
 .sgSelect:disabled{opacity:.6;cursor:not-allowed}
 .sgHint{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;margin:6px 0 0}
 .sgReadonly{color:var(--dsw-alias-label-tertiary);font-size:12px;margin:8px 0 0}
+/* 「高峰拦截列表」面板本体（.sgMl*）在 styles.ts 的全局 CSS 里 —— 状态徽标与设置卡片共用。 */
+.sgMlHead{display:flex;align-items:center;gap:8px;width:100%;padding:8px 0 0;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}
+.sgMlHeadText{flex:1;min-width:0;display:flex;flex-direction:column}
+.sgMlChevron{flex:none;color:var(--dsw-alias-label-tertiary);transition:transform .16s;line-height:1}
+.sgMlChevron-open{transform:rotate(180deg)}
 `
 
 /** 注入一次卡片样式。 */
@@ -186,6 +194,46 @@ function ListRow(props: {
             onCommit(next)
           }}
         />
+      </div>
+    </div>
+  )
+}
+
+/**
+ * 「高峰拦截列表」——点击展开的**模型勾选**行。
+ *
+ * 展开时才去 host 拉当前模型目录（`GET /session-guard/models`，懒加载 + 每次展开刷新），
+ * 每行一个复选框：勾选 = 把该模型名作为条目加进 `officialModelPatterns`，
+ * 取消勾选 = 删掉同名条目。行状态与勾选动作都在 `model-list.ts`（纯函数、可单测），
+ * **判定与存储逻辑不变**：写的是同一个设置项，host 侧判定一字不改。
+ *
+ * 被更宽的关键字盖住的行（如默认的 `deepseek` 盖住 `ocg/deepseek-flash`）显示为只读并
+ * 提示是哪个关键字 —— 那种情况要改关键字，而不是逐个模型取消。
+ */
+function ModelListRow(props: {
+  patterns: string[]
+  disabled: boolean
+  onCommit: (_next: string[]) => void
+}): JSX.Element {
+  const { patterns, disabled, onCommit } = props
+  const [open, setOpen] = useState(false)
+
+  const expanded = open
+  return (
+    <div className="sgRow">
+      <div className="sgRowText sgRowText-wide">
+        <button type="button" className="sgMlHead" aria-expanded={expanded} onClick={() => setOpen(!expanded)}>
+          <span className="sgMlHeadText">
+            <span className="sgTitle">高峰拦截列表（按模型名）</span>
+            <span className="sgDesc">
+              点开即自动获取当前模型列表；勾选 = 该模型名加入列表，高峰一律拦（默认关键字 deepseek）
+            </span>
+          </span>
+          <span className={'sgMlChevron' + (expanded ? ' sgMlChevron-open' : '')} aria-hidden="true">
+            ⌄
+          </span>
+        </button>
+        {expanded && <ModelListPanel patterns={patterns} disabled={disabled} onCommit={onCommit} />}
       </div>
     </div>
   )
@@ -309,6 +357,19 @@ export function SessionGuardCard({ scope }: SettingsCardProps): JSX.Element {
                 onCommit={(next) => { void scope.set('officialProviders', next) }}
               />
               <ListRow
+                label="官方模型名关键字（正则）"
+                description="名字含关键字的模型一律算官方（包含语义、大小写不敏感）；默认 deepseek 自动覆盖将来新增的 deepseek-* 模型，空 = 关闭该层"
+                values={value.officialModelPatterns ?? []}
+                placeholder="deepseek"
+                disabled={readonly}
+                onCommit={(next) => { void scope.set('officialModelPatterns', next) }}
+              />
+              <ModelListRow
+                patterns={value.officialModelPatterns ?? []}
+                disabled={readonly}
+                onCommit={(next) => { void scope.set('officialModelPatterns', next) }}
+              />
+              <ListRow
                 label="官方端点名单"
                 description="baseURL 归一化后的 host（逗号分隔）"
                 values={value.officialBaseURLs ?? []}
@@ -378,8 +439,9 @@ export function SessionGuardCard({ scope }: SettingsCardProps): JSX.Element {
                 onChange={(next) => toggle('retryEnabled', next)}
               />
               <p className="sgHint">
-                判定口径：显式 id 名单 → baseURL 端点 → catalog 默认端点 → 内置 id。
-                排查误判访问 /session-guard/provider?provider=&lt;id&gt; 看 matchedBy。
+                判定口径：显式 id 名单 → 模型名关键字（默认 deepseek，自动覆盖将来新增的）→ baseURL
+                端点 → catalog 默认端点 → 内置 id。排查误判访问
+                /session-guard/provider?provider=&lt;id&gt;&amp;model=&lt;name&gt; 看 matchedBy。
               </p>
               {!snapshot.writable && <p className="sgReadonly">当前只读，无法修改。</p>}
             </>

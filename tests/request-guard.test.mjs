@@ -39,7 +39,7 @@ const BASE_CFG = {
 
 const silent = { info() {}, warn() {}, error() {} }
 
-function harness({ cfg = {}, agents, classify, now = PEAK_NOW, isRoot, isFreeRunActive } = {}) {
+function harness({ cfg = {}, agents, classify, now = PEAK_NOW, isRoot, isFreeRunActive, recordTarget } = {}) {
   let listener = null
   const ctx = {
     on: (name, fn) => {
@@ -68,6 +68,7 @@ function harness({ cfg = {}, agents, classify, now = PEAK_NOW, isRoot, isFreeRun
     clock: now,
     isRoot,
     isFreeRunActive,
+    recordTarget,
   })
   const off = guard.install()
   return {
@@ -124,6 +125,40 @@ test('畅跑判定回调抛异常 → 退回常规判定（fail-closed 到既有
   assert.deepEqual(await p, CONFIG)
 })
 
+test('目标追踪：请求级守卫把真实 provider/model 写入目标表（不依赖 session/event）', async () => {
+  // 1) 非官方源 → 请求放行，同时目标被记录
+  const seen = []
+  const h = harness({
+    classify: () => ({ official: false, matchedBy: 'endpoint' }),
+    recordTarget: (id, provider, model) => seen.push([id, provider, model]),
+  })
+  const r = await h.call(PAYLOAD, { provider: 'local', model: 'bai/glm-5.3-flash' })
+  assert.deepEqual(r, { provider: 'local', model: 'bai/glm-5.3-flash' }, '非官方源应原样放行（返回传入的 config）')
+  assert.deepEqual(seen, [['s1', 'local', 'bai/glm-5.3-flash']])
+
+  // 2) 官方源 → 被 hold，但目标照样被记录（记录发生在判定之前）
+  const seen2 = []
+  const h2 = harness({ recordTarget: (id, provider, model) => seen2.push([id, provider, model]) })
+  const p = h2.call(PAYLOAD, { provider: 'deepseek-official', model: 'deepseek-v4-pro' })
+  await assertPending(p)
+  assert.deepEqual(seen2, [['s1', 'deepseek-official', 'deepseek-v4-pro']])
+  h2.deferrals.releaseAll('test')
+  await p
+})
+
+test('目标追踪：recordTarget 抛错绝不影响请求判定', async () => {
+  const h = harness({
+    recordTarget: () => {
+      throw new Error('tracker boom')
+    },
+  })
+  const p = h.call(PAYLOAD)
+  await assertPending(p)
+  assert.equal(h.deferrals.size(), 1, '追踪抛错时仍按峰谷规则 hold')
+  h.deferrals.releaseAll('test')
+  await p
+})
+
 test('高峰 + 官方 → 请求不发出（promise 挂起），且不抛错', async () => {
   const h = harness()
   const p = h.call(PAYLOAD)
@@ -167,6 +202,67 @@ test('deferredMaxHoldMs 到期 → 转 PeakDeferredError（延后表清空）', 
   const p = listener(PAYLOAD, async () => CONFIG)
   await assert.rejects(p, (e) => e.code === PEAK_DEFERRED_CODE)
   assert.equal(deferrals.size(), 0)
+})
+
+// ── v0.3.1：判定必须带上 model（模型名关键字层）──
+
+test('守卫把 config.model 传给目录判定（模型名关键字层的前提）', async () => {
+  const seen = []
+  const h = harness({
+    classify: (id, model) => {
+      seen.push([id, model])
+      return { official: false, matchedBy: 'unknown' }
+    },
+  })
+  const cfg = { provider: 'local-35b', model: 'ocg/glm-5.3-flash' }
+  assert.equal(await h.call(PAYLOAD, cfg), cfg)
+  assert.deepEqual(seen, [['local-35b', 'ocg/glm-5.3-flash']])
+})
+
+test('守卫（真实目录）：本地路由 + 名字带 deepseek 的模型 → 被 hold，不再「非官方放行」', async () => {
+  const { createProviderDirectory } = await import('../src/provider-directory.js')
+  let listener = null
+  const ctx = {
+    on: (_n, fn) => {
+      listener = fn
+      return () => {
+        listener = null
+      }
+    },
+    get: () => undefined,
+  }
+  const deferrals = createDeferrals({ maxHoldMs: 0 })
+  const guard = createRequestGuard({
+    ctx,
+    getSettings: () => BASE_CFG,
+    directory: createProviderDirectory({ ctx, getSettings: () => BASE_CFG }),
+    deferrals,
+    logger: silent,
+    clock: PEAK_NOW,
+  })
+  guard.install()
+  const p = listener({ agent: { id: 's1' }, turn: 1, step: 0 }, async () => ({
+    provider: 'local-35b',
+    model: 'ocg/deepseek-flash',
+  }))
+  await assertPending(p)
+  assert.equal(deferrals.has('s1'), true, '名字带 deepseek → 官方 → hold')
+  deferrals.releaseAll('test')
+  await p
+})
+
+test('v0.3.1：目标追踪发生在判定之后（recordTarget 会触发放行/恢复，不能先于判定）', async () => {
+  const order = []
+  const h = harness({
+    classify: (id, model) => {
+      order.push(`classify:${id}/${model}`)
+      return { official: false, matchedBy: 'endpoint' }
+    },
+    recordTarget: (id, provider, model) => order.push(`record:${id}/${provider}/${model}`),
+  })
+  const cfg = { provider: 'local-35b', model: 'ocg/glm-5.3-flash' }
+  assert.equal(await h.call(PAYLOAD, cfg), cfg)
+  assert.deepEqual(order, ['classify:local-35b/ocg/glm-5.3-flash', 'record:s1/local-35b/ocg/glm-5.3-flash'])
 })
 
 // ── task_12：error 路径 ──

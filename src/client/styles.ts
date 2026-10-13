@@ -19,9 +19,37 @@ export const CLIENT_CSS = `
 .sg-fr[aria-pressed='true'],.sg-fr-active{border-color:var(--dsw-alias-state-success-primary,#30a46c);color:var(--dsw-alias-state-success-primary,#30a46c);background:color-mix(in srgb,var(--dsw-alias-state-success-primary,#30a46c) 8%,transparent)}
 .sg-fr-suspended{border-color:var(--dsw-alias-state-warning-primary,#d97706);color:var(--dsw-alias-state-warning-primary,#d97706);background:color-mix(in srgb,var(--dsw-alias-state-warning-primary,#d97706) 8%,transparent)}
 .sg-status{display:inline-flex;align-items:center;height:24px;padding:0 8px;border:1px solid var(--dsw-alias-border-l3,rgba(0,0,0,.12));border-radius:6px;font-size:12px;line-height:1;color:var(--dsw-alias-label-secondary,#6b7280);white-space:nowrap;flex:none}
-.sg-status.sg-peak{border-color:var(--dsw-alias-state-warning-primary,#d97706);color:var(--dsw-alias-state-warning-primary,#d97706)}
+.sg-status.sg-peak{border-color:var(--dsw-alias-state-error-primary,#dc2626);color:var(--dsw-alias-state-error-primary,#dc2626)}
+.sg-status.sg-off{border-color:var(--dsw-alias-state-success-primary,#30a46c);color:var(--dsw-alias-state-success-primary,#30a46c)}
 .sg-status.sg-weekend{border-color:var(--dsw-alias-state-success-primary,#30a46c);color:var(--dsw-alias-state-success-primary,#30a46c)}
-.sg-fr-panel{position:absolute;bottom:calc(100% + 8px);right:0;z-index:40;width:448px;max-width:calc(100vw - 24px);box-sizing:border-box;padding:10px 12px 12px;border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.1));border-radius:10px;background:var(--dsw-specific-input-major,#fff);box-shadow:var(--dsw-elevation-panel,0 6px 24px rgba(0,0,0,.16));color:var(--dsw-alias-label-primary,#111);font-size:12px;line-height:1.5}
+/* 徽标即按钮（v0.3.1）：点开「高峰拦截列表」——判定/存储逻辑不变，点开只是改同一份设置项 */
+.sg-status-root{position:relative;display:inline-flex;flex:none}
+.sg-status.sg-status-btn{gap:4px;cursor:pointer}
+.sg-status.sg-status-btn:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.04))}
+.sg-status-caret{flex:none;line-height:1;transition:transform .16s}
+.sg-status-caret-open{transform:rotate(180deg)}
+/* 「高峰拦截列表」模型勾选面板（状态徽标与设置卡片共用 .sgMl* 类） */
+.sgMlBody{margin-top:8px;padding:8px 10px;border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.1));border-radius:8px;background:var(--dsw-alias-bg-layer-2,transparent)}
+.sgMlBody *{box-sizing:border-box}
+.sgMlPatterns{display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding-bottom:6px;border-bottom:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.08))}
+.sgMlSentinel{color:var(--dsw-alias-label-tertiary,#6b7280);font-size:12px}
+.sgMlChip{font-size:12px;padding:1px 6px;border:1px solid var(--dsw-alias-border-l3,rgba(0,0,0,.12));border-radius:4px;font-variant-numeric:tabular-nums}
+.sgMlChip-add{border-style:dashed}
+.sgMlRefresh{margin-left:auto;flex:none;height:22px;padding:0 8px;border:1px solid var(--dsw-alias-border-l3,rgba(0,0,0,.12));border-radius:6px;background:transparent;color:inherit;font:inherit;font-size:12px;cursor:pointer}
+.sgMlRefresh:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.06))}
+.sgMlRefresh:disabled{opacity:.55;cursor:default}
+.sgMlList{list-style:none;margin:0;padding:0;max-height:240px;overflow:auto}
+.sgMlProvider{margin:8px 0 2px;font-size:12px;font-weight:600;color:var(--dsw-alias-label-secondary,#6b7280)}
+.sgMlItem{display:flex;align-items:center;padding:2px 0}
+.sgMlCheck{display:flex;align-items:center;gap:6px;min-width:0;font-size:12px;cursor:pointer}
+.sgMlCheck>input{cursor:pointer;flex:none}
+.sgMlCheck>input:disabled{cursor:not-allowed}
+.sgMlModel{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sgMlTag{flex:none;font-size:11px;color:var(--dsw-alias-label-tertiary,#6b7280);border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.08));border-radius:4px;padding:0 4px}
+.sgMlHint{color:var(--dsw-alias-label-tertiary,#6b7280);font-size:12px;line-height:18px;margin:6px 0 0}
+.sg-fr-panel,.sg-status-panel{position:absolute;bottom:calc(100% + 8px);right:0;z-index:40;width:448px;max-width:calc(100vw - 24px);box-sizing:border-box;padding:10px 12px 12px;border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.1));border-radius:10px;background:var(--dsw-specific-input-major,#fff);box-shadow:var(--dsw-elevation-panel,0 6px 24px rgba(0,0,0,.16));color:var(--dsw-alias-label-primary,#111);font-size:12px;line-height:1.5}
+.sg-status-panel{width:380px;z-index:45}
+.sg-status-panel *{box-sizing:border-box}
 .sg-fr-panel *{box-sizing:border-box}
 .sg-fr-head{display:flex;align-items:baseline;gap:8px;font-size:13px;font-weight:600;margin-bottom:8px}
 .sg-fr-title{flex:1;min-width:0}

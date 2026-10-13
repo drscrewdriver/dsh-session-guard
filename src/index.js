@@ -723,11 +723,32 @@ export function apply(ctx) {
             res.on?.('close', cleanup)
             return undefined
           }
-          // GET /session-guard/provider?provider=<id> —— 官方判定诊断（排查误判用）
+          // GET /session-guard/provider?provider=<id>[&model=<name>] —— 官方判定诊断（排查误判用）
+          // 带上 model 才能复现「按模型名判官方」这一层（默认关键字 deepseek）。
           if (method === 'GET' && url.pathname === '/session-guard/provider') {
             const provider = url.searchParams.get('provider') ?? ''
             if (!provider) return json(400, { ok: false, error: 'missing provider' })
-            return json(200, { ok: true, verdict: wiring.directory.describe(provider) })
+            const model = url.searchParams.get('model')
+            return json(200, { ok: true, verdict: wiring.directory.describe(provider, model) })
+          }
+          // GET /session-guard/models —— 当前可用模型目录（设置卡片的「高峰拦截列表」勾选用）
+          // 两个来源合并：① 各路由自报的模型（llm.listModels，可能为空）② 本插件观察到的
+          // 真实目标（会话里实际用过的 provider/model，事件管道缺失时仍有兜底）。全链路 fail-open。
+          if (method === 'GET' && url.pathname === '/session-guard/models') {
+            const models = []
+            const dedup = new Set()
+            const push = (provider, model, source) => {
+              const p = typeof provider === 'string' ? provider : ''
+              const m = typeof model === 'string' ? model : ''
+              if (p === '' || m === '') return
+              const k = `${p}\u0000${m}`
+              if (dedup.has(k)) return
+              dedup.add(k)
+              models.push({ provider: p, model: m, source })
+            }
+            for (const item of await wiring.directory.models()) push(item.provider, item.model, item.source)
+            for (const [, rec] of wiring.targets.entries()) push(rec.provider, rec.model, 'seen')
+            return json(200, { ok: true, models })
           }
           // GET /session-guard/settings
           if (method === 'GET' && url.pathname === '/session-guard/settings') {

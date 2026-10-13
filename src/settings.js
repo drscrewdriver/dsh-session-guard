@@ -47,6 +47,10 @@ export const DEFAULT_SETTINGS = Object.freeze({
   // ── 官方 provider 二维判定（高峰 × 目标源）──
   providerGuard: true, // 二维判定总开关；关掉 = 现有纯时间判定
   officialProviders: [], // 追加的官方 provider id（精确匹配，最高优先级）
+  // 官方**模型名**关键字（正则源码，包含语义、大小写不敏感）：默认 `deepseek` →
+  // 名字里带 deepseek 的模型（deepseek-v4-pro / ocg/deepseek-flash / 将来新增的）自动算官方，
+  // 不需要手工维护名单；置空数组即关闭该判定。
+  officialModelPatterns: ['deepseek'],
   officialBaseURLs: ['api.deepseek.com'], // 官方端点 host 名单
   deferredResume: true, // 退峰自动继续被延后的请求/会话
   deferredResumeText: '继续（高峰已过，自动继续）', // error 模式退峰 followup 文案
@@ -93,6 +97,7 @@ export const SettingsSchema = z.object({
   retryMaxConsecutive: z.number().min(0).default(DEFAULT_SETTINGS.retryMaxConsecutive),
   providerGuard: z.boolean().default(DEFAULT_SETTINGS.providerGuard),
   officialProviders: z.array(z.string()).default(DEFAULT_SETTINGS.officialProviders),
+  officialModelPatterns: z.array(z.string()).default(DEFAULT_SETTINGS.officialModelPatterns),
   officialBaseURLs: z.array(z.string()).default(DEFAULT_SETTINGS.officialBaseURLs),
   deferredResume: z.boolean().default(DEFAULT_SETTINGS.deferredResume),
   deferredResumeText: z.string().default(DEFAULT_SETTINGS.deferredResumeText),

@@ -107,7 +107,7 @@ dsh plugin --profile web add dsh-session-guard@dsh-0.1.5
 - `peakWindows`/`peakPolicy`（默认 09:00–12:00 / 14:00–18:00，工作日）——峰谷窗口与周末策略的权威来源现在是配置文件 `config/session-guard.json`，设置界面里设过的值仍是最高优先级；
 - `pauseMode`（`safe`/`force`）、`pauseReason`（`wait`/`stop`）——暂停推进方式；
 - `stepGateTimeoutMs`（默认 300000）——step 门挂起超时；到期释放门并**升级为回合级暂停**（防死锁，不会形成「每 5 分钟一个 step」的 token 滴漏）；
-- 官方源判定：`officialProviders`（追加官方 provider id，逗号分隔，优先级最高）、`officialBaseURLs`（官方端点 host 名单，默认 `api.deepseek.com`）；
+- 官方源判定：`officialProviders`（追加官方 provider id，逗号分隔，优先级最高）、`officialModelPatterns`（**官方模型名关键字**，正则源码、包含语义、大小写不敏感，默认 `["deepseek"]` —— 名字带 deepseek 的模型自动算官方，含将来新增的；`[]` = 关闭该层）、`officialBaseURLs`（官方端点 host 名单，默认 `api.deepseek.com`）；
 - 延后队列：`deferredMode`（`hold` 挂起等待 / `error` 报错并延后）、`deferredResumeText`（退峰续跑文案）、`deferredMaxHoldMs`（挂起上限，默认 6 小时，到期转 error）；
 - 重试参数：`retryText`、`retryGraceMs`、`retryCooldownMs`、`retryBackoffFactor`、`retryBackoffMaxMs`、`retryMaxConsecutive`。
 
@@ -285,19 +285,21 @@ v0.2.0 的两值判决保留兼容：`pause === (mode === PEAK)`，`reason` 仍�
 - **冻结/门控期间让路**：`isFrozen(sessionId)` 为真（queueLocked / paused / taskControl paused）时不重试；
 - 用户介入或成功回合重置连续失败计数。
 
-### 状态徽标（前端展示）
+### 状态徽标（前端展示，v0.3.1 起**徽标即按钮**）
 
-输入区右侧显示一个**纯展示**状态徽标，实时反映当前所处阶段：
+输入区右侧显示一个状态徽标，实时反映当前所处阶段；**点击展开「高峰拦截列表」**（当前模型目录 + 勾选，写入 `officialModelPatterns`）：
 
-| 阶段 | 徽标文案 | CSS 类 | 含义 |
-|---|---|---|---|
-| `peak`（二维判定开） | 高峰·拦官方 | `sg-peak` | 高峰期，只拦 DeepSeek 官方源请求 |
-| `peak`（二维判定关） | 高峰·全部暂停 | `sg-peak` | 高峰期，全部会话暂停 |
-| `off-peak` | 谷时 | `sg-off` | 非高峰时段，会话正常运行 |
-| `weekend` | 周末 | `sg-weekend` | 周末（周末模式开启时），无视峰谷畅快跑 |
+| 阶段 | 徽标文案 | CSS 类 | 颜色 | 含义 |
+|---|---|---|---|---|
+| `peak`（二维判定开） | 高峰·拦官方 | `sg-peak` | **红**（`state-error`） | 高峰期，只拦 DeepSeek 官方源请求 |
+| `peak`（二维判定关） | 高峰·全部暂停 | `sg-peak` | **红** | 高峰期，全部会话暂停 |
+| `off-peak` | 谷时 | `sg-off` | **绿**（`state-success`） | 非高峰时段，会话正常运行 |
+| `weekend` | 周末 | `sg-weekend` | **绿** | 周末（周末模式开启时），无视峰谷畅快跑 |
 
+- **颜色即语义**：**拦截态红、放行态绿**（边框与文字同色，走 dsh 的 `--dsw-alias-state-*` 令牌）；
+- **徽标即按钮**：点开的面板列出当前模型（来源 `GET /session-guard/models`：各路由自报的模型 + 本插件观察到的真实目标），按 provider 分组；**勾选 = 该模型名加入列表**（高峰一律拦），取消勾选 = 删掉同名条目；被更宽关键字（默认 `deepseek`）盖住的行显示为只读并提示是哪个关键字 —— 那种情况改关键字，而不是逐个模型取消。面板与「插件配置 → 会话守护门禁」里的同名区块共用同一套逻辑（`src/client/model-list.ts` 纯函数），**判定与存储逻辑不变**：写的都是同一个设置项；
 - **轮询**：每 15 秒请求 `GET /session-guard/status`，获取全局 `phase`、`providerGuard`、`held`、`deferred`、`stepHeld`（v0.3.0 起 `/status` 另报 `mode`/`reason`/`windowName`/`minutesUntilPeak`/`peakTimezone`/`weekendDays`/`configFile`；`phase` 为兼容保留）；
-- **fail-open**：路由不可达、网络错误、或 `enabled` 关闭时→ 徽标静默隐藏，不影响任何会话；
+- **fail-open**：路由不可达、网络错误、或 `enabled` 关闭时→ 徽标静默隐藏，不影响任何会话；面板拿不到模型目录时只显示提示；**没有 settingsScope（旧宿主）时面板只读**；
 - **独立于 input-traffic**：徽标由 session-guard 客户端独立渲染，**不需要安装 input-traffic 插件**即可显示。input-traffic 只负责冻结按钮，与徽标无依赖关系；
 - **tooltip**：悬停显示 `阶段 · 时区 · 周末模式 · 判定口径 · 挂起/延后/step 挂起数量`。
 
@@ -308,16 +310,19 @@ v0.2.0 的两值判决保留兼容：`pause === (mode === PEAK)`，`reason` 仍�
 | 优先级 | 依据 | `matchedBy` | 例子 |
 |---|---|---|---|
 | 1 | `officialProviders` 显式 id 名单 | `explicit` | 用户把自建网关声明为官方 |
-| 2 | 实时 `baseURL` 归一化后的 host | `endpoint` | `deepseek-official` 改到中转 → **不拦** |
-| 3 | catalog 内置默认端点 | `endpoint-default` | pi-ai 的 `deepseek` 路由默认就打官方 API → **拦** |
-| 4 | 内置 id 名单（`deepseek-official`） | `route-id` | 读不到端点时的兜底 |
-| 5 | 其他 | `unknown` | 非官方，放行 |
+| 2 | **模型名关键字**（`officialModelPatterns`，默认 `deepseek`，按正则判包含） | `model-pattern` | 本地/中转源转发 `ocg/deepseek-flash` → **拦**（同样吃官方计费） |
+| 3 | 实时 `baseURL` 归一化后的 host | `endpoint` | `deepseek-official` 改到中转且模型名不含关键字 → **不拦** |
+| 4 | catalog 内置默认端点 | `endpoint-default` | pi-ai 的 `deepseek` 路由默认就打官方 API → **拦** |
+| 5 | 内置 id 名单（`deepseek-official`） | `route-id` | 读不到端点时的兜底 |
+| 6 | 其他 | `unknown` | 非官方，放行 |
 
-- **端点优先于 id**：同名 `deepseek-official` 但把 `baseURL` 指向中转的配置**不会**被误拦；反过来，pi-ai 内置 `deepseek` 路由的默认端点就是官方 API，**不会**被漏拦。
+- **模型名关键字先于端点（v0.3.1）**：判定依据是这次请求真正要用的 **`model`** —— 名字里带 `deepseek`（默认关键字，正则源码、大小写不敏感、包含语义）的模型，**无论跑在哪条路由上**都算官方。将来新增的 `deepseek-*` 模型自动纳入，不需要维护名单；要放行某类名字，把 `officialModelPatterns` 收窄或置空（`[]` = 关闭该层）。**包含即命中**（`my-deepseek-proxy` 这类 id 同样被拦）。
+- **关键字安全线（v0.3.1）**：正则条目在配置边界做静态筛查 —— 语法错、超长（> 200 字符）、以及「量词套在已含量词的组上」这类**灾难性回溯**写法（`(a+)+$` 实测能卡死判定 88 s）一律被拒并记进 `configFile.errors`，判定侧也跳过它们；残留风险是分支重叠的交替（如 `(a|a)+`）。
+- **端点优先于 id**：同名 `deepseek-official` 但把 `baseURL` 指向中转、且模型名不含关键字的配置**不会**被误拦；反过来，pi-ai 内置 `deepseek` 路由的默认端点就是官方 API，**不会**被漏拦。
 - **端点来源**：`ctx.get('llm').listConfigurableProviders()` 找目录条目 → `ctx.settings.get(settingsNs)` 按 `settingsPath` 读 `baseURL`（只读非密字段，绝不读 `apiKeyEnv` 的值）。每次请求实时算、不缓存 → provider 配置热改立即生效。
 - **目标转非官方即恢复**：高峰暂停后把该会话切到本地/第三方 provider（0.1.2+ 的 `model/selection` 事件）→ 自动恢复该会话（受 `deferredResume` 约束）；只恢复本插件因入峰暂停的会话，**不会**碰用户手动 `/pause` 的会话。0.1.1 无该事件 → 退化为「下次请求或手动 `/resume`」。
 - **取不到端点**：`llm` 服务缺失、命名空间结构变化、字段非字符串——一律降级为 id / 内置端点判定并记 `matchedBy`，**绝不抛出**。
-- **排查误判**：`GET /session-guard/provider?provider=<id>` 返回 `{ official, matchedBy, endpoint }`。
+- **排查误判**：`GET /session-guard/provider?provider=<id>&model=<name>` 返回 `{ provider, model, official, matchedBy, endpoint }`（带 `model` 才能复现模型名关键字这一层）。
 
 ### 请求级守卫与延后队列
 
@@ -408,7 +413,8 @@ v0.2.0 的两值判决保留兼容：`pause === (mode === PEAK)`，`reason` 仍�
 - `GET /session-guard/events?session=<id>` — **SSE**：只有 `step` 事件，step 门状态变化即时推送
 - `GET /session-guard/settings` — 设置 + taskControl 可用性 + `configFile: {path, candidates, errors}`
 - `GET /session-guard/status` — 全局当前阶段（状态徽标轮询；含 `mode` / `reason` / `windowName` / `minutesUntilPeak` / `peakTimezone` / `weekendDays` / `stepHeld` / `configFile`）
-- `GET /session-guard/provider?provider=<id>` — 官方源判定诊断（`official` / `matchedBy` / `endpoint`）
+- `GET /session-guard/provider?provider=<id>&model=<name>` — 官方源判定诊断（`provider` / `model` / `official` / `matchedBy` / `endpoint`）
+- `GET /session-guard/models` — 当前模型目录（状态徽标 / 设置卡片的「高峰拦截列表」勾选用；= 各路由 `llm.listModels` 自报的模型 + 本插件观察到的真实目标，去重，全链路 fail-open）
 - `GET /session-guard/diag` — 运行时诊断（含 `stepGate` / `configFile` / `freeRun`）
 - `POST /session-guard/rpc` — `{ action: stopNextTurn|resume|lockQueue|unlockQueue|stepPause|stepResume|state|reloadConfig|freeRunAdd|freeRunRemove|freeRunPause|freeRunResume|freeRunPauseAll|freeRunResumeAll|freeRunClear, sessionId }`（`reloadConfig` 不需要 `sessionId`；`freeRunRemove` / `freeRunPause` / `freeRunResume` 另需任务 `id`）
 

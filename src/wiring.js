@@ -99,6 +99,14 @@ export function createWiring({
     logger,
     clock,
     scheduleRelease,
+    // 畅跑豁免必须接到请求级守卫上：否则「无视峰谷照常运行」在请求这一层是假的
+    // （`shouldPauseSession` 里的豁免只管入峰与 step 门，管不到 agent/request）。
+    isFreeRunActive,
+    // 请求级守卫顺带记录真实目标：session/event 事件管道不可用时的可靠替代信号。
+    recordTarget: (sessionId, provider, model) => {
+      const rec = targets.set(sessionId, provider, model)
+      if (rec !== null) maybeAutoResume(sessionId, rec)
+    },
   })
 
   /** `session/event` → 目标追踪（形状异常降级 unknown，不抛出）+ 目标转非官方时自动恢复。 */
@@ -123,7 +131,9 @@ export function createWiring({
     const cfg = safeCfg()
     if (cfg.providerGuard !== true || cfg.deferredResume === false) return
     if (!shouldPause(cfg, clock()).pause) return
-    const cls = directory.classify(rec.provider)
+    // 判定与请求级守卫同口径：带上 model（名字带 deepseek 的模型在哪条路由上都算官方，
+    // 因此「切到本地源 + deepseek 模型」不会被误放行）。
+    const cls = directory.classify(rec.provider, rec.model)
     if (cls.official) return
     // step 门控：目标转非官方 → 放行被挂起的 step（step gate 自身按目标判定，无需 pausedByPeak）
     if (stepGate) {
@@ -157,10 +167,9 @@ export function createWiring({
     // 畅跑（单会话限时豁免）优先级最高：窗口内一律不拦。
     if (freeRunAllows(sessionId)) return false
     if (cfg.providerGuard !== true) return true // 退回现有纯时间判定：全部暂停
-    const provider = targets.providerOf(sessionId)
-    if (provider === UNKNOWN) return true // 未知保守处理
-    const cls = directory.classify(provider)
-    return cls.official
+    const rec = targets.get(sessionId)
+    if (rec === null || rec.provider === UNKNOWN) return true // 未知保守处理
+    return directory.classify(rec.provider, rec.model).official
   }
 
   /** 入峰：暂停 running 会话（跳过已 hold / 目标非官方 / 畅跑生效中）。 */

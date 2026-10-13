@@ -6,6 +6,40 @@ All notable changes to `dsh-session-guard` are recorded here. Versions follow se
 - [日本語 changelog](./CHANGELOG.ja.md)
 - [한국어 changelog](./CHANGELOG.ko.md)
 
+## Unreleased — 下一步（模型名拦截列表）
+
+### Added
+
+- **`officialModelPatterns`：按模型名拦官方（默认 `["deepseek"]`，正则、包含语义、大小写不敏感）。**
+  官方源判定新增一层，位置在显式 `officialProviders` 之后、实时 `baseURL` 之前，判定依据是这次请求
+  真正要用的 **`model`**：名字里带 `deepseek` 的模型**无论跑在哪条路由上**都算官方（中转/本地源转发
+  `ocg/deepseek-flash` 同样吃官方计费）。因此**将来新增的 `deepseek-*` 模型自动纳入，无需维护名单**；
+  `matchedBy` 记 `model-pattern`。配置文件里写坏的正则条目会被跳过并记进 `configFile.errors`，
+  一条可用的都不剩就退回内置默认；显式 `[]` = 关闭该层。`GET /session-guard/provider` 新增 `model`
+  查询参数，`describe()` / `classify()` 新增 `model` 形参（对既有调用方向后兼容）。
+  **包含即命中**：只是名字里带关键字的 id（`my-deepseek-proxy`）与中转路由上的 deepseek 模型同样被拦。
+- **关键字安全线（ReDoS）**：正则条目在配置边界做静态筛查 —— 语法错、超长（> 200 字符）、以及
+  「量词套在已含量词的组上」这类灾难性回溯写法（`(a+)+$` 实测能把判定卡死 88 s）一律拒绝并记进
+  `configFile.errors`；判定侧同样跳过（`provider.isUnsafePattern` / `MAX_PATTERN_LENGTH`），
+  并加了一层编译缓存。残留风险：分支重叠的交替（如 `(a|a)+`）识别不出来。
+- **`GET /session-guard/models`：当前模型目录**（供下面的 UI 勾选）。合并两个来源：各路由
+  `llm.listModels` 自报的模型 + 本插件观察到的真实目标（`targets`），按 provider+model 去重；
+  逐路由独立 try/catch，`llm` 缺失 / 发现失败一律 fail-open 成空列表。
+- **状态徽标变成按钮**：点击展开「高峰拦截列表」面板 —— 当前模型列表 + 每行一个复选框，
+  **勾选 = 该模型名加入列表**（`officialModelPatterns`），取消勾选 = 删掉同名条目；被更宽关键字盖住的
+  行显示为只读并提示是哪个关键字。面板与「插件配置 → 会话守护门禁」里的同名区块共用
+  `src/client/model-list.ts`（纯函数：`matchesPattern` / `rowState` / `toggleModel` / `rowHint`）
+  与 `src/client/model-panel.tsx`，**判定与存储逻辑不变**（写的是同一个设置项，仍走 settingsScope）。
+  没有 settingsScope（旧宿主）或快照只读时，面板只读 / 给提示。
+
+### Changed
+
+- **官方源判定顺序**：`explicit` → **`model-pattern`** → `endpoint` → `endpoint-default` → `route-id`
+  → `unknown`。文档里「`deepseek-official` 指向中转就不拦」的口径**只在模型名不含关键字时成立**：
+  `deepseek-official` + `deepseek-v4-pro` 走中转现在也会被拦（名字即计费口径）。
+- **状态徽标颜色跟判定走**：拦截态（`peak`，两种模式）**红**（`--dsw-alias-state-error-primary`），
+  放行态（`off-peak` / `weekend`）**绿**（`--dsw-alias-state-success-primary`）；文案不变。
+
 ## 0.3.0 — 2026-09-21
 
 ### Added

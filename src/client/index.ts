@@ -2,13 +2,13 @@
  * dsh-session-guard — 浏览器 half。
  *
  * 职责（全部 fail-open，D8）：
- * - 在 composer 输入区右侧注册一个**纯展示**状态徽标（高峰/谷时/周末），轮询
- *   /session-guard/status；
+ * - 在 composer 输入区右侧注册状态徽标（高峰/谷时/周末），轮询 /session-guard/status；
+ *   v0.3.1 起**徽标即按钮**：点开「高峰拦截列表」模型勾选面板（写 officialModelPatterns）；
  * - 注册 `settings.plugin.item` 设置卡片，经 `settingsScope.bind({ namespace })`
  *   绑定 host 已注册的 `session-guard` 命名空间——这正是“插件配置”面板显示本
  *   插件的**必要**机制（对齐 dsh-thinking-levels / dsh-context）；
  * - **不做**冻结/会话动作——冻结按钮由 input-traffic 接管并经 /session-guard/rpc
- *   桥接 host 会话门；本插件客户端不注册任何按钮，避免与 input-traffic 冲突。
+ *   桥接 host 会话门。
  *
  * 构建：tsdown → lib/client.js（__ModuleLoader__.load 注册，与 input-traffic 同构）。
  */
@@ -45,12 +45,14 @@ export function apply(ctx: ClientCtx) {
     locale: 'session-guard',
   }, FreeRunButton))
 
-  // 状态徽标：输入区右侧，纯展示。
+  // 状态徽标：输入区右侧。徽标即按钮 —— 点开「高峰拦截列表」模型勾选面板（v0.3.1），
+  // 写入同一个 officialModelPatterns 设置项（判定/存储逻辑不变）。
   ctx.slots.inject('conversation.input.right', () => ctx.slots.register({
     name: 'conversation.input.right',
     id: 'session-guard-status',
     order: 40,
     locale: 'session-guard',
+    inject: () => ({ scope: ctx.settingsScope.bind({ namespace: NS }) }),
   }, StatusBadge))
 
   // 插件配置卡片：绑定 session-guard 命名空间，经 settingsScope 渲染并提交。

@@ -1,5 +1,5 @@
 /**
- * provider.js 测试：端点归一化 + 五级官方判定矩阵。
+ * provider.js 测试：端点归一化 + 六级官方判定矩阵（含 v0.3.1 的模型名关键字层）。
  *
  * 覆盖 checklist 的三组硬要求：
  * - 归一化 8 例（协议/大小写/端口/路径/协议相对/裸 host/空/null/非法）
@@ -12,8 +12,11 @@ import {
   normalizeEndpoint,
   isOfficialEndpoint,
   classifyProvider,
+  matchesModelPattern,
+  isUnsafePattern,
   BUILTIN_OFFICIAL_IDS,
   BUILTIN_OFFICIAL_ENDPOINTS,
+  BUILTIN_OFFICIAL_MODEL_PATTERNS,
   DEFAULT_OFFICIAL_HOSTS,
   MATCHED_BY,
 } from '../src/provider.js'
@@ -137,4 +140,88 @@ test('officialBaseURLs 自定义：名单覆盖默认', () => {
 test('内置端点归一化失败时继续走 id 兜底', () => {
   const r = classifyProvider('deepseek-official', { builtinEndpoints: { 'deepseek-official': 'not a url' } })
   assert.deepEqual(r, { official: true, matchedBy: 'route-id' })
+})
+
+// ── v0.3.1：模型名关键字（默认 `deepseek`，正则包含语义，自动覆盖将来新增的模型）──
+
+test('matchesModelPattern：包含语义 + 大小写不敏感 + 正则', () => {
+  assert.equal(matchesModelPattern('deepseek-v4-pro'), true)
+  assert.equal(matchesModelPattern('ocg/deepseek-flash'), true, '中转前缀也算命中（包含关系）')
+  assert.equal(matchesModelPattern('DeepSeek-Chat'), true, '大小写不敏感')
+  assert.equal(matchesModelPattern('qwen3.5-flash'), false)
+  assert.equal(matchesModelPattern('deep-seek'), false, '包含的是 deepseek 连写，不拆分')
+  // 正则源码：锚定 / 交替 / 分组都能用
+  assert.equal(matchesModelPattern('my-deepseek-lab', ['^my-']), true)
+  assert.equal(matchesModelPattern('a-v4-pro', ['^(deepseek|a)-v4']), true)
+  // 空 / 非字符串 / 非字符串名单项
+  assert.equal(matchesModelPattern('', ['deepseek']), false)
+  assert.equal(matchesModelPattern(null, ['deepseek']), false)
+  assert.equal(matchesModelPattern('deepseek-x', [null, 7, '']), false, '垃圾项跳过')
+})
+
+test('matchesModelPattern：写坏的正则条目跳过后仍能命中其他条目', () => {
+  assert.equal(matchesModelPattern('deepseek-v4-pro', ['[', 'deepseek']), true)
+})
+
+test('matchesModelPattern：显式空数组 = 关闭该判定（不回退内置默认）', () => {
+  assert.equal(matchesModelPattern('deepseek-v4-pro', []), false)
+  assert.equal(matchesModelPattern('deepseek-v4-pro', undefined), true, '未配置 → 内置默认 deepseek')
+})
+
+test('classifyProvider 矩阵 7：模型名关键字先于端点（本地路由 + deepseek 模型 → 官方）', () => {
+  const r = classifyProvider('my-relay', { endpoint: 'https://relay.example.com/v1', model: 'ocg/deepseek-flash' })
+  assert.deepEqual(r, { official: true, matchedBy: 'model-pattern' })
+  // 同一路由换非 deepseek 模型 → 端点判定照旧（非官方）
+  const r2 = classifyProvider('my-relay', { endpoint: 'https://relay.example.com/v1', model: 'qwen3.5-flash' })
+  assert.deepEqual(r2, { official: false, matchedBy: 'endpoint' })
+})
+
+test('classifyProvider 矩阵 8：模型名关键字压过「官方 id 指向中转」的端点结论', () => {
+  // 文档口径里「deepseek-official 改到中转 → 不拦」；但模型名带 deepseek 时按名字判官方
+  const r = classifyProvider('deepseek-official', { endpoint: 'https://relay.example.com/v1', model: 'deepseek-v4-pro' })
+  assert.deepEqual(r, { official: true, matchedBy: 'model-pattern' })
+})
+
+test('classifyProvider 矩阵 9：显式名单仍最高优先；自定义关键字可替换默认', () => {
+  const r = classifyProvider('my-relay', { officialProviders: ['my-relay'], model: 'ocg/deepseek-flash' })
+  assert.deepEqual(r, { official: true, matchedBy: 'explicit' })
+  // 自定义名单不含 deepseek → 不再按 deepseek 判
+  const r2 = classifyProvider('my-relay', { model: 'ocg/deepseek-flash', officialModelPatterns: ['^relay-'] })
+  assert.deepEqual(r2, { official: false, matchedBy: 'unknown' })
+  const r3 = classifyProvider('my-relay', { model: 'relay-x', officialModelPatterns: ['^relay-'] })
+  assert.deepEqual(r3, { official: true, matchedBy: 'model-pattern' })
+})
+
+test('classifyProvider：无 model / 空 model 时不影响既有判定（行为不变）', () => {
+  assert.deepEqual(classifyProvider('deepseek-official', { endpoint: 'https://api.deepseek.com' }), {
+    official: true,
+    matchedBy: 'endpoint',
+  })
+  assert.deepEqual(classifyProvider('deepseek-official', { model: '' }), { official: true, matchedBy: 'endpoint-default' })
+  assert.deepEqual(classifyProvider('relay', { model: null }), { official: false, matchedBy: 'unknown' })
+})
+
+test('内置模型名关键字常量形状', () => {
+  assert.deepEqual([...BUILTIN_OFFICIAL_MODEL_PATTERNS], ['deepseek'])
+})
+
+// ── ReDoS 防线：合法但指数级的写法必须在配置边界被拒（实测 (a+)+$ 对 41 字符耗时 88s）──
+
+test('isUnsafePattern：嵌套量词 / 超长 / 语法垃圾一律判不安全', () => {
+  for (const bad of ['(a+)+', '(a+)+$', '(\\d*)*', '((a+)+)+', '(x{1,9})+', 'a'.repeat(201)]) {
+    assert.equal(isUnsafePattern(bad), true, `${bad} 应判为不安全`)
+  }
+  for (const ok of ['deepseek', '^my-', '(deepseek|qwen)-v4', 'a+', '[a-z]+-flash']) {
+    assert.equal(isUnsafePattern(ok), false, `${ok} 应判为安全`)
+  }
+  assert.equal(isUnsafePattern(''), true)
+  assert.equal(isUnsafePattern(null), true)
+})
+
+test('matchesModelPattern：不安全条目被跳过，其余条目照常命中（绝不卡死）', () => {
+  const started = Date.now()
+  // 若 (a+)+ 真被拿去匹配，这一行会跑几十秒；必须秒回 false（跳过）+ 命中后面的 deepseek
+  assert.equal(matchesModelPattern(`${'a'.repeat(40)}!`, ['(a+)+$']), false)
+  assert.equal(matchesModelPattern('ocg/deepseek-flash', ['(a+)+$', 'deepseek']), true)
+  assert.ok(Date.now() - started < 2000, '不安全条目必须不参与匹配')
 })

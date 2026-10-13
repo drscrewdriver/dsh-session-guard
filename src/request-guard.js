@@ -56,6 +56,8 @@ export function makeIsRoot(ctx) {
  * @param {(agent:object)=>boolean} [deps.isRoot]
  * @param {(ms:number)=>void} [deps.scheduleRelease] 挂起后请求一次退峰释放检查
  * @param {(sessionId:string, date:Date)=>boolean} [deps.isFreeRunActive] 畅跑生效中的会话不拦
+ * @param {(sessionId:string, provider?:unknown, model?:unknown)=>void} [deps.recordTarget]
+ *   把这次请求的真实目标写入目标表（独立于 session/event 事件管道，供二维判定使用）
  * @returns {{install:()=>()=>void, handle:(payload:object, next:Function)=>Promise<unknown>, stats:()=>object}}
  */
 export function createRequestGuard({
@@ -69,6 +71,7 @@ export function createRequestGuard({
   isRoot,
   scheduleRelease,
   isFreeRunActive,
+  recordTarget,
 }) {
   const rootCheck = isRoot ?? makeIsRoot(ctx)
   const counters = { pass: 0, hold: 0, error: 0, skippedSubagent: 0, failOpen: 0 }
@@ -99,6 +102,27 @@ export function createRequestGuard({
       return { action: 'pass', why: 'subagent' }
     }
 
+    // 先算判定，再追踪目标：`recordTarget` 会写目标表**并触发 `maybeAutoResume`**（真副作用，
+    // 可能放行 / 恢复别的挂起），放在判定之前会让「这次请求刚被判为 hold」与「同一次调用顺手
+    // resume 该会话」并存（实测：pausedByPeak 被删、hold 已被结算但表里留着、退峰重复 resume）。
+    const decision = verdictFor(cfg, payload, config, sessionId)
+    if (typeof recordTarget === 'function') {
+      try {
+        recordTarget(sessionId, config && config.provider, config && config.model)
+      } catch {
+        /* 追踪失败绝不影响判定 */
+      }
+    }
+    return decision
+  }
+
+  /**
+   * 纯判定（无副作用地算出 pass / hold / error）。
+   *
+   * 目标追踪**不在**这里：它独立于 session/event 事件管道（事件缺失时目标恒为 unknown →
+   * 保守暂停 → 连非官方源也一起拦），但带真副作用，必须等判定落定后再做。
+   */
+  function verdictFor(cfg, payload, config, sessionId) {
     const verdict = shouldPause(cfg, clock())
     if (!verdict.pause) return { action: 'pass', why: verdict.reason }
 
@@ -115,9 +139,11 @@ export function createRequestGuard({
       if (free) return { action: 'pass', why: 'free-run' }
     }
 
-    const cls = directory.classify(config && config.provider)
+    // 判定带上 model：默认关键字 `deepseek` 会把「名字带 deepseek 的模型」直接算官方，
+    // 无论它跑在哪个 provider 上（中转/本地源同样吃官方计费）。
+    const cls = directory.classify(config && config.provider, config && config.model)
     if (!cls.official) {
-      logger?.info?.(`[session-guard] peak but target "${String(config && config.provider)}" is not official (matchedBy=${cls.matchedBy}) — pass`)
+      logger?.info?.(`[session-guard] peak but target "${String(config && config.provider)}/${String(config && config.model)}" is not official (matchedBy=${cls.matchedBy}) — pass`)
       return { action: 'pass', why: 'not-official' }
     }
 

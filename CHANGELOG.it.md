@@ -11,6 +11,24 @@ Tutte le modifiche significative di `dsh-session-guard` vengono annotate qui. Le
 - [Changelog in russo](./CHANGELOG.ru.md)
 - [Changelog en español](./CHANGELOG.es.md)
 
+## 4.1.16 — 2026-10-14 (manifesti allineati; ripristinata la voce 4.1.15)
+
+### Correzione
+
+- `dsh.plugin.json` riporta ora la stessa versione di `package.json`: il tarball 4.1.15
+  pubblicato indicava ancora 4.1.14 (verificato scaricandolo dal registro).
+- Nessun cambiamento di comportamento.
+- Test riparato: il perno strutturale in `tests/settings-bridge.test.mjs` esigiva ancora
+  l'ingresso ingranaggio ritirato; la suite era rossa dal 4.1.15. Ora afferma la sua assenza.
+
+## 4.1.15 — 2026-10-08 (ripristinata: questa voce non fu mai scritta al rilascio)
+
+### Rimosso
+
+- Eliminata l'iniezione del posto `shell.overlay` a livello di shell: il pulsante ingranaggio fisso
+  in basso a destra e il suo livello fluttuante spariscono (`src/client/shell-overlay.tsx` rimosso).
+  L'ingresso alle impostazioni dipende ormai solo dalla pagina di impostazioni dell'host.
+
 ## 4.1.14 — 2026-10-08
 
 ### Rimosso

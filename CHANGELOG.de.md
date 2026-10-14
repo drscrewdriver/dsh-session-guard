@@ -11,6 +11,24 @@ Alle nennenswerten Änderungen an `dsh-session-guard` werden hier festgehalten. 
 - [Changelog auf Russisch](./CHANGELOG.ru.md)
 - [Changelog en español](./CHANGELOG.es.md)
 
+## 4.1.16 — 2026-10-14 (Manifestgleichheit; nachgetragener 4.1.15-Eintrag)
+
+### Behoben
+
+- `dsh.plugin.json` trägt jetzt dieselbe Version wie `package.json`. Das veröffentlichte
+  4.1.15-Tarball nannte noch 4.1.14 (nachgeprüft durch Download aus dem Registry).
+- Keine Verhaltensänderung.
+- Test repariert: der strukturelle Fixpunkt in `tests/settings-bridge.test.mjs` verlangte noch
+  den entfernten Zahnrad-Einstieg, die Suite war seit 4.1.15 rot. Jetzt wird seine Abwesenheit zugesagt.
+
+## 4.1.15 — 2026-10-08 (nachgetragen: der Eintrag fehlte bei Veröffentlichung)
+
+### Entfernt
+
+- Die Shell-Platzierung `shell.overlay` entfällt: der fest rechts unten sitzende Zahnrad-Knopf und
+  seine schwebende Ebene sind weg (`src/client/shell-overlay.tsx` gelöscht). Der Einstieg in die
+  Einstellungen läuft nur noch über die Host-Einstellungsseite.
+
 ## 4.1.14 — 2026-10-08
 
 ### Entfernt

@@ -214,7 +214,10 @@ test('P0/实测裁决结构钉：双代腰按代分流（settingsScope 臂不喂
   assert.ok(src.includes('safe(\'config-cards/family-tab\', () => mountConfigCards(ctx))'))
   assert.ok(!src.includes('config-cards/settings-plugin-item'))
   assert.ok(!/slots\.inject\('settings\.plugin\.item'/.test(src))
-  assert.ok(src.includes("safe('shell.overlay'"))
+  // shell.overlay 右下齿轮兜底已在 4.1.15 退役（commit e1a27ce，src/client/shell-overlay.tsx 已删）。
+  // 与上面 settings.plugin.item 同法反向钉住：谁想把浮层入口接回来，这里先红。
+  assert.ok(!src.includes("safe('shell.overlay'"))
+  assert.ok(!/slots\.inject\('shell\.overlay'/.test(src))
   // 卡面数据源 = currentScope()（scopeRef ?? bridge 桥兜底）
   assert.match(src, /function currentScope\(\): SettingsScope<SessionGuardConfig> \{\s*return scopeRef\.scope \?\? bridgeScope\(\)/)
 })

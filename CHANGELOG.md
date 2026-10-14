@@ -11,6 +11,24 @@ All notable changes to `dsh-session-guard` are recorded here. Versions follow se
 - [Changelog на русском](./CHANGELOG.ru.md)
 - [Changelog en español](./CHANGELOG.es.md)
 
+## 4.1.16 — 2026-10-14 (metadata alignment; backfill the missing 4.1.15 entry)
+
+### Fixed
+
+- `dsh.plugin.json` now carries the same version as `package.json`. The published 4.1.15 tarball
+  still said 4.1.14 (verified by downloading it from the registry), so the two manifests disagreed in a released artifact.
+- No behaviour change in this release.
+- Test suite repaired: the structural pin in `tests/settings-bridge.test.mjs` still demanded the
+  retired gear entry, so the suite had been red since 4.1.15; it now asserts the opposite (absence).
+
+## 4.1.15 — 2026-10-08 (backfilled: this entry was never written at release time)
+
+### Removed
+
+- The shell-level `shell.overlay` slot injection: the fixed bottom-right gear button and its
+  positioned floating layer are gone (`src/client/shell-overlay.tsx` deleted). The settings entry
+  now relies on the host settings page alone.
+
 ## 4.1.14 — 2026-10-08
 
 ### Removed

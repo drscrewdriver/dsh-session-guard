@@ -48,8 +48,16 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 const FAMILY_SECTION_ID = 'dsh-family'
 /** 家族子席位 key（与 thinking-levels 的声明严格一致）。 */
 const FAMILY_CHILD_KEY = 'dsh-family.tab'
-/** 让位宽限：声明批内 TL 的注册微秒级落账，此延迟后查账本足以分辨「TL 在场」。 */
-const FAMILY_YIELD_MS = 500
+/** 家族容器接管分级——唯一真源是 `mine-dsh-plugins/_tools/family-rank.mjs`（离线实测
+ * GitHub star + npm 周下载量加权，不得在注释/代码里另行推数）。rank 越小越优先，
+ * 延迟 = BASE + RANK * STEP。guard 实测排第二（仅次于 thinking-levels）。
+ * 旧值 500ms 是拍的：它只够等 TL 落账，但排在它后面的 steward/mcp 无法据此错开。 */
+const FAMILY_CLAIM_RANK = 1
+const FAMILY_CLAIM_BASE_MS = 200
+const FAMILY_CLAIM_STEP_MS = 900
+/** 让位宽限（由分级派生）：TL rank 0 在 200ms 落账，本插件 rank 1 到 1100ms 才查账本——
+ * 落账时刻由各家 rank 决定（不再依赖 inject 注册顺序里谁先 fire），此延迟后足以分辨「TL 在场」。 */
+const FAMILY_YIELD_MS = FAMILY_CLAIM_BASE_MS + FAMILY_CLAIM_RANK * FAMILY_CLAIM_STEP_MS
 
 /**
  * 客户端所需服务：slots（状态徽标）+ locale。持久设置走双代腰
@@ -196,14 +204,17 @@ export function apply(ctx: ClientCtx) {
   // 2026-10-08 T20-a 实证修正：≤0.1.7 壳的设置导航对同 id 异 priority 的遮蔽位
   // 也各列一行——「TL(p0) 恒头位、本插件 p10 恒阴影不占导航」假设不成立，双注册
   // = 双「起子插件设置」导航行（0.1.0~0.1.7 五格全现；0.1.0 摘除 guard 实验：
-  // 单行归位、TL 节独座满血）。改为延迟让位：声明批内 TL 同批落账（工厂 fire
-  // 顺序=inject 注册顺序，本插件的 inject 先注册先 fire，TL 同批紧随），延迟
-  // FAMILY_YIELD_MS 再查账本——已有 dsh-family（TL 头位落座）→ 让位退场；仍空
-  // （TL 缺席/落账失败）→ 接管。inject 仍必须 apply 期注册——slots 核只在「声明
+  // 单行归位、TL 节独座满血）。改为延迟让位：**四家同走一条派生阶梯**——TL rank 0 在
+  // 200ms 落账、本插件 rank 1 到 1100ms 才查账本（落账时刻由 rank 决定，不再靠 inject
+  // 注册顺序里谁先 fire），所以本插件查账本时 TL 早已坐好：已有 dsh-family → 让位退场；
+  // 仍空（TL 缺席/落账失败）→ 接管。inject 仍必须 apply 期注册——slots 核只在「声明
   // 事件」触发工厂，宽限期后注册的 inject 等不到下一次声明（0.1.0 实机日志定案：
-  // 4.1.7/4.1.8 的 grace 后注册工厂零执行）；register 本就是指令式调用，移入
-  // 定时器不改变机制。子席位声明带冲突兜底：TL 先声明 → 去 children 重试（接管
-  // 者不重复声明）；同 id 同 priority 竞争 → 双抛，放弃。register 走本工厂触发
+  // 4.1.7/4.1.8 的 grace 后注册工厂零执行）；register 本就是指令式调用，移入定时器不
+  // 改变机制（TL 自 2026-10-14 起也同样移入定时器）。子席位声明是 declare-or-withdraw：
+  // TL 先声明 → 本插件放弃接管
+  // （绝不退回不带 children 的裸注册——残废容器照样占住导航行，后来者按「已有
+  // dsh-family」集体让位，结果是成员 tab 全灭而节还在，2026-10-14 面板丢失即此）；
+  // 同 id 同 priority 竞争 → 双抛，放弃。register 走本工厂触发
   // 管道（裸注册的 entry.inject 在 ≤0.1.5 壳上不解，4.1.5「半补位」真相）。
   safe('family-section-election', () => {
     console.log('[dsh-session-guard] election: registering settings.section inject (apply-time)')
@@ -232,13 +243,10 @@ export function apply(ctx: ClientCtx) {
           }, GuardFamilySection)
           console.log('[dsh-session-guard] family takeover registered (children declared)')
         } catch (error) {
-          console.log(`[dsh-session-guard] children decl conflict (${error instanceof Error ? error.message : error}); registering without children`)
-          try {
-            ctx.slots.register(base, GuardFamilySection)
-            console.log('[dsh-session-guard] family takeover registered (no children)')
-          } catch (secondary) {
-            console.log(`[dsh-session-guard] family takeover abandoned: ${secondary instanceof Error ? secondary.message : secondary}`)
-          }
+          // Declare-or-withdraw: whoever holds the children table serves the family.
+          // Seating ourselves without it would keep the nav row while rendering no
+          // member tab at all — the failure mode this replaces.
+          console.log(`[dsh-session-guard] children claim lost — withdrawing (${error instanceof Error ? error.message : error})`)
         }
       }, FAMILY_YIELD_MS)
     })

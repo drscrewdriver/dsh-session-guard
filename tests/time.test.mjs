@@ -7,6 +7,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { parseHHMM, inWindow, wallClock, isWeekend, shouldPause, msUntilOffPeak, localMidnight, BILLING_TIMEZONE } from '../src/time.js'
+import { buildMap, BUILTIN_2026 } from '../src/holidays.js'
 
 const SETTINGS = {
   enabled: true,
@@ -208,4 +209,44 @@ test('msUntilOffPeak：周末模式关闭时窗口跨进周末 → 取窗口结�
 
 test('localMidnight：Asia/Shanghai 本地零点 = UTC 前一日 16:00', () => {
   assert.equal(localMidnight('Asia/Shanghai', 2026, 8, 22), Date.UTC(2026, 7, 21, 16, 0, 0))
+})
+
+// ── 修正表（holidayMap）：法定假=休，调休补班周末=工作 ──
+
+const HOLIDAY_SETTINGS = { ...SETTINGS, holidayMap: buildMap(BUILTIN_2026.days) }
+// 国庆假期首日 2026-10-01（周四）北京 10:00 = UTC 02:00
+const HOL_PEAK = new Date('2026-10-01T02:00:00Z')
+// 国庆调休补班 2026-10-10（周六）北京 10:00 = UTC 02:00
+const MAKEUP_PEAK = new Date('2026-10-10T02:00:00Z')
+
+test('修正表：周六调休补班高峰 → 照常入峰（无表时是周末）', () => {
+  assert.deepEqual(shouldPause(SETTINGS, MAKEUP_PEAK), { pause: false, reason: 'weekend' })
+  const r = shouldPause(HOLIDAY_SETTINGS, MAKEUP_PEAK)
+  assert.equal(r.pause, true)
+  assert.equal(r.reason, 'peak')
+})
+
+test('修正表：工作日法定假高峰 → 视同周末全天非峰', () => {
+  const r = shouldPause(HOLIDAY_SETTINGS, HOL_PEAK)
+  assert.equal(r.pause, false)
+  assert.equal(r.reason, 'weekend')
+})
+
+test('修正表：holidayMode 关闭（不挂表）退回自然周末', () => {
+  assert.deepEqual(shouldPause({ ...SETTINGS, holidayMap: null }, MAKEUP_PEAK), { pause: false, reason: 'weekend' })
+})
+
+test('msUntilOffPeak：调休补班周六高峰 → 窗口结束（2h），不再误当周末', () => {
+  assert.equal(msUntilOffPeak(HOLIDAY_SETTINGS, MAKEUP_PEAK), 2 * 60 * 60 * 1000)
+})
+
+test('msUntilOffPeak：补班周末前推 → 取窗口结束（非周末起点），无表时取周末起点', () => {
+  const overnight = { ...HOLIDAY_SETTINGS, peakWindows: [{ start: '22:00', end: '06:00' }] }
+  // 周五 2026-10-09 23:00（北京）：10-10 是补班工作日，周末起点候选推到周日 00:00(25h)，
+  // 但窗口自身 06:00 结束（7h）更早命中——补班周六白天照常低峰可跑。
+  const r = msUntilOffPeak(overnight, new Date('2026-10-09T15:00:00Z'))
+  assert.equal(r, 7 * 60 * 60 * 1000)
+  // 无表时同一时刻：10-10 周六即休息，1h 到周六 00:00 更早
+  const plain = { ...SETTINGS, peakWindows: [{ start: '22:00', end: '06:00' }] }
+  assert.equal(msUntilOffPeak(plain, new Date('2026-10-09T15:00:00Z')), 60 * 60 * 1000)
 })

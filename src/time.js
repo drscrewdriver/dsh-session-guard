@@ -6,11 +6,16 @@
  *
  * 周末判定基于用户配置时区（settings.timezone），因为"周末"是用户本地概念。
  *
+ * 修正表（settings.holidayMap，holiday-cn 语义）存在时，"周末"升级为
+ * "休息日"：法定节假日（含落在工作日的）视同周末；调休补班周末
+ * 视同工作日（峰谷窗口照常生效）。无表时退回纯自然周末。
+ *
  * 两者都通过 `Intl.DateTimeFormat(timeZone)` 投影，避免裸 `getUTCDay()`
  * 导致北京周末边界错 8 小时的 bug。
  *
  * 高峰时段为左闭右开 [start, end)；跨午夜窗口（start > end）安全。
  */
+import { isRestDay, ymdOf } from './holidays.js'
 
 /**
  * DeepSeek 峰谷计费基准时区（固定北京时间 UTC+8）。
@@ -67,6 +72,18 @@ export function isWeekend(weekday) {
   return weekday === 0 || weekday === 6
 }
 
+/**
+ * 用户时区"当天是否休息日"：holidayMap 存在则查修正表（含调休补班），
+ * 缺省退回自然周末。settings.holidayMap 由 host 装配层（readCfg）挂载，
+ * holidayMode 关闭时不挂——本函数只看表的存在性。
+ * @param {object} settings 同 shouldPause
+ * @param {{year:number,month:number,day:number,weekday:number}} wc wallClock 分量（用户时区）
+ * @returns {boolean}
+ */
+export function isRestForSettings(settings, wc) {
+  return isRestDay(settings.holidayMap, ymdOf(wc), wc.weekday)
+}
+
 /** 某墙钟分钟是否处于任一高峰窗口内。 */
 export function isInPeak(wc, windows) {
   return windows.some((w) => {
@@ -80,19 +97,20 @@ export function isInPeak(wc, windows) {
 /**
  * 主判定：此刻是否应触发高峰暂停。
  *
- * - 峰谷判定：固定使用 BILLING_TIMEZONE（北京时间），与 DeepSeek 官方计费一致；
- * - 周末判定：使用 settings.timezone（用户本地时区），因为周末是用户本地概念。
+ * - 周末/休息日判定：使用 settings.timezone（用户本地时区），周末是用户本地概念；
+ *   holidayMap 存在时升级为修正表语义（法定假=休，调休补班周末=工作）；
+ * - 峰谷判定：固定使用 BILLING_TIMEZONE（北京时间），与 DeepSeek 官方计费一致。
  *
- * @param {object} settings { enabled, weekendMode, timezone, peakWindows }
+ * @param {object} settings { enabled, weekendMode, timezone, peakWindows, holidayMap? }
  * @param {Date} date
  * @returns {{pause:boolean, reason:string}}
- *          reason: 'disabled' | 'weekend' | 'peak' | 'off-peak'
+ *          reason: 'disabled' | 'weekend'（休息日，含法定假） | 'peak' | 'off-peak'
  */
 export function shouldPause(settings, date) {
   if (!settings || settings.enabled !== true) return { pause: false, reason: 'disabled' }
-  // 周末判定：用用户配置时区（用户本地的周末）
+  // 周末/休息日判定：用用户配置时区（用户本地的周末）
   const wcUser = wallClock(settings.timezone, date)
-  if (settings.weekendMode === true && isWeekend(wcUser.weekday)) {
+  if (settings.weekendMode === true && isRestForSettings(settings, wcUser)) {
     return { pause: false, reason: 'weekend' }
   }
   // 峰谷判定：固定北京时间（DeepSeek 官方计费基准）
@@ -127,7 +145,8 @@ export function localMidnight(tz, year, month, day) {
  * 从 `date` 出发、下一个「确定非峰」的时刻；找不到返回 null。
  * 取两个候选的最小值：
  * (a) 当前所在高峰窗口的结束时刻（计费时区，跨午夜安全）；
- * (b) 下一个周末日的本地 00:00（周末整天非峰，仅 weekendMode 开启时）。
+ * (b) 下一个休息日的本地 00:00（周末/法定假整天非峰，仅 weekendMode 开启时；
+ *     holidayMap 存在时同步识别法定假起点与调休补班周末）。
  * @param {object} settings
  * @param {Date} date 已知处于高峰
  * @returns {number|null}
@@ -154,9 +173,11 @@ function nextOffPeakInstant(settings, date) {
   }
   if (settings.weekendMode === true) {
     const wcUser = wallClock(settings.timezone, date)
-    for (let k = 1; k <= 7; k++) {
+    // 往后找第一个"休息日"（自然周末或法定假）；上限 14 天覆盖长假前的补班周末。
+    for (let k = 1; k <= 14; k++) {
       const day = new Date(Date.UTC(wcUser.year, wcUser.month - 1, wcUser.day + k))
-      if (!isWeekend(day.getUTCDay())) continue
+      const ymd = `${day.getUTCFullYear()}-${String(day.getUTCMonth() + 1).padStart(2, '0')}-${String(day.getUTCDate()).padStart(2, '0')}`
+      if (!isRestDay(settings.holidayMap, ymd, day.getUTCDay())) continue
       candidates.push(localMidnight(settings.timezone, day.getUTCFullYear(), day.getUTCMonth() + 1, day.getUTCDate()))
       break
     }

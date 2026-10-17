@@ -27,6 +27,7 @@ export default tseslint.config(
         queueMicrotask: 'readonly',
         setImmediate: 'readonly',
         AbortController: 'readonly',
+        AbortSignal: 'readonly',
       },
     },
     rules: {

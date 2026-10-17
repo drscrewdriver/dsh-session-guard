@@ -48,11 +48,13 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 const FAMILY_SECTION_ID = 'dsh-family'
 /** 家族子席位 key（与 thinking-levels 的声明严格一致）。 */
 const FAMILY_CHILD_KEY = 'dsh-family.tab'
-/** 家族容器接管分级——唯一真源是 `mine-dsh-plugins/_tools/family-rank.mjs`（离线实测
- * GitHub star + npm 周下载量加权，不得在注释/代码里另行推数）。rank 越小越优先，
- * 延迟 = BASE + RANK * STEP。guard 实测排第二（仅次于 thinking-levels）。
+/** 家族容器接管分级——唯一真源是 `mine-dsh-plugins/_tools/family-rank.mjs` 里那张
+ * **外部维护、已冻结（2026-10-14）的权重表**（规则：thinking-levels 钉 rank 0，其余按
+ * git 首提交日期「越新越低」；不再由 star/下载量派生——同量级插件之间那个分数没有信号，
+ * 实测 steward/mcp 只差 0.0003）。不得在注释/代码里另行推数。rank 越小越优先，
+ * 延迟 = BASE + RANK * STEP。本插件按冻结表为 rank 2（次于 thinking-levels / input-traffic）。
  * 旧值 500ms 是拍的：它只够等 TL 落账，但排在它后面的 steward/mcp 无法据此错开。 */
-const FAMILY_CLAIM_RANK = 1
+const FAMILY_CLAIM_RANK = 2
 const FAMILY_CLAIM_BASE_MS = 200
 const FAMILY_CLAIM_STEP_MS = 900
 /** 让位宽限（由分级派生）：TL rank 0 在 200ms 落账，本插件 rank 1 到 1100ms 才查账本——

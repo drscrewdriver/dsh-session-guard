@@ -56,7 +56,7 @@ test('family election: 让位判据读账本 id，且延迟由 rank 阶梯派生
     /ctx\.slots\.entries\('settings\.section'\)\.some\(e => e\.options\.id === FAMILY_SECTION_ID\)/,
     '让位判据必须查账本里是否已有 dsh-family 行',
   )
-  assert.match(SRC, /const FAMILY_CLAIM_RANK = 2\b/, 'guard rank=1（与 _tools/family-rank.mjs 唯一真源一致）')
+  assert.match(SRC, /const FAMILY_CLAIM_RANK = 2\b/, 'guard rank=2（与 _tools/family-rank.mjs 唯一真源一致）')
   assert.match(
     SRC,
     /const FAMILY_YIELD_MS = FAMILY_CLAIM_BASE_MS \+ FAMILY_CLAIM_RANK \* FAMILY_CLAIM_STEP_MS/,

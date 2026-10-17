@@ -3,16 +3,19 @@
  *
  * 高峰自动会话门：
  * - 每 30s tick 判定状态（NORMAL ↔ PAUSED_PEAK），纯状态机见 scheduler.js。
- * - 入峰（且非周末）：对所有 running root session 调 gate.stopNextTurn
+ * - 入峰（且非周末/休息日）：对所有 running root session 调 gate.stopNextTurn
  *   （有 taskControl → 会话门 safe+wait；无 → 回退锁等待队列）。
- * - 退峰/周末：gate.resume 全部。
+ * - 退峰/休息日：gate.resume 全部。
+ * - 法定假/调休修正表（holidayMode）：内置快照 + 启动校验缓存指纹 + 按年自动
+ *   抓取 holiday-cn（holiday-store.js）；法定假视同周末，调休补班周末按工作日。
  * - `ctx.provide('sessionGuard')` 冗余端口，input-traffic 冻结按钮透传接入。
  * - 设置：设置 → 插件 → session-guard 子板块，简单开关（enabled / weekendMode / queueFallback）。
  *   schemastery 为常规 dependency，设置经 `ctx.inject(['settings'])` 本地接口注册（src/settings.js，
  *   对齐 dsh-thinking-levels；不 value-import dsh-settings）；设置服务缺失时 fail-open 用默认配置照常运行。
  */
 import { computeState, transition } from './scheduler.js'
-import { wallClock, isWeekend, isInPeak, BILLING_TIMEZONE } from './time.js'
+import { wallClock, isRestForSettings, isInPeak, BILLING_TIMEZONE } from './time.js'
+import { createHolidayStore } from './holiday-store.js'
 import { createStore } from './store.js'
 import { createGate } from './gate.js'
 import { createBridge } from './bridge.js'
@@ -43,6 +46,21 @@ export function apply(ctx, config = {}) {
   const store = createStore()
   let lastState = null
 
+  // ── 法定假/调休修正表：内置快照打底，启动校验缓存指纹，按年自动抓取 ──
+  // holidayMap 只在 holidayMode 开启时挂进 cfg（readCfg）；消费方（time.shouldPause
+  // 及其全部调用链）无感知：表缺席即退回自然周末。fail-open：抓取/解析失败只
+  // warn，不阻断 tick / 暂停主链路。DSH_SESSION_GUARD_HOLIDAY_FETCH=0 可断网
+  // （单测/离线环境）：退化为纯内置 + 已缓存，不发起任何请求。
+  const holidays = createHolidayStore({
+    logger: ctx.logger,
+    fetchImpl: process.env.DSH_SESSION_GUARD_HOLIDAY_FETCH === '0' ? null : globalThis.fetch,
+  })
+  try {
+    holidays.loadAll() // 同步：内置 + 缓存（含启动指纹校验）
+  } catch (e) {
+    ctx.logger?.warn?.(`[session-guard] holiday load failed (weekend-only fallback): ${String(e)}`)
+  }
+
   /** 读实时设置（settings 服务不可用时回退默认）。 */
   let configSource = config
   /** 组合条目快照：volatile 字段解引，供默认值合并。 */
@@ -56,7 +74,10 @@ export function apply(ctx, config = {}) {
   function readCfg() {
     try {
       const v = resolveEntryConfig()
-      return v && typeof v === 'object' ? { ...DEFAULT_SETTINGS, ...v } : { ...DEFAULT_SETTINGS }
+      const cfg = v && typeof v === 'object' ? { ...DEFAULT_SETTINGS, ...v } : { ...DEFAULT_SETTINGS }
+      // 修正表活引用：holidayMode 开启才挂；每次重组装取最新合并表（抓取更新后自然生效）
+      if (cfg.holidayMode === true) cfg.holidayMap = holidays.map()
+      return cfg
     } catch {
       return { ...DEFAULT_SETTINGS }
     }
@@ -273,6 +294,15 @@ export function apply(ctx, config = {}) {
   ctx.effect(() => ctx.timer.interval(tick, 30_000), 'session-guard: tick')
   tick()
 
+  // ── 修正表自动刷新：启动后立即核对一次，之后每小时 ensureFresh ──
+  // 当年 +（11/12 月）次年；已有表 24h 内不重抓，指纹一致不写盘（见 holiday-store.js）。
+  const holidayRefresh = () => {
+    void holidays.ensureFresh({ autoFetch: readCfg().holidayAutoFetch === true })
+      .catch((e) => ctx.logger?.warn?.(`[session-guard] holiday refresh failed: ${String(e)}`))
+  }
+  ctx.effect(() => ctx.timer.interval(holidayRefresh, 3_600_000), 'session-guard: holiday refresh')
+  holidayRefresh()
+
   // ── HTTP 路由 ──
   // 0.1.5 compat：注册失败只记日志，不让 apply 抛错炸掉宿主插件加载（#5926 教训）。
   // webServer.register 前缀路由 + SSE 在 0.1.5 契约不变（packages/host/webserver WebRoute）。
@@ -353,19 +383,21 @@ export function apply(ctx, config = {}) {
           }
           // GET /session-guard/status —— 全局当前阶段（状态徽标轮询用）
           // 峰谷判定：固定北京时间（BILLING_TIMEZONE），与 DeepSeek 官方计费一致
-          // 周末判定：用配置时区（用户本地的周末）
+          // 周末/休息日判定：用配置时区；holidayMode 开启时查修正表（法定假=休，补班周末=工作）
           if (method === 'GET' && url.pathname === '/session-guard/status') {
             const cfg = readCfg()
             const now = new Date()
             const wcUser = wallClock(cfg.timezone, now)
             const wcBilling = wallClock(BILLING_TIMEZONE, now)
-            const weekend = isWeekend(wcUser.weekday)
+            const weekend = isRestForSettings(cfg, wcUser)
             const peak = cfg.enabled && !weekend && isInPeak(wcBilling, cfg.peakWindows || [])
             return json(200, {
               ok: true,
               status: {
                 phase: weekend ? 'weekend' : peak ? 'peak' : 'off-peak',
                 weekend,
+                holidayMode: cfg.holidayMode === true,
+                holidays: holidays.info(),
                 peak,
                 state: lastState,
                 enabled: cfg.enabled,

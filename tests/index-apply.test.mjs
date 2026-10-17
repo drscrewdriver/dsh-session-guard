@@ -38,11 +38,15 @@ function fakeCtx() {
 function withTmpState(t) {
   const dir = mkdtempSync(join(tmpdir(), 'session-guard-apply-'))
   const old = process.env.DSH_SESSION_GUARD_STATE_DIR
+  const oldHol = process.env.DSH_SESSION_GUARD_HOLIDAY_FETCH
   process.env.DSH_SESSION_GUARD_STATE_DIR = dir
+  process.env.DSH_SESSION_GUARD_HOLIDAY_FETCH = '0' // 单测断网：修正表只用内置，不发真实请求
   t.after(() => {
     rmSync(dir, { recursive: true, force: true })
     if (old === undefined) delete process.env.DSH_SESSION_GUARD_STATE_DIR
     else process.env.DSH_SESSION_GUARD_STATE_DIR = old
+    if (oldHol === undefined) delete process.env.DSH_SESSION_GUARD_HOLIDAY_FETCH
+    else process.env.DSH_SESSION_GUARD_HOLIDAY_FETCH = oldHol
   })
 }
 

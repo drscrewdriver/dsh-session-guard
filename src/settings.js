@@ -20,7 +20,9 @@ export const NS = 'session-guard'
 export const DEFAULT_SETTINGS = Object.freeze({
   enabled: true, // 高峰自动处理开关（简单开关）
   offPeakAutoResume: true, // 低谷自动恢复开关：低峰时段自动恢复被高峰暂停的会话
-  weekendMode: true, // 周末模式开关：识别周末，无视峰谷（简单开关）
+  weekendMode: true, // 周末模式开关：识别周末/休息日，无视峰谷（简单开关）
+  holidayMode: true, // 法定节假日修正表：法定假视同周末，调休补班周末按工作日（简单开关）
+  holidayAutoFetch: true, // 按年自动抓取 holiday-cn 修正表（关=只用内置+已缓存；启动仍校验缓存指纹）
   timezone: 'Asia/Shanghai',
   peakWindows: [
     { start: '09:00', end: '12:00' },
@@ -57,6 +59,8 @@ export const SettingsSchema = z.object({
   enabled: z.boolean().default(DEFAULT_SETTINGS.enabled).volatile(),
   offPeakAutoResume: z.boolean().default(DEFAULT_SETTINGS.offPeakAutoResume).volatile(),
   weekendMode: z.boolean().default(DEFAULT_SETTINGS.weekendMode).volatile(),
+  holidayMode: z.boolean().default(DEFAULT_SETTINGS.holidayMode).volatile(),
+  holidayAutoFetch: z.boolean().default(DEFAULT_SETTINGS.holidayAutoFetch).volatile(),
   timezone: z.string().default(DEFAULT_SETTINGS.timezone).volatile(),
   peakWindows: z
     .array(z.object({ start: z.string(), end: z.string() }))

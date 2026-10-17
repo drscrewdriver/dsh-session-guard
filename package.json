@@ -1,6 +1,6 @@
 {
   "name": "dsh-session-guard",
-  "version": "4.2.0-local.0",
+  "version": "4.2.0",
   "publishConfig": {
     "registry": "https://registry.npmjs.org",
     "tag": "latest"

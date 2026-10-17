@@ -11,6 +11,18 @@
 - [Changelog на русском](./CHANGELOG.ru.md)
 - [Changelog en español](./CHANGELOG.es.md)
 
+## 4.2.0 — 2026-10-17
+
+### 추가
+- 법정 공휴 인식(src/holidays.js + src/holiday-store.js). 내장 2026 확정 스냅샷: 39행 = 33 휴일 + 6 보근 근무일(출처 holiday-cn, 국무원 공고). 엄격한 파싱(제로패딩 날짜, isOffDay 불리언, 연도 초과 거부); 판정 필드만 sha256 지문(상문구/순서 변경은 오탐 없음). 캐시 파일 $DSH_HOME/.dsh/session-guard/holidays/<year>.json 은 로드 시 지문 자체 검증 — 불일치 시 폐기 후 내장 폴백 + 재조회. 자동 갱신: 시작 시 + 매시간 ensureFresh; 관련 연도 = 베이징 현재 연도, 11/12 월은 이듬해 추가(jsDelivr 주, raw.githubusercontent 보조, 10s 타임아웃); 지문 변화 시에만 원자적 tmp+rename 기록; 24h 재조회 억제; 전 구간 fail-open. DSH_SESSION_GUARD_HOLIDAY_FETCH=0 오프라인 고정.
+- 선언식 스위치 holidayMode / holidayAutoFetch(기본 켜짐). /session-guard/status 가 holidayMode + 연도별 holidays[](출처/지문/조회시각/건수) 노출.
+
+### 변경
+- weekendMode 를 휴식일 의미로 승격: 법정 공휴는 종일 비봉우리, 보근 주말은 정상 봉우리 판정, nextOffPeakInstant 선탐색 7 -> 14 일, 표 인지. holidayMap 은 readCfg 로 cfg 에 실려 shouldPause 소비 체인(스케줄러/request-guard/step-gate/wiring)이 서명 변경 없이 자동 적용.
+
+### 수정
+- family claim rank 1 -> 2, 동결 가중 랭크 표(_tools/family-rank.mjs 단일 진원)와 정렬.
+
 ## 4.1.16 — 2026-10-14 (매니페스트 정리, 누락된 4.1.15 항목 보충)
 
 ### 수정

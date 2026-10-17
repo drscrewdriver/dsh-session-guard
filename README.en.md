@@ -344,6 +344,13 @@ npm test   # node --test tests/*.test.mjs (timezone/weekend/state-machine/sessio
 | `src/index.js` | Host apply (settings/routes/tick/provide service/retry + request guard wiring) |
 | `src/client/` | Browser half (status badge + settings card + four-language dictionaries) |
 
+
+## Statutory holidays and make-up workdays (4.2.0+)
+
+weekendMode now means rest-day aware: statutory holidays (including ones landing on workdays) are off-peak all day; make-up-workday weekends enter the peak windows normally. The data source is the holiday-cn finalized snapshot — builtin 2026 with all 39 rows (33 rest days + 6 make-up workdays, State Council notices) — plus startup check and hourly refresh: jsDelivr primary with raw.githubusercontent fallback, 10 s timeout; the Beijing current year is fetched, and Nov/Dec also track next year (late-December notices land without a plugin release). Cache lives at $DSH_HOME/.dsh/session-guard/holidays/<year>.json, self-verified by a sha256 fingerprint over the decision fields only (upstream copy edits cause no false churn); mismatch discards the cache and falls back to builtin. Only fingerprint changes write (atomic tmp+rename); 24 h refetch budget; fail-open across the entire chain.
+
+Settings: holidayMode (rest-day awareness, default on) and holidayAutoFetch (network refresh, default on); pin offline mode with DSH_SESSION_GUARD_HOLIDAY_FETCH=0. /session-guard/status exposes year / source / fingerprint / fetchedAt / entry count.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

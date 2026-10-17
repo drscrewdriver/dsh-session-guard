@@ -11,6 +11,18 @@
 - [Changelog на русском](./CHANGELOG.ru.md)
 - [Changelog en español](./CHANGELOG.es.md)
 
+## 4.2.0 — 2026-10-17
+
+### 追加
+- 法定祝日対応（src/holidays.js + src/holiday-store.js）。内置 2026 確定スナップショット：39 行 = 33 休日 + 6 振替出勤日（出典 holiday-cn、国務院公告）。厳格 parse（ゼロ埋め日付、isOffDay 真偽、跨年拒否）；判定字段のみ sha256 指紋（上流の文言/順序変更は偽差異を出さない）。キャッシュファイル $DSH_HOME/.dsh/session-guard/holidays/<year>.json はロード時に指紋照合、不一致は破棄して内置フォールバック + 再取得。自動更新：起動時 + 每小时 ensureFresh；対象年は北京当年、11/12 月は翌年も（年末公告はリリース無しで反映）；jsDelivr 主 / raw.githubusercontent 副、10s タイムアウト；指紋変化時のみ原子的書込；24h 再取得抑制；全链路 fail-open。DSH_SESSION_GUARD_HOLIDAY_FETCH=0 で離线内置固定。
+- 宣言式開关 holidayMode / holidayAutoFetch（どちらも既定 ON）。/session-guard/status に holidayMode + holidays[]（年/出典/指紋/取得时刻/件数）を追加。
+
+### 変更
+- weekendMode を休息日语义へ昇格：法定祝日は终日オフピーク、振替出勤周末は通常どおりピーク判定、nextOffPeakInstant の先読み 7 -> 14 日で表対応。holidayMap は readCfg 経由で cfg に載り、shouldPause 消费链（scheduler tick / request-guard / step-gate / wiring）はシグネチャ不変で自动生效。
+
+### 修正
+- family claim rank 1 -> 2、冻结权重表（唯一真源 _tools/family-rank.mjs）と整合。
+
 ## 4.1.16 — 2026-10-14（マニフェスト整合／欠落していた 4.1.15 の補記）
 
 ### 修正

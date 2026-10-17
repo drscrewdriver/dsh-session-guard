@@ -11,6 +11,18 @@ Alle nennenswerten Änderungen an `dsh-session-guard` werden hier festgehalten. 
 - [Changelog auf Russisch](./CHANGELOG.ru.md)
 - [Changelog en español](./CHANGELOG.es.md)
 
+## 4.2.0 — 2026-10-17
+
+### Neu
+- Kenntnis gesetzlicher Feiertage (src/holidays.js + src/holiday-store.js). Integrierter 2026-Endstand: 39 Zeilen = 33 Ruhetage + 6 Nacharbeitstage (holiday-cn, Staatsratsmitteilungen). Striktes Parsen (führender-null Datums, isOffDay boolsch, Jahresüberschreitung abgewiesen); sha256-Fingerabdruck nur über Entscheidungsfelder — Formulierungs-/Reihenfolge-Edits erzeugen keinen Pseudo-Change. Cache-Datei $DSH_HOME/.dsh/session-guard/holidays/<year>.json verifiziert ihren Fingerabdruck beim Laden: Abweichung verwirft den Cache (builtin-Fallback) und loest einen Reload aus. Auto-Refresh: Startpruefung + stuendliche ensureFresh; betroffene Jahre = Peking-Jahr, Nov/Dez ergaenzen das Folgejahr (Dezember-Meldung landet ohne Release); jsDelivr primaer, raw.githubusercontent als Ausweich, 10 s Timeout; atomarer tmp+rename-Schreibvorgang nur bei Fingerabdruck-Aenderung; 24-h-Budget; durchgaengig fail-open. DSH_SESSION_GUARD_HOLIDAY_FETCH=0 nagelt Offline/Builtin fest.
+- Deklarative Schalter holidayMode und holidayAutoFetch (beide Standard an). /session-guard/status liefert holidayMode + holidays[] pro Jahr (Quelle / Fingerabdruck / abrufZeit / Anzahl).
+
+### Geaendert
+- weekendMode auf Ruhetag-Semantik gehoben: gesetzliche Feiertage ganztags auerhalb der Peak-Zeit; Nacharbeit-WE treten normal in die Peak-Prüfung; nextOffPeakInstant-Vorschau 7 -> 14 Tage, tabellenbewusst. holidayMap reitet via readCfg auf cfg — alle shouldPause-Konsumenten (Scheduler-Tick / request-guard / step-gate / Release-Timer) ohne Signaturbruch.
+
+### Behoben
+- Family-Claim-Rang 1 -> 2, buendig zur eingefrorenen Gewichtsleiter (_tools/family-rank.mjs, einzige Quelle).
+
 ## 4.1.16 — 2026-10-14 (Manifestgleichheit; nachgetragener 4.1.15-Eintrag)
 
 ### Behoben

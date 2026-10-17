@@ -368,6 +368,13 @@ npm test   # node --test tests/*.test.mjs（时区/周末/状态机/会话门/�
 | `src/index.js` | host apply（设置/路由/tick/提供服务/重试接线/请求守卫） |
 | `src/client/` | 浏览器 half（**暂停会话按钮** + 状态徽标 + 设置卡片） |
 
+
+## 法定节假日与调休（4.2.0+）
+
+weekendMode 升级为休息日语义：法定假日（含落在工作日的）全天非峰；调休补班的周末照常走入峰窗口。数据源为 holiday-cn 定稿快照——内置 2026 全年 39 条（33 放假日 + 6 补班日，国务院公告），启动核对 + 每小时自动刷新：jsDelivr 主源、raw.githubusercontent 备源，10s 超时；按北京当年抓取，11/12 月追加次年（年底公告无需发版即自动进表）；缓存落 $DSH_HOME/.dsh/session-guard/holidays/<year>.json，加载时以 sha256 指纹（只覆盖判定字段，上游改文案不引起伪变化）自校验，不符即弃用回退内置并重抓；仅指纹变化才原子写盘（tmp+rename），24 小时内不重抓；全链路 fail-open。
+
+设置项：holidayMode（休息日识别，默认开）、holidayAutoFetch（联网自动刷新，默认开）；离线可用环境变量 DSH_SESSION_GUARD_HOLIDAY_FETCH=0 钉死内置档。/session-guard/status 透出年份/来源/指纹/抓取时间/条数。
+
 ## License
 
 MIT — 见 [LICENSE](LICENSE)。

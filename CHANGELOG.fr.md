@@ -11,6 +11,18 @@ Tous les changements notables de `dsh-session-guard` sont consignés ici. Les ve
 - [Changelog en russe](./CHANGELOG.ru.md)
 - [Changelog en español](./CHANGELOG.es.md)
 
+## 4.2.0 — 2026-10-17
+
+### Ajouté
+- Prise en charge des jours ferries légaux (src/holidays.js + src/holiday-store.js). Instantané 2026 intégré : 39 lignes = 33 repos + 6 rattrapages travaillés (holiday-cn, annonces du Conseil d'État). Analyse stricte (dates à zéros, isOffDay booléen, lignes inter-années rejetées) ; empreinte sha256 sur les seuls champs de décision (les edits de libellé/ordre en amont ne créent pas de faux changement). Le cache $DSH_HOME/.dsh/session-guard/holidays/<year>.json se auto-vérifie au chargement : empreinte fautive -> rejet, repli intégré, re-fetch. Rafraîchissement auto : au démarrage + ensureFresh horaire ; années concernées = année de Pékin, nov/déc ajoutent l'année suivante (l'annonce de fin décembre entre sans nouvelle version) ; jsDelivr principal, raw.githubusercontent en repli, délai 10 s ; écriture atomique tmp+rename seulement si l'empreinte change ; budget 24 h ; fail-open de bout en bout. DSH_SESSION_GUARD_HOLIDAY_FETCH=0 fige le mode hors ligne.
+- Interrupteurs déclaratifs holidayMode et holidayAutoFetch (activés par défaut). /session-guard/status expose holidayMode + holidays[] par année (source / empreinte / horodatage / nombre).
+
+### Change
+- weekendMode promu en sémantique jour de repos : ferries légaux = creux toute la journée ; rattrapages tombant le weekend entrent dans la fenêtre pointe ; lookahead nextOffPeakInstant 7 -> 14 jours, conscient du tableau. holidayMap passe dans cfg via readCfg : les consommateurs de shouldPause (tick scheduler / request-guard / step-gate / minuteries de libération) le récupèrent sans changer de signature.
+
+### Corrigé
+- Rang de revendication family 1 -> 2, aligné sur l'échelle figée (_tools/family-rank.mjs, source unique).
+
 ## 4.1.16 — 2026-10-14 (alignement des manifestes ; entrée 4.1.15 rétablie)
 
 ### Correction

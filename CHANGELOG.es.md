@@ -11,6 +11,18 @@ Todos los cambios notables de `dsh-session-guard` se registran aquí. Las versio
 - [Changelog en ruso](./CHANGELOG.ru.md)
 - [Changelog en español](./CHANGELOG.es.md)
 
+## 4.2.0 — 2026-10-17
+
+### Añadido
+- Conocimiento de festivos legales (src/holidays.js + src/holiday-store.js). Instantánea 2026 integrada: 39 filas = 33 descansos + 6 recuperos laborales (holiday-cn, anuncios del Consejo de Estado). Parseo estricto (fechas con ceros, isOffDay booleano, filas multi-año rechazadas); huella sha256 solo sobre los campos de decisión — ediciones de redacción/orden no generan cambios falsos. La caché $DSH_HOME/.dsh/session-guard/holidays/<year>.json se auto-verifica al cargar: discrepancia descarta (fallback integrado) y re-obtiene. Refresco automático: arranque + ensureFresh horario; años relevantes = año de Pekín, nov/dic agregan el siguiente (el anuncio de fin de diciembre entra sin nuevo release); jsDelivr primario, raw.githubusercontent alterno, tiempo de espera 10 s; escritura atómica tmp+rename solo si cambia la huella; presupuesto 24 h; fail-open de extremo a extremo. DSH_SESSION_GUARD_HOLIDAY_FETCH=0 fija el modo sin red.
+- Interruptores declarativos holidayMode y holidayAutoFetch (ambos por defecto on). /session-guard/status expone holidayMode + holidays[] por año (fuente / huella / hora / conteo).
+
+### Cambiado
+- weekendMode promovido a semántica de día de descanso: los festivos legales son fuera de punta todo el día; los fines de semana recuperados entran normal al gating de punta; la ventana nextOffPeakInstant 7 -> 14 días, consciente de la tabla. holidayMap viaja en cfg mediante readCfg: los consumidores de shouldPause (tick del planificador / request-guard / step-gate / temporizadores de liberación) lo reciben sin romper firmas.
+
+### Corregido
+- Family claim rank 1 -> 2, alineado con la escalera de pesos congelada (_tools/family-rank.mjs, fuente única).
+
 ## 4.1.16 — 2026-10-14 (manifiestos alineados; entrada 4.1.15 restituida)
 
 ### Corrección

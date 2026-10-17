@@ -11,6 +11,18 @@ All notable changes to `dsh-session-guard` are recorded here. Versions follow se
 - [Changelog на русском](./CHANGELOG.ru.md)
 - [Changelog en español](./CHANGELOG.es.md)
 
+## 4.2.0 — 2026-10-17
+
+### Added
+- Statutory-holiday awareness (src/holidays.js + src/holiday-store.js). Builtin 2026 finalized snapshot: 39 rows = 33 rest days + 6 make-up workdays (source: holiday-cn, State Council notices). Strict parse (zero-padded dates, boolean isOffDay, cross-year rows rejected); sha256 fingerprint over the decision fields only — upstream copy/reorder edits cause no false churn. The cache file $DSH_HOME/.dsh/session-guard/holidays/<year>.json self-verifies its fingerprint at load: mismatch discards the cache (builtin fallback) and triggers a re-fetch. Auto refresh: startup check + hourly ensureFresh; relevant years = Beijing current year, Nov/Dec also add next year (the State Council publishes next year in late December, so it lands without a release); jsDelivr primary, raw.githubusercontent fallback, 10 s timeout; refetch only on fingerprint change, then atomic tmp+rename write; 24 h no-refetch budget; consistent hits only bump the check timestamp; fail-open end to end. DSH_SESSION_GUARD_HOLIDAY_FETCH=0 pins offline/builtin mode (tests ride it).
+- Declarative settings switches holidayMode and holidayAutoFetch (both default on; auto-form on 0.1.7+). /session-guard/status now exposes holidayMode + holidays[] per year (source / fingerprint / fetchedAt / entry count).
+
+### Changed
+- weekendMode upgraded to rest-day semantics: statutory holidays (including ones landing on workdays) are off-peak all day; make-up-workday weekends enter peak gating normally; nextOffPeakInstant lookahead widened 7 -> 14 days and is table-aware. holidayMap rides cfg via readCfg, so shouldPause consumers (scheduler tick / request-guard / step-gate / wiring release timers) pick it up with zero signature churn.
+
+### Fixed
+- Family claim rank 1 -> 2, aligned with the frozen weighted rank ladder (single source _tools/family-rank.mjs).
+
 ## 4.1.16 — 2026-10-14 (metadata alignment; backfill the missing 4.1.15 entry)
 
 ### Fixed

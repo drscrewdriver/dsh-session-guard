@@ -11,6 +11,13 @@ Todos los cambios notables de `dsh-session-guard` se registran aquí. Las versio
 - [Changelog en ruso](./CHANGELOG.ru.md)
 - [Changelog en español](./CHANGELOG.es.md)
 
+## 4.2.1 — 2026-10-17 (enumeración de hosts: +0.2.1-rc.1)
+
+### Fixed
+- `engines.dsh` y los cuatro pares `@deepseek-ai/dsh-client-*` añaden `|| 0.2.1-rc.1` (enumeración exacta de 16 hosts); la puerta de compatibilidad del host ahora acepta DSH `0.2.1-rc.1`.
+- `engines.dsh` de `dsh.plugin.json` alineado con la misma enumeración de 16 hosts (antes el rango `>=0.2.0-rc.1 <0.2.1-0`); la puerta solo lee `package.json`, pero las dos listas no deben divergir.
+- La mención de compatibilidad del README (zh/de/es/fr/it/ru) sincronizada con la enumeración. Sin cambios de comportamiento en esta versión.
+
 ## 4.2.0 — 2026-10-17
 
 ### Añadido

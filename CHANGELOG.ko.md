@@ -11,6 +11,13 @@
 - [Changelog на русском](./CHANGELOG.ru.md)
 - [Changelog en español](./CHANGELOG.es.md)
 
+## 4.2.1 — 2026-10-17（호스트 열거 갱신: 0.2.1-rc.1 추가）
+
+### Fixed
+- `engines.dsh`와 4개의 `@deepseek-ai/dsh-client-*` peer에 `|| 0.2.1-rc.1` 추가(16호스트 정확 열거). 호스트 호환 게이트가 DSH `0.2.1-rc.1`을 허용.
+- `dsh.plugin.json`의 `engines.dsh`를 동일한 16호스트 열거로 통일(기존 범위 `>=0.2.0-rc.1 <0.2.1-0`였음. 게이트는 `package.json`만 읽지만 두 목록은 일치해야 함).
+- README 호환 서술(zh/de/es/fr/it/ru)을 열거와 동기화. 이 릴리스에는 동작 변경 없음.
+
 ## 4.2.0 — 2026-10-17
 
 ### 추가

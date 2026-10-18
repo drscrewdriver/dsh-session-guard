@@ -55,7 +55,7 @@
 >
 > **Identität dieser Linie**: Zweig `compat/0.2.0`, npm-Versionsnummer **`4.0.0`** (semver), dist-tag **`dsh-0.2.0`**.
 > Die `engines.dsh` in `package.json` und `dsh.plugin.json` sowie die vier `@deepseek-ai/dsh-client-*`-Peers
-> sind einheitlich auf `0.1.0-rc.2 || 0.1.0-rc.3 || 0.1.0-rc.6 || 0.1.0-rc.7 || 0.1.0-rc.8 || 0.1.1-rc.1 || 0.1.1-rc.2 || 0.1.2-rc.1 || 0.1.5-rc.1 || 0.1.5-rc.2 || 0.1.5-rc.3 || 0.1.7-rc.1 || 0.1.7-rc.2 || 0.2.0-rc.1 || 0.2.0-rc.2 || 0.2.1-rc.1` gesetzt; die Untergrenze des `@deepseek-ai/cordis`-Peers entspricht dem `^4.0.4` der Host-Linie.
+> sind einheitlich auf `0.1.0-rc.2 || 0.1.0-rc.3 || 0.1.0-rc.6 || 0.1.0-rc.7 || 0.1.0-rc.8 || 0.1.1-rc.1 || 0.1.1-rc.2 || 0.1.2-rc.1 || 0.1.5-rc.1 || 0.1.5-rc.2 || 0.1.5-rc.3 || 0.1.7-rc.1 || 0.1.7-rc.2 || 0.2.0-rc.1 || 0.2.0-rc.2 || 0.2.1-rc.1 || 0.2.1-rc.2` gesetzt; die Untergrenze des `@deepseek-ai/cordis`-Peers entspricht dem `^4.0.4` der Host-Linie.
 > Früher benutzte das README „2.x / 3.x" als **Liniencoden** — das war eine Erzählkonvention, **keine aus der Registry
 > pullbare Versionsnummer** — maßgeblich sind ausschließlich die npm-Versionen `0.3.1` (0.1.2-Linie), `3.0.0`/`3.0.1` (0.1.5-Linie),
 > `3.2.4` (0.1.7-Linie) und `4.0.0` (0.2.0-Linie).

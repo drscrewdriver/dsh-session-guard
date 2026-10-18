@@ -55,7 +55,7 @@
 >
 > **Identidad de esta línea**: rama `compat/0.2.0`, número de versión npm **`4.0.0`** (semver), dist-tag **`dsh-0.2.0`**.
 > Los `engines.dsh` de `package.json` y `dsh.plugin.json` y los cuatro pares `@deepseek-ai/dsh-client-*`
-> se unifican en `0.1.0-rc.2 || 0.1.0-rc.3 || 0.1.0-rc.6 || 0.1.0-rc.7 || 0.1.0-rc.8 || 0.1.1-rc.1 || 0.1.1-rc.2 || 0.1.2-rc.1 || 0.1.5-rc.1 || 0.1.5-rc.2 || 0.1.5-rc.3 || 0.1.7-rc.1 || 0.1.7-rc.2 || 0.2.0-rc.1 || 0.2.0-rc.2 || 0.2.1-rc.1`; el límite inferior del par `@deepseek-ai/cordis` se alinea con el `^4.0.4` de la línea del host.
+> se unifican en `0.1.0-rc.2 || 0.1.0-rc.3 || 0.1.0-rc.6 || 0.1.0-rc.7 || 0.1.0-rc.8 || 0.1.1-rc.1 || 0.1.1-rc.2 || 0.1.2-rc.1 || 0.1.5-rc.1 || 0.1.5-rc.2 || 0.1.5-rc.3 || 0.1.7-rc.1 || 0.1.7-rc.2 || 0.2.0-rc.1 || 0.2.0-rc.2 || 0.2.1-rc.1 || 0.2.1-rc.2`; el límite inferior del par `@deepseek-ai/cordis` se alinea con el `^4.0.4` de la línea del host.
 > Históricamente el README usó «2.x / 3.x» como **apodos de línea**: era una costumbre narrativa, **no números de versión
 > descargables del registro** — guíate siempre por las versiones npm `0.3.1` (línea 0.1.2), `3.0.0`/`3.0.1` (línea 0.1.5),
 > `3.2.4` (línea 0.1.7) y `4.0.0` (línea 0.2.0).

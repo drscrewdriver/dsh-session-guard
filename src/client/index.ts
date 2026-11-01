@@ -236,6 +236,10 @@ export function apply(ctx: ClientCtx) {
           inject: () => ({
             hooks: makeGuardFamilyTabsHooks(ctx.slots),
             renderContributor,
+            // 接管时本插件既是 owner 又是成员：自宣子槽不触发自身 inject（账本恒无本卡），
+            // 故本卡内联直挂（ownId/renderOwn）。scope 走 currentScope()——apply 级原生/桥两轨兜底，恒非空。
+            ownId: 'session-guard',
+            renderOwn: () => createElement(SessionGuardCard, { scope: currentScope() }),
           }),
         }
         try {

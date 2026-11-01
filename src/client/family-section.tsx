@@ -7,11 +7,12 @@
  * 贡献卡（含本插件自己的，因为接管时本插件也声明了该子席位）按 order
  * 依次 renderSlot —— 卡片本身是默认展开的抽屉，整节即一页抽屉。
  *
- * 与 thinking-levels 的 FamilySettingsSection 的差别仅在不需要 thinking-
- * levels 自己的卡（宿主不在了，它的卡也不在）：渲染循环没有 own-tab 特例。
+ * 与 thinking-levels 的 FamilySettingsSection 一致：接管时本插件既是 owner 又是成员，
+ * 自宣 dsh-family.tab 不触发自身 inject（账本恒无本卡），故本卡作 OWN 行内联直挂
+ * （props.renderOwn/ownId），其余成员仍走账本。缺 renderOwn 时退回纯账本渲染（向后兼容）。
  */
 import { useEffect, useState } from 'react'
-import type { JSX } from 'react'
+import type { JSX, ReactNode } from 'react'
 
 /** 与 FamilySectionInjected.hooks.tabs 同形的账本投影（结构化镜像）。 */
 type HostObservable<T> = {
@@ -38,6 +39,10 @@ export interface GuardFamilySectionProps {
   /** 直接挂载面（≤0.1.5 壳无 renderSlot 时）：注册侧从账本原始条目
    * （entries 自带 component + inject）现挂激活卡。失败一律 null。 */
   renderContributor?: (id: string) => JSX.Element | null
+  /** 接管态内联直挂本插件自己的卡（自宣子槽不触发自身 inject，账本恒无本卡）。缺省时退回纯账本。 */
+  renderOwn?: () => ReactNode
+  /** 内联 own 行的账本 id（与账本条目去重用）；仅 renderOwn 存在时生效。 */
+  ownId?: string
 }
 
 const NO_TABS: readonly FamilyTabEntry[] = []
@@ -52,13 +57,21 @@ export function GuardFamilySection(props: GuardFamilySectionProps): JSX.Element 
     return raw.subscribe(() => setPolled(raw.getSnapshot()))
   })
   const tabs = props.useTabs !== undefined ? props.useTabs(value => value) : polled
+  // 接管时本插件既是容器 owner 又是成员：自宣的 dsh-family.tab 不触发自身 inject（账本恒无本卡），
+  // 故本卡作 OWN 行内联直挂、其余走账本；已在账本则去重不双渲。对齐 thinking-levels OWN_TAB_ID。
+  const ownId = props.ownId ?? '__own__'
+  const rows: readonly FamilyTabEntry[] = props.renderOwn
+    ? [{ id: ownId, order: Number.NEGATIVE_INFINITY, label: ownId }, ...tabs.filter(tab => tab.id !== ownId)]
+    : tabs
   return (
     <div style={{ display: 'grid', gap: '12px' }}>
-      {tabs.map(row => (
+      {rows.map(row => (
         <div key={row.id}>
-          {props.renderSlot
-            ? props.renderSlot('dsh-family.tab', {}, { only: row.id, fallback: null })
-            : props.renderContributor?.(row.id) ?? null}
+          {props.renderOwn && row.id === ownId
+            ? props.renderOwn()
+            : props.renderSlot
+              ? props.renderSlot('dsh-family.tab', {}, { only: row.id, fallback: null })
+              : props.renderContributor?.(row.id) ?? null}
         </div>
       ))}
     </div>

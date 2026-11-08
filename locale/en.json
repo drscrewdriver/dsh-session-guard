@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Peak auto session gate",
+    "description": "Auto-pause running sessions during peak hours. During peak hours only DeepSeek official sources are blocked; local/third-party providers keep running"
+  }
+}

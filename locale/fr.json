@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Barrière de session automatique aux heures de pointe",
+    "description": "Mettre automatiquement en pause les sessions actives pendant les heures de pic. En période de pic, seules les sources officielles DeepSeek sont bloquées ; les fournisseurs locaux/tiers continuent"
+  }
+}

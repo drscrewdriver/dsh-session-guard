@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Gate di sessione automatico nelle ore di punta",
+    "description": "Metti automaticamente in pausa le sessioni attive durante le ore di picco. Durante il picco blocca solo le sorgenti ufficiali DeepSeek; i provider locali/terzi continuano a funzionare"
+  }
+}

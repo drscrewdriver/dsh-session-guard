@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Automatisches Session-Gate zu Spitzenzeiten",
+    "description": "Laufende Sitzungen während der Spitzenzeiten automatisch pausieren. Zur Spitzenzeit nur DeepSeek-offizielle Quellen blockieren; lokale/Dritt-Anbieter laufen weiter"
+  }
+}

@@ -23,6 +23,7 @@ import { BridgeDocHandle } from './settings-bridge.ts'
 import { GuardFamilySection, type FamilyTabEntry } from './family-section'
 import type { SessionGuardConfig } from './settings-card'
 import type { SettingsScope } from './scope-face'
+import { NS, dictionaries } from './locales'
 
 // 起子插件族共用设置节：宿主 dsh-thinking-levels 注册顶级 `settings.section`
 // （id `dsh-family`）并声明 `dsh-family.tab` 子席位，本插件贡献卡片。宿主缺席
@@ -92,6 +93,14 @@ interface ClientCtx {
     _names: string[],
     _fn: (sctx: { configForms?: ConfigFormsFactoryFace; settingsScope?: SettingsScopeFactoryFace }) => void,
   ) => void
+  /** locale 服务（宿主 0.1.x 起提供；缺席时字典不注册，UI 回退到宿主默认文案）。 */
+  locale?: LocaleFace
+  effect?: (_fn: () => (() => void) | void, _label: string) => void
+}
+
+/** 宿主 locale 服务面：一次 register 激活全部语言。 */
+interface LocaleFace {
+  register(_ns: string, _dicts: Record<string, Record<string, string>>): () => void
 }
 
 /** 单面注册护栏：某条宿主线上未知槽名/缺服务的同步异常不得带走其它面。 */
@@ -164,6 +173,19 @@ function mountConfigCards(ctx: ClientCtx): void {
 }
 
 export function apply(ctx: ClientCtx) {
+  // 注册全部 9 种语言字典（zh/en/ja/ko/fr/de/it/ru/es）。
+  // 本插件此前 locales.ts 未被任何模块 import → 字典从未进入 bundle、从未注册（死代码）。
+  // guarded：register 抛错不得带走下面的席位注册；effect 缺席时直接调一次（同语义）。
+  safe('locale/dictionaries', () => {
+    const locale = ctx.locale
+    if (!locale) return
+    if (typeof ctx.effect === 'function') {
+      ctx.effect(() => locale.register(NS, dictionaries), 'dsh-session-guard: dictionaries')
+    } else {
+      locale.register(NS, dictionaries)
+    }
+  })
+
   // 暂停会话按钮（v0.2.0）：step 级门控的状态显示 + 手动解除。
   // order 20 < input-traffic 冻结按钮的 30 → 排在左侧，两者并列互不取代（ADR-001/002）。
   safe('conversation.input.right/pause', () => ctx.slots.inject('conversation.input.right', () => ctx.slots.register({

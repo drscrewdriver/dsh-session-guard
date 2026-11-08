@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "高峰自动会话门",
+    "description": "高峰时段自动暂停运行中的会话。高峰期只拦 DeepSeek 官方源；本地/第三方 provider 照常跑"
+  }
+}

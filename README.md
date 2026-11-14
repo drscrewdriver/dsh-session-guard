@@ -378,3 +378,14 @@ weekendMode 升级为休息日语义：法定假日（含落在工作日的）�
 ## License
 
 MIT — 见 [LICENSE](LICENSE)。
+
+## TUI 终端面（dsh-tui）
+
+dsh-tui 不加载插件的 client 半边（面板/卡片/设置页），也调不到插件自有 RPC；工具调用只显示一行摘要。人可读、人可操作的面只剩宿主斜杠命令。输出约定：单行 ≤100 字符、总行 ≤40、无 ANSI、两空格对齐；写操作默认 dry、加 `--yes` 才执行；`--json` 输出单行 JSON。
+
+| 命令 | 作用 |
+|---|---|
+| `/guard status` | 门状态与 live state |
+| `/guard pause|resume|cancel` | 包装既有 `/pause` `/resume` `/cancel`；**`/resume` 在 dsh-tui 下被本地命令遮蔽，必须走 `/guard resume`** |
+
+命令由插件自己在宿主侧注册（`ctx.inject(['commands'], …)`）：命令服务缺席的老宿主线上不激活、不报错。

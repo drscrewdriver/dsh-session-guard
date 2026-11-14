@@ -93,6 +93,7 @@ export function decideStepHold({
  * @param {typeof clearTimeout} [deps.clearTimer]
  * @param {boolean} [deps.unrefTimers]
  * @param {(sessionId:string, state:object)=>void} [deps.onChange] 门控状态变化回调（SSE 推送用）
+ * @param {(sessionId:string, agent:object, info:object)=>void} [deps.onHold] 真正拉门时的回调（TUI 可见反馈用）
  */
 export function createStepGate({
   getSettings,
@@ -106,6 +107,7 @@ export function createStepGate({
   clearTimer = clearTimeout,
   unrefTimers = true,
   onChange,
+  onHold,
 } = {}) {
   /** sessionId -> { sessionId, step, turn, since, resolve, timer, signal, onAbort } */
   const holds = new Map()
@@ -348,6 +350,16 @@ export function createStepGate({
       })
       holds.set(id, entry)
       emitChange(id)
+
+      // TUI/终端可见反馈：dsh-tui 把 source.kind !== 'user' 的消息折叠成一行 `· …`，
+      // 所以拉门时向会话追加一条 plugin 源 user/message（一次门控只发一次，由 onHold 去重）。
+      try {
+        if (typeof onHold === 'function') {
+          onHold(id, agent, { why: decision.why, step: entry.step, turn: entry.turn, manual, since: entry.since })
+        }
+      } catch (e) {
+        warn(`step gate onHold failed: ${String((e && e.message) || e)}`)
+      }
 
       // abort（agent.cancel / 冻结 / /pause / /cancel）→ 释放，让 loop 的 throwIfAborted 收尾
       if (entry.signal && typeof entry.signal.addEventListener === 'function') {

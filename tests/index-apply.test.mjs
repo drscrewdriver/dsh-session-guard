@@ -24,6 +24,8 @@ function fakeCtx() {
     webServer: { register: (def) => { routes.push(def); return () => {} } },
     commands: { register: (def) => { commands.push(def); return () => {} } },
     get: () => undefined,
+    // 命令注册走 inject(['commands']) 门控（老宿主无 commands 服务时不激活）
+    inject: (deps, cb) => { if (Array.isArray(deps) && deps.includes('commands')) cb(ctx) },
     provide: (key, value) => { provided.push([key, value]) },
     on: (event, fn) => { listeners.push([event, fn]); return () => {} },
     effect: (fn) => {
@@ -54,7 +56,7 @@ test('apply()：契约（name/inject）与关键接线', (t) => {
   withTmpState(t)
   const { ctx, listeners, provided, routes } = fakeCtx()
   assert.equal(name, 'session-guard')
-  assert.deepEqual(inject, ['agents', 'webServer', 'timer', 'commands', 'goals'])
+  assert.deepEqual(inject, ['agents', 'webServer', 'timer', 'goals'])
   assert.doesNotThrow(() => apply(ctx))
   // 冗余端口 + 三个 waterfall 监听（session/event、agent/request、agent/pre-step）
   assert.deepEqual(provided.map(([k]) => k), ['sessionGuard'])
@@ -72,14 +74,15 @@ test('apply()：/pause /resume /cancel 注册且无 live agent 时返回 error�
   withTmpState(t)
   const { ctx, commands } = fakeCtx()
   apply(ctx)
-  assert.deepEqual(commands.map((c) => c.name).sort(), ['cancel', 'pause', 'resume'])
+  assert.deepEqual(commands.map((c) => c.name).sort(), ['cancel', 'guard', 'pause', 'resume'])
   for (const c of commands) {
     assert.equal(typeof c.handler, 'function')
     const withAgent = c.handler({ agent: { id: 's1' }, rawInput: 'confirm rerun' })
     assert.equal(typeof withAgent, 'object')
     assert.equal(withAgent.kind, 'error', `${c.name} 无 live agent 应返回 error`)
     const noAgent = c.handler({ rawInput: '' })
-    assert.deepEqual(noAgent, { kind: 'error', text: 'no session for this command' })
+    assert.equal(noAgent.kind, 'error')
+    assert.ok(String(noAgent.text).includes('no session'), `${c.name} 无 agent 时应提示 no session`)
   }
 })
 

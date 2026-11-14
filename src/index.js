@@ -33,7 +33,7 @@ import { registerSettingsBridgeRoutes } from './settings-bridge.js'
 export const Config = SettingsSchema
 
 export const name = 'session-guard'
-export const inject = ['agents', 'webServer', 'timer', 'commands', 'goals']
+export const inject = ['agents', 'webServer', 'timer', 'goals']
 
 export { NS, DEFAULT_SETTINGS }
 
@@ -146,6 +146,8 @@ export function apply(ctx, config = {}) {
   const pauseStore = createPauseStore()
   let pauseGateRef = null
   let wiringRef = null
+  /** 已发过 TUI 门控提示的门控键（`sessionId:since:step`），防止同一门控刷屏。 */
+  const notifiedHolds = new Set()
   const stepGate = createStepGate({
     getSettings: readCfg,
     shouldHoldSession: (cfg, id) => (wiringRef ? wiringRef.shouldPauseSession(cfg, id) : true),
@@ -154,6 +156,33 @@ export function apply(ctx, config = {}) {
     pauseGate: { pause: (id, opts) => pauseGateRef.pause(id, opts) },
     logger: ctx.logger,
     onChange: (id, snapshot) => broadcastStep(id, snapshot),
+    // TUI 可见反馈：dsh-tui 会把 source.kind !== 'user' 的消息折成一行 `· …`，
+    // 所以拉门时向会话追加一条 plugin 源 user/message（同一个门控只发一次）。
+    // 失败静默：老宿主没有 session.append 时退回只能 `/guard status` 查。
+    onHold: (id, agent, info) => {
+      try {
+        const session = agent && agent.session
+        if (!session || typeof session.append !== 'function') return
+        const since = Number(info && info.since) || 0
+        const key = `${id}:${since}:${info && info.step}`
+        if (notifiedHolds.has(key)) return
+        notifiedHolds.add(key)
+        if (notifiedHolds.size > 200) notifiedHolds.clear()
+        const reason = info && info.manual
+          ? '手动暂停'
+          : (info && info.why === 'peak' ? '高峰拦截' : `门控(${(info && info.why) || 'hold'})`)
+        const text = `⏳ session-guard：${reason} — 本回合已在 step 边界挂起`
+          + `（step ${(info && info.step) || '?'}）。/guard status 查看，/guard resume 继续。`
+        session.append('user/message', {
+          id: `guard-${(info && info.since) || Date.now()}`,
+          role: 'user',
+          content: [{ type: 'text', text }],
+          source: { kind: 'plugin', name: 'session-guard' },
+        }, { surfaceOp: 'append' })
+      } catch (e) {
+        ctx.logger?.warn?.(`session-guard: tui notice failed: ${String((e && e.message) || e)}`)
+      }
+    },
   })
   const pauseGate = createPauseGate({ ctx, pauseStore, stepGate })
   pauseGateRef = pauseGate
@@ -194,9 +223,12 @@ export function apply(ctx, config = {}) {
   ctx.effect(() => () => wiring.dispose(), 'session-guard: wiring dispose')
 
   // ── 手动会话门命令（/pause /resume /cancel，全量移植）──
-  if (typeof ctx.commands?.register === 'function') {
+  // 门控：命令注册走 inject(['commands'])，不写进顶层 inject——否则缺 commands 服务的
+  // 老宿主线会把整个插件挂死（兼容闸见 _tools/tui-audit.mjs）。
+  const installSessionGuardCommands = (commandCtx) => {
+    if (typeof commandCtx?.commands?.register !== 'function') return
     const tokensOf = (rawInput) => String(rawInput ?? '').trim().split(/\s+/).filter(Boolean)
-    ctx.effect(() => ctx.commands.register({
+    ctx.effect(() => commandCtx.commands.register({
       name: 'pause',
       description: 'pause the running task (safe: defers to the safe boundary; force: interrupts tools and reasoning now; wait: let reasoning finish; bare /pause follows the pause settings)',
       input: { hint: '[force|safe] [stop|wait]' },
@@ -211,7 +243,7 @@ export function apply(ctx, config = {}) {
         return pauseGate.pause(sid, opts)
       },
     }))
-    ctx.effect(() => ctx.commands.register({
+    ctx.effect(() => commandCtx.commands.register({
       name: 'resume',
       description: 'resume the paused task and continue from the pause point (a force-paused task with an interrupted tool needs `confirm`, plus `rerun`/`skip` for the tool)',
       input: { hint: '[confirm] [rerun|skip]' },
@@ -227,7 +259,7 @@ export function apply(ctx, config = {}) {
         })
       },
     }))
-    ctx.effect(() => ctx.commands.register({
+    ctx.effect(() => commandCtx.commands.register({
       name: 'cancel',
       description: 'cancel the running task (stops the current turn immediately, keeps the queue)',
       handler: (invocation) => {
@@ -237,7 +269,71 @@ export function apply(ctx, config = {}) {
         return pauseGate.cancel(sid)
       },
     }))
+
+    // ── dsh-tui 终端面：`/guard` ───────────────────────────────────
+    // TUI 的 routeSlash 先命中本地命令表，`/resume` 在那里被 dsh-tui 自己的
+    // “恢复会话”吃掉 → 宿主的 resume 在 TUI 里永远不可达。`/guard resume` 是
+    // 不依赖那个名字的入口；status 则补上“门到底关没关”这一眼。
+    ctx.effect(() => commandCtx.commands.register({
+      name: 'guard',
+      description: 'session guard console: status / pause / resume / cancel (TUI-safe wrapper; /resume is shadowed by dsh-tui local commands)',
+      input: { hint: '[status|pause|resume|cancel] [force|safe] [confirm] [rerun|skip]' },
+      handler: (invocation) => {
+        const sid = String(invocation?.agent?.id ?? '')
+        if (!sid) return { kind: 'error', text: 'guard: no session for this command' }
+        const tokens = tokensOf(invocation?.rawInput)
+        const wantsJson = tokens.includes('--json')
+        const sub = String(tokens.shift() ?? 'status').toLowerCase()
+        if (sub === 'status') {
+          let state = {}
+          try { state = bridge.state(sid) ?? {} } catch { state = {} }
+          const primitives = Object.entries(state)
+            .filter(([, value]) => ['string', 'number', 'boolean'].includes(typeof value))
+            .slice(0, 10)
+            .map(([key, value]) => `${key}=${String(value)}`)
+          const paused = state.paused === true || state.queueLocked === true
+          // 契约：单行 <=100（上限），实际取 80 —— 80 列终端下也不横向溢出。
+          const clipLine = (text, width = 80) => {
+            const value = String(text ?? '').replace(/[\r\n]+/g, ' ').replace(/\s+$/, '')
+            return value.length <= width ? value : `${value.slice(0, width - 1)}…`
+          }
+          const lines = [
+            clipLine(`guard — ${paused ? 'paused/locked' : 'open'}`),
+            clipLine(`  state      ${primitives.join(' ') || '(no live state in this host)'}`),
+            clipLine('  map        /guard resume [confirm] [rerun|skip]   ·   /guard pause [force|safe]   ·   /guard cancel'),
+          ]
+          if (wantsJson) {
+            return {
+              kind: 'success',
+              text: JSON.stringify({ ok: true, cmd: 'guard', sub: 'status', data: { paused, state: primitives } }),
+            }
+          }
+          return { kind: 'success', text: lines.join('\n') }
+        }
+        if (sub === 'pause') {
+          const opts = {}
+          for (const token of tokens) {
+            if (token === 'force' || token === 'safe') opts.mode = token
+            if (token === 'stop' || token === 'wait') opts.reason = token
+          }
+          return pauseGate.pause(sid, opts)
+        }
+        if (sub === 'resume') {
+          bridge.stepResume(sid, { bypass: true, reason: 'command' })
+          return pauseGate.resume(sid, {
+            confirm: tokens.includes('confirm'),
+            choice: tokens.includes('skip') ? 'skip' : 'rerun',
+          })
+        }
+        if (sub === 'cancel') {
+          bridge.stepResume(sid, { bypass: false, reason: 'command' })
+          return pauseGate.cancel(sid)
+        }
+        return { kind: 'error', text: `guard: unknown subcommand "${sub}"\n  next: /guard status` }
+      },
+    }))
   }
+  ctx.inject?.(['commands'], installSessionGuardCommands)
 
   // ── 后端自动重试（D9）：冻结/门控期间让路，绝不绕过会话门 ──
   createRetry({

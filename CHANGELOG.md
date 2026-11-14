@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.2.10
+
+- 终端面（dsh-tui / Desktop 命令面板同源）：/guard 终端面 + 拉门时向会话追加 plugin 源消息（TUI 一行反馈）。
+
 4.2.3: host enumeration addendum for DSH 0.2.1-rc.3 (declaration-only bump; contract plane zero diff).
 
 ## 4.2.2 (2026-10-18)

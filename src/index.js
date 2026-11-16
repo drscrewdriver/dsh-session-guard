@@ -285,7 +285,7 @@ export function apply(ctx, config = {}) {
         const wantsJson = tokens.includes('--json')
         const sub = String(tokens.shift() ?? 'status').toLowerCase()
         if (sub === 'status') {
-          let state = {}
+          let state
           try { state = bridge.state(sid) ?? {} } catch { state = {} }
           const primitives = Object.entries(state)
             .filter(([, value]) => ['string', 'number', 'boolean'].includes(typeof value))

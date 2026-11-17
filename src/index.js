@@ -189,9 +189,15 @@ export function apply(ctx, config = {}) {
   const gate = createGate({ getCtx: () => ctx, getSettings: readCfg, store, pauseGate })
   // deferrals 在 createWiring 里才构造；先留引用，bridge 用 late-bound 读（构造期循环依赖）。
   let deferralsRef = null
+  // 壳必须把 bridge 读的**每一个**方法都转出来：v4.2.11 只转了 settle/clearDeferred，
+  // 而 bridge.state() 靠 `typeof deferrals.has === 'function'` 判定可用性，
+  // 于是 requestHeld 恒为 false、按钮永远显示「暂停会话」（issue #4）。
+  // has/list 返回中性值（false/[]）而不是抛错，构造期 deferralsRef 还是 null。
   const bridge = createBridge(ctx, gate, store, pauseGate, stepGate, {
     settle: (id, reason, outcome) => (deferralsRef ? deferralsRef.settle(id, reason, outcome) : false),
     clearDeferred: (id) => (deferralsRef ? deferralsRef.clearDeferred(id) : false),
+    has: (id) => (deferralsRef ? deferralsRef.has(id) === true : false),
+    list: () => (deferralsRef ? deferralsRef.list() : []),
   })
 
   // ── 官方 provider 二维判定接线（目标追踪 / 请求级守卫 / 入峰过滤 / 退峰释放）──

@@ -1,5 +1,15 @@
 # Changelog
 
+## 4.2.12 (2026-11-17)
+
+- **修复 issue #4：4.2.11 的 `requestHeld` 投影是死的，按钮永远显示「暂停会话」**。4.2.11 给 `bridge.state()` 加了请求级 hold 投影，但判定入口是 `typeof deferrals.has === 'function'`；而 `index.js` 传给 `createBridge` 的 deferrals 只是个晚绑定壳，**只有 `settle` / `clearDeferred` 两个方法**。于是：
+  - `st.requestHeld` 恒为 `false`，`/state` 里派生自它的 `paused.request` / `paused.any` / `requestGate.held` 全是 `false`；
+  - 客户端 `readPauseState()` 恰好只认这三处、不读顶层 `held`，所以峰期被挂起时按钮仍是「暂停会话」；
+  - 用户点一下只是登记 `manualPause`（按钮翻成「继续会话」），再点才真正放行 —— **表现为「要点两下」**。
+- **修法**：壳补齐 `has` / `list` 两个转发方法，未就绪时返回中性值（`false` / `[]`）而不是抛错 —— 构造期 `deferralsRef` 还是 `null`，而 `/state` 随时可能被读到。
+- **不变量钉死**：新增 `tests/bridge-deferrals-shell.test.mjs`，从 `bridge.js` 源码里抽出**所有** `deferrals.<name>` 读取点，逐一断言 `index.js` 的壳里有同名键。以后 `bridge.js` 多读一个方法，测试立刻红 —— 不需要有人记得回来同步改壳。这正是 4.2.11 漏掉的那道防线。
+- **全量**：289 tests / 289 pass / 0 fail（lint 干净）。
+
 ## 4.2.11 (2026-11-17)
 
 - **修复 issue #3：峰期新会话的请求级 hold 没有手动放行入口**。峰期（如 09:00–12:00）新建会话发第一条消息，请求在 `agent/request` 被 `deferrals.hold()` 挂起；但 step 门只在 `step > 1` 才拉，首条请求停在 step 1，**step 门从未参与**。于是：

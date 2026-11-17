@@ -141,8 +141,9 @@ test('路由：GET /state 返回 paused{step,turn,manual} 与 stepGate', async (
   assert.equal(rec.code, 200)
   const body = JSON.parse(rec.chunks.join(''))
   assert.equal(body.ok, true)
-  assert.deepEqual(body.paused, { step: false, turn: false, manual: false })
+  assert.deepEqual(body.paused, { step: false, turn: false, manual: false, request: false, any: false })
   assert.deepEqual(body.stepGate, { held: false, manual: false, since: null, bypass: false })
+  assert.deepEqual(body.requestGate, { held: false, since: null })
 })
 
 test('路由：POST /rpc stepPause / stepResume 均返回 ok', async (t) => {

@@ -39,7 +39,7 @@ const BASE_CFG = {
 
 const silent = { info() {}, warn() {}, error() {} }
 
-function harness({ cfg = {}, agents, classify, now = PEAK_NOW, isRoot } = {}) {
+function harness({ cfg = {}, agents, classify, now = PEAK_NOW, isRoot, isBypassed } = {}) {
   let listener = null
   const ctx = {
     on: (name, fn) => {
@@ -67,6 +67,7 @@ function harness({ cfg = {}, agents, classify, now = PEAK_NOW, isRoot } = {}) {
     logger: silent,
     clock: now,
     isRoot,
+    isBypassed,
   })
   const off = guard.install()
   return {
@@ -331,6 +332,37 @@ test('stats 计数可用于诊断', async () => {
   const p = h.call({ agent: { id: 's2' } })
   await assertPending(p)
   assert.equal(h.guard.stats().hold, 1)
+  h.deferrals.releaseAll()
+  await p
+})
+
+// ── issue #3 回归：请求级守卫要认「本峰已被用户手动放行」 ────────────────
+test('issue #3：bypass 的会话在峰期直接放行，不再挂起', async () => {
+  const h = harness({ isBypassed: (id) => id === 'bypassed-1' })
+  const cfg = await h.call({ agent: { id: 'bypassed-1' } })
+  assert.deepEqual(cfg, CONFIG, '必须原样放行，且 config 未被篡改')
+  assert.equal(h.deferrals.has('bypassed-1'), false, '不得留下挂起记录')
+  assert.equal(h.guard.stats().hold, 0)
+})
+
+test('issue #3：bypass 只对指定会话生效，别的会话照常拦', async () => {
+  const h = harness({ isBypassed: (id) => id === 'bypassed-1' })
+  const other = h.call({ agent: { id: 'other-1' } })
+  await assertPending(other)
+  assert.equal(h.deferrals.has('other-1'), true, '非 bypass 会话必须照常被 hold')
+  h.deferrals.releaseAll()
+  await other
+})
+
+test('issue #3：isBypassed 抛错 → fail-open 到正常判定（不得因探测失败放行）', async () => {
+  const h = harness({
+    isBypassed: () => {
+      throw new Error('boom')
+    },
+  })
+  const p = h.call({ agent: { id: 's9' } })
+  await assertPending(p)
+  assert.equal(h.deferrals.has('s9'), true, '探测失败应退回正常拦截，而不是当作 bypass')
   h.deferrals.releaseAll()
   await p
 })

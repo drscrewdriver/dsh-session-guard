@@ -67,6 +67,8 @@ export function createRequestGuard({
   clock = () => new Date(),
   isRoot,
   scheduleRelease,
+  /** v4.2.11（issue #3）：读「本峰内用户是否已手动放行该会话」；缺省恒 false。 */
+  isBypassed = () => false,
 }) {
   const rootCheck = isRoot ?? makeIsRoot(ctx)
   const counters = { pass: 0, hold: 0, error: 0, skippedSubagent: 0, failOpen: 0 }
@@ -99,6 +101,21 @@ export function createRequestGuard({
 
     const verdict = shouldPause(cfg, clock())
     if (!verdict.pause) return { action: 'pass', why: verdict.reason }
+
+    // v4.2.11（issue #3）：用户已手动「继续」该会话 → 本峰内直接放行。
+    // 没有这一条，`stepResume` 结算掉当前 hold 之后，下一个请求会立刻被同一峰期再挂一次，
+    // 「继续会话」就退化成「点一下放一条」的假放行。
+    let bypassed
+    try {
+      bypassed = isBypassed(sessionId) === true
+    } catch {
+      bypassed = false
+    }
+    if (bypassed) {
+      counters.pass += 1
+      logger?.info?.(`[session-guard] peak but ${sessionId} was manually continued — pass (bypassed)`)
+      return { action: 'pass', why: 'bypassed' }
+    }
 
     const cls = directory.classify(config && config.provider)
     if (!cls.official) {

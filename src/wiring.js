@@ -96,6 +96,9 @@ export function createWiring({
     logger,
     clock,
     scheduleRelease,
+    // v4.2.11（issue #3）：请求级 hold 认 step 门上的「本峰 bypass」。
+    // step 门与请求门共用同一个 bypass 集合，用户手动「继续」对两条路径同时生效。
+    isBypassed: (id) => (stepGate ? stepGate.state(id).bypass === true : false),
   })
 
   /** `session/event` → 目标追踪（形状异常降级 unknown，不抛出）+ 目标转非官方时自动恢复。 */

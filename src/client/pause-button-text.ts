@@ -38,14 +38,30 @@ export function pauseButtonTitle(state: PauseButtonState): string {
 export function readPauseState(body: unknown): PauseButtonState {
   const b = (body ?? {}) as {
     ok?: unknown
-    paused?: { step?: unknown; manual?: unknown }
+    paused?: { step?: unknown; manual?: unknown; request?: unknown; any?: unknown }
     stepGate?: { since?: unknown; manual?: unknown }
-    state?: { pausedStep?: unknown; stepHeldSince?: unknown; stepManual?: unknown }
+    requestGate?: { held?: unknown; since?: unknown }
+    state?: {
+      pausedStep?: unknown
+      stepHeldSince?: unknown
+      stepManual?: unknown
+      requestHeld?: unknown
+      requestHeldSince?: unknown
+      pausedAny?: unknown
+    }
   }
   if (b.ok !== true) return { paused: false, heldSince: null, manual: false }
   const manual = b.paused?.manual === true || b.stepGate?.manual === true || b.state?.stepManual === true
-  const paused = b.paused?.step === true || b.state?.pausedStep === true || manual
-  const raw = b.stepGate?.since ?? b.state?.stepHeldSince ?? null
+  // v4.2.11（issue #3）：请求级 hold 也是「已暂停」，否则峰期新会话被挂住时按钮仍显示「暂停会话」。
+  const requestHeld = b.paused?.request === true || b.requestGate?.held === true || b.state?.requestHeld === true
+  const paused =
+    b.paused?.any === true ||
+    b.state?.pausedAny === true ||
+    b.paused?.step === true ||
+    b.state?.pausedStep === true ||
+    requestHeld ||
+    manual
+  const raw = b.stepGate?.since ?? b.state?.stepHeldSince ?? b.requestGate?.since ?? b.state?.requestHeldSince ?? null
   const heldSince = typeof raw === 'number' && Number.isFinite(raw) ? raw : null
   return { paused, heldSince, manual }
 }

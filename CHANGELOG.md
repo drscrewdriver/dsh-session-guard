@@ -1,5 +1,19 @@
 # Changelog
 
+## 4.2.11 (2026-11-17)
+
+- **修复 issue #3：峰期新会话的请求级 hold 没有手动放行入口**。峰期（如 09:00–12:00）新建会话发第一条消息，请求在 `agent/request` 被 `deferrals.hold()` 挂起；但 step 门只在 `step > 1` 才拉，首条请求停在 step 1，**step 门从未参与**。于是：
+  - 按钮显示「暂停会话」（`pausedStep=false`），点一下只是登记 `manualPause`、按钮翻成「继续会话」；
+  - 再点触发 `stepResume()`，而 `stepGate.release()` 因无门可放返回 `{released:false}`，**连 bypass 都不置**；
+  - 结果请求纹丝不动，只能等退峰 `releaseAll`、abort 或卸载插件才解除。
+- **修法三处**：
+  1. `bridge.stepResume()` 现在同时结算**请求级 hold**（`deferrals.settle(id, reason, 'release')`，让挂住的 promise 以原 config 继续发出）并清掉延后记录；且**只要用户显式要继续就置 bypass**，不论门来自 step 级还是请求级——否则下一个请求立刻被同一峰期再挂一次，「继续」退化成「点一下放一条」的假放行。
+  2. `request-guard` 新增 `isBypassed` 依赖，判定顺序里在「峰期 + 官方源」之后认这个 bypass（fail-open：探测抛错则退回正常拦截，不得当作已放行）。`wiring` 把 step 门的 bypass 集合接进去——step 门与请求门共用同一个「本峰已被用户手动放行」的事实。
+  3. 状态投影新增 `requestHeld` / `requestHeldSince` / `pausedAny`，`/state` 的 `paused` 增补 `request` / `any` 并新增 `requestGate`；`readPauseState()` 认这三处，按钮在请求级 hold 时正确显示「继续会话」。
+- **顺带修掉报告未提的一个细节**：旧代码点第二次会把 `manualPause` 一并删掉，按钮**又翻回「暂停会话」**，表现为「点两下、按钮闪回去、请求还在挂」。现在 bypass 与 manual 的取舍明确：显式继续 → 置 bypass；显式暂停 → 撤销 bypass（原语义保留）。
+- **测试**：`bridge.test.mjs` 新增 5 例（请求级 hold 结算 / 无门也置 bypass / 自动释放不置 bypass / 状态投影认 requestHeld / 无 hold 时行为不变）；`request-guard.test.mjs` 新增 3 例（bypass 会话放行 / 只对指定会话生效 / 探测抛错 fail-open 到正常拦截）。契约测试同步新增字段。
+- **全量**：286 tests / 286 pass / 0 fail（lint 干净、build 通过）。
+
 ## 4.2.10
 
 - 终端面（dsh-tui / Desktop 命令面板同源）：/guard 终端面 + 拉门时向会话追加 plugin 源消息（TUI 一行反馈）。

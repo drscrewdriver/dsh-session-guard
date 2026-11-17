@@ -187,13 +187,19 @@ export function apply(ctx, config = {}) {
   const pauseGate = createPauseGate({ ctx, pauseStore, stepGate })
   pauseGateRef = pauseGate
   const gate = createGate({ getCtx: () => ctx, getSettings: readCfg, store, pauseGate })
-  const bridge = createBridge(ctx, gate, store, pauseGate, stepGate)
+  // deferrals 在 createWiring 里才构造；先留引用，bridge 用 late-bound 读（构造期循环依赖）。
+  let deferralsRef = null
+  const bridge = createBridge(ctx, gate, store, pauseGate, stepGate, {
+    settle: (id, reason, outcome) => (deferralsRef ? deferralsRef.settle(id, reason, outcome) : false),
+    clearDeferred: (id) => (deferralsRef ? deferralsRef.clearDeferred(id) : false),
+  })
 
   // ── 官方 provider 二维判定接线（目标追踪 / 请求级守卫 / 入峰过滤 / 退峰释放）──
   // 纯逻辑见 provider.js / provider-directory.js / deferrals.js / request-guard.js / targets.js，
   // 接线与编排见 wiring.js；这里只负责装配与生命周期。
   const wiring = createWiring({ ctx, getSettings: readCfg, gate, stepGate, logger: ctx.logger })
   wiringRef = wiring
+  deferralsRef = wiring.deferrals
 
   // ── 冗余端口：input-traffic 冻结按钮透传接入（D5/D6/D8）──
   ctx.provide('sessionGuard', bridge)
@@ -426,12 +432,24 @@ export function apply(ctx, config = {}) {
               state: st,
               // v0.2.0：PRD §6.2 的 `paused: { step, turn }` 形状（顶层，兼容既有 state.paused 布尔）
               // step = 已拉门；manual = 已请求但还没到边界（按钮同样显示「继续会话」）
-              paused: { step: st.pausedStep === true, turn: st.paused === true, manual: st.stepManual === true },
+              // v4.2.11（issue #3）：request = 请求级 hold。它也属于「已暂停」，
+              // 旧投影不含这一项 → 峰期新会话被挂住时按钮仍显示「暂停会话」，用户找不到放行入口。
+              paused: {
+                step: st.pausedStep === true,
+                turn: st.paused === true,
+                manual: st.stepManual === true,
+                request: st.requestHeld === true,
+                any: st.pausedAny === true,
+              },
               stepGate: {
                 held: st.pausedStep === true,
                 manual: st.stepManual === true,
                 since: st.stepHeldSince,
                 bypass: st.stepBypass === true,
+              },
+              requestGate: {
+                held: st.requestHeld === true,
+                since: st.requestHeldSince,
               },
               target: wiring.targets.get(sessionId),
               held: wiring.deferrals.has(sessionId),

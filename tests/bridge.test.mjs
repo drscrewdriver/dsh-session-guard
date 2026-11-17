@@ -41,11 +41,11 @@ function fakePauseGate(overrides = {}) {
   }
 }
 
-function setup(services = {}, t, pauseGate, stepGate) {
+function setup(services = {}, t, pauseGate, stepGate, deferrals) {
   const ctx = fakeCtx(services)
   const store = t ? tmpStore(t) : createStore()
   const gate = createGate({ getCtx: () => ctx, getSettings: () => CFG, store, pauseGate })
-  const bridge = createBridge(ctx, gate, store, pauseGate, stepGate)
+  const bridge = createBridge(ctx, gate, store, pauseGate, stepGate, deferrals)
   return { ctx, store, gate, bridge }
 }
 
@@ -171,7 +171,7 @@ test('bridge.state：无 stepGate / stepGate 抛错 → 回退默认值（fail-o
 test('bridge.stepResume：默认释放并置 bypass', (t) => {
   const sg = fakeStepGate({ held: true })
   const { bridge } = setup({}, t, fakePauseGate(), sg)
-  assert.deepEqual(bridge.stepResume('s1'), { released: true, bypass: true, reason: 'manual' })
+  assert.deepEqual(bridge.stepResume('s1'), { released: true, requestReleased: false, bypass: true, reason: 'manual' })
   assert.deepEqual(sg.rec.released, [['s1', 'manual']])
   assert.deepEqual(sg.rec.bypassed, ['s1'])
 })
@@ -181,6 +181,7 @@ test('bridge.stepResume：bypass=false（自动释放）不置 bypass', (t) => {
   const { bridge } = setup({}, t, fakePauseGate(), sg)
   assert.deepEqual(bridge.stepResume('s1', { bypass: false, reason: 'off-peak' }), {
     released: true,
+    requestReleased: false,
     bypass: false,
     reason: 'off-peak',
   })
@@ -189,14 +190,24 @@ test('bridge.stepResume：bypass=false（自动释放）不置 bypass', (t) => {
 
 test('bridge.stepResume：无门 / 未挂起 / 抛错 → released:false（幂等）', (t) => {
   const none = setup({}, t, fakePauseGate())
-  assert.deepEqual(none.bridge.stepResume('s1'), { released: false, bypass: false, reason: 'no-step-gate' })
+  assert.deepEqual(none.bridge.stepResume('s1'), {
+    released: false,
+    requestReleased: false,
+    bypass: false,
+    reason: 'no-step-gate',
+  })
 
   const idle = setup({}, t, fakePauseGate(), {
     release: () => ({ released: false, reason: 'manual' }),
     markBypass: () => {},
     state: () => ({ held: false }),
   })
-  assert.deepEqual(idle.bridge.stepResume('s1'), { released: false, bypass: false, reason: 'manual' })
+  assert.deepEqual(idle.bridge.stepResume('s1'), {
+    released: false,
+    requestReleased: false,
+    bypass: true,
+    reason: 'manual',
+  })
 
   const throwing = setup({}, t, fakePauseGate(), {
     release: () => {
@@ -205,5 +216,87 @@ test('bridge.stepResume：无门 / 未挂起 / 抛错 → released:false（幂�
     markBypass: () => {},
     state: () => ({ held: false }),
   })
-  assert.deepEqual(throwing.bridge.stepResume('s1'), { released: false, bypass: false, reason: 'manual' })
+  assert.deepEqual(throwing.bridge.stepResume('s1'), {
+    released: false,
+    requestReleased: false,
+    bypass: false,
+    reason: 'manual',
+  })
+})
+
+// ── issue #3 回归：请求级 hold 也要有手动放行入口 ──────────────────────
+// 旧行为：峰期新会话在 step 1 就被 agent/request 挂起，step 门根本没拉过，
+// stepResume 返回 {released:false, bypass:false} —— 用户点「继续会话」什么也没发生。
+
+/** 假 deferrals：只实现 bridge 用到的三个方法。 */
+function fakeDeferrals({ held = false, since = 111 } = {}) {
+  const rec = { settled: [], cleared: [] }
+  let holding = held
+  return {
+    rec,
+    has: () => holding,
+    list: () => (holding ? [{ sessionId: 's1', provider: 'deepseek-official', model: 'm', since }] : []),
+    settle: (id, reason, outcome) => {
+      rec.settled.push([id, reason, outcome])
+      if (!holding) return false
+      holding = false
+      return true
+    },
+    clearDeferred: (id) => {
+      rec.cleared.push(id)
+      return true
+    },
+  }
+}
+
+test('issue #3：请求级 hold 能被 stepResume 结算（step 门没拉过也要放行）', (t) => {
+  const dfr = fakeDeferrals({ held: true })
+  const sg = fakeStepGate({ held: false }) // step 门未拉：release 会返回 released:true，但 state.held=false
+  sg.release = () => ({ released: false, reason: 'manual' }) // 真实实现：无门可放
+  const { bridge } = setup({}, t, fakePauseGate(), sg, dfr)
+  const r = bridge.stepResume('s1', { bypass: true, reason: 'manual' })
+  assert.equal(r.requestReleased, true, '必须结算请求级 hold')
+  assert.equal(r.released, true, 'released 要反映「确实放行了东西」')
+  assert.deepEqual(dfr.rec.settled, [['s1', 'manual', 'release']], '用 release（不是 reject）结算')
+  assert.deepEqual(dfr.rec.cleared, ['s1'], '延后记录一并清掉')
+  assert.equal(dfr.has('s1'), false)
+})
+
+test('issue #3：请求级 hold 放行后必须置 bypass，否则下一个请求立刻再被挂', (t) => {
+  const dfr = fakeDeferrals({ held: true })
+  const sg = fakeStepGate({ held: false })
+  sg.release = () => ({ released: false, reason: 'manual' })
+  const { bridge } = setup({}, t, fakePauseGate(), sg, dfr)
+  const r = bridge.stepResume('s1', { bypass: true, reason: 'manual' })
+  assert.equal(r.bypass, true, '无 step 门时也必须置 bypass')
+  assert.deepEqual(sg.rec.bypassed, ['s1'])
+})
+
+test('issue #3：bypass=false 的自动释放（退峰）不置 bypass', (t) => {
+  const dfr = fakeDeferrals({ held: true })
+  const sg = fakeStepGate({ held: false })
+  sg.release = () => ({ released: false, reason: 'off-peak' })
+  const { bridge } = setup({}, t, fakePauseGate(), sg, dfr)
+  const r = bridge.stepResume('s1', { bypass: false, reason: 'off-peak' })
+  assert.equal(r.requestReleased, true)
+  assert.equal(r.bypass, false, '自动释放不得替用户置 bypass')
+  assert.deepEqual(sg.rec.bypassed, [])
+})
+
+test('issue #3：状态投影认请求级 hold（按钮才会显示「继续会话」）', (t) => {
+  const dfr = fakeDeferrals({ held: true, since: 4242 })
+  const { bridge } = setup({}, t, fakePauseGate(), fakeStepGate({ held: false }), dfr)
+  const st = bridge.state('s1')
+  assert.equal(st.requestHeld, true)
+  assert.equal(st.requestHeldSince, 4242)
+  assert.equal(st.pausedStep, false, 'step 门确实没拉')
+  assert.equal(st.pausedAny, true, 'pausedAny 必须为真，按钮文案只看它')
+})
+
+test('issue #3：没有请求级 hold 时行为与旧版一致', (t) => {
+  const dfr = fakeDeferrals({ held: false })
+  const { bridge } = setup({}, t, fakePauseGate(), fakeStepGate({ held: false }), dfr)
+  const st = bridge.state('s1')
+  assert.equal(st.requestHeld, false)
+  assert.equal(st.pausedAny, false)
 })

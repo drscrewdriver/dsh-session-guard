@@ -173,7 +173,7 @@ function mountConfigCards(ctx: ClientCtx): void {
 }
 
 export function apply(ctx: ClientCtx) {
-  // 注册全部 9 种语言字典（zh/en/ja/ko/fr/de/it/ru/es）。
+  // 注册全部 10 种语言字典（zh/en/ja/ko/fr/de/it/ru/es/pt）。
   // 本插件此前 locales.ts 未被任何模块 import → 字典从未进入 bundle、从未注册（死代码）。
   // guarded：register 抛错不得带走下面的席位注册；effect 缺席时直接调一次（同语义）。
   safe('locale/dictionaries', () => {

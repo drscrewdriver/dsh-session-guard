@@ -10,6 +10,7 @@
 - [Changelog in italiano](./CHANGELOG.it.md)
 - [Changelog на русском](./CHANGELOG.ru.md)
 - [Changelog en español](./CHANGELOG.es.md)
+- [Changelog em português](./CHANGELOG.pt.md)
 
 ## 4.2.1 — 2026-10-17（호스트 열거 갱신: 0.2.1-rc.1 추가）
 

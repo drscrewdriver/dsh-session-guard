@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Comporta automática de sessão em horas de pico",
+    "description": "Pausar automaticamente as sessões ativas durante as horas de pico. Nos horários de pico, somente as fontes oficiais do DeepSeek são bloqueadas; provedores locais/de terceiros continuam funcionando"
+  }
+}

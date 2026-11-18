@@ -4,7 +4,7 @@
 <img width="832" height="182" alt="00c4b89a-b026-4bf1-a358-a068e80d2da7" src="https://github.com/user-attachments/assets/31a8836f-0fe0-4043-948a-f0865bb1b3bb" />
 
 <p align="center">
-  <a href="README.en.md">English</a> · <a href="README.md">中文</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a> · <a href="README.fr.md">Français</a> · <a href="README.de.md">Deutsch</a> · <a href="README.it.md">Italiano</a> · <a href="README.ru.md">Русский</a> · <strong>Español</strong>
+  <a href="README.en.md">English</a> · <a href="README.md">中文</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a> · <a href="README.fr.md">Français</a> · <a href="README.de.md">Deutsch</a> · <a href="README.it.md">Italiano</a> · <a href="README.ru.md">Русский</a> · <strong>Español</strong> · <a href="README.pt.md">Português</a>
 </p>
 <p align="center">
   <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-263146?style=flat-square"></a>
@@ -23,6 +23,7 @@
 - [README in italiano](./README.it.md)
 - [README en ruso](./README.ru.md)
 - [README en español](./README.es.md)
+- [README em português](./README.pt.md)
 - [Installation guide](./INSTALL.md)
 - [中文安装指南](./INSTALL.zh.md)
 - [日本語インストールガイド](./INSTALL.ja.md)
@@ -32,6 +33,7 @@
 - [Guida all'installazione in italiano](./INSTALL.it.md)
 - [Руководство по установке на русском](./INSTALL.ru.md)
 - [Guía de instalación en español](./INSTALL.es.md)
+- [Guia de instalação em português](./INSTALL.pt.md)
 - [Changelog](./CHANGELOG.md)
 - [日本語 changelog](./CHANGELOG.ja.md)
 - [한국어 changelog](./CHANGELOG.ko.md)
@@ -40,6 +42,7 @@
 - [Changelog in italiano](./CHANGELOG.it.md)
 - [Changelog en ruso](./CHANGELOG.ru.md)
 - [Changelog en español](./CHANGELOG.es.md)
+- [Changelog em português](./CHANGELOG.pt.md)
 
 > **Nota de compatibilidad:** la v0.1.1 ya incluye diccionarios de japonés (`ja`) y coreano (`ko`), pero las versiones oficiales actuales de DSH solo exponen `zh` y `en` a través de `LocaleRuntime`. En un DSH sin modificar, seleccionar `ja` o `ko` falla con `locale "<id>" is not registered`. Habrá que esperar a que el DSH oficial añada los identificadores de configuración regional correspondientes. Los usuarios avanzados pueden mantener un fork de DSH para ampliarlo.
 

@@ -11,6 +11,7 @@ This guide uses only the official DSH `dsh plugin` command.
 - [Guida all'installazione in italiano](./INSTALL.it.md)
 - [Руководство по установке на русском](./INSTALL.ru.md)
 - [Guía de instalación en español](./INSTALL.es.md)
+- [Guia de instalação em português](./INSTALL.pt.md)
 - [English README](./README.en.md)
 - [中文 README](./README.md)
 - [日本語 README](./README.ja.md)

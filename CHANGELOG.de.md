@@ -10,6 +10,7 @@ Alle nennenswerten Änderungen an `dsh-session-guard` werden hier festgehalten. 
 - [Changelog in italiano](./CHANGELOG.it.md)
 - [Changelog auf Russisch](./CHANGELOG.ru.md)
 - [Changelog en español](./CHANGELOG.es.md)
+- [Changelog em português](./CHANGELOG.pt.md)
 
 ## 4.2.1 — 2026-10-17 (Host-Aufzählung: +0.2.1-rc.1)
 

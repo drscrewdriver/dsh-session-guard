@@ -1,4 +1,4 @@
-/** `session-guard` client dictionaries (zh / en / ja / ko / fr / de / it / ru / es). */
+/** `session-guard` client dictionaries (zh / en / ja / ko / fr / de / it / ru / es / pt). */
 
 /** Dictionary namespace owned by this plugin. */
 export const NS = 'session-guard'
@@ -354,8 +354,47 @@ export const es: Record<keyof typeof zh, string> = {
   'status.peak_all': 'Pico · todo pausado',
 }
 
+/** Brazilian Portuguese dictionary (keys mirror zh). */
+export const pt: Record<keyof typeof zh, string> = {
+  'badge.normal': 'Normal',
+  'badge.paused': 'Pausada (pico)',
+  'badge_paused_peak': 'Pausa por pico ativa',
+  'settings.enabled': 'Pausa automática no pico',
+  'settings.enabled.desc': 'Pausar automaticamente as sessões ativas durante as horas de pico',
+  'settings.offPeakAutoResume': 'Retomada automática fora do pico',
+  'settings.offPeakAutoResume.desc': 'Retomar automaticamente as sessões pausadas durante as horas de vale',
+  'settings.weekendMode': 'Modo fim de semana',
+  'settings.weekendMode.desc': 'Detectar fins de semana → sem pausa automática no fim de semana',
+  'settings.queueFallback': 'Fila de espera com lock como reserva',
+  'settings.queueFallback.desc': 'Recorrer à fila de espera com lock quando a porta de sessão própria não estiver disponível (fail-open)',
+  'settings.retryEnabled': 'Nova tentativa automática',
+  'settings.retryEnabled.desc': 'Retomar automaticamente após falhas transitórias (desativado por padrão, conservador)',
+  'settings.timezone': 'Fuso horário',
+  'settings.peakWindows': 'Janelas de horário de pico',
+  'settings.providerGuard': 'Veredito bidimensional de fonte oficial',
+  'settings.providerGuard.desc': 'No pico, bloquear somente as fontes oficiais do DeepSeek; provedores locais/de terceiros continuam rodando',
+  'settings.officialProviders': 'IDs de provedor oficiais adicionais',
+  'settings.officialProviders.desc': 'Correspondência exata, prioridade máxima (separados por vírgula)',
+  'settings.officialBaseURLs': 'Hosts de endpoints oficiais',
+  'settings.officialBaseURLs.desc': 'Hosts após a normalização da baseURL (separados por vírgula)',
+  'settings.deferredMode': 'Modo de interceptação',
+  'settings.deferredMode.desc': 'Reter sem erro; ou gerar erro e enfileirar como adiado',
+  'settings.deferredResume': 'Continuação automática após o pico',
+  'settings.deferredResume.desc': 'Desativado, requisições/sessões adiadas não retomam sozinhas; exigem /resume manual',
+  'settings.deferredResumeText': 'Mensagem de retomada',
+  'settings.deferredResumeText.desc': 'Conteúdo da mensagem enviada na retomada pós-pico no modo error',
+  'settings.guardSubagents': 'Incluir requisições de subagentes',
+  'settings.guardSubagents.desc': 'Requisições de subagentes também são cobradas; interceptadas por padrão',
+  'settings.officialHint': 'Cadeia do veredito: lista explícita de ids → endpoint da baseURL → endpoint padrão do catálogo → id embutido. Para investigar um veredito equivocado, abra /session-guard/provider?provider=<id> e veja matchedBy.',
+  'settings.unavailable': 'Configurações indisponíveis: confirme que o dsh-session-guard foi montado neste profile.',
+  'status.normal': 'Operação normal',
+  'status.paused_peak': 'Pausa por pico ativa',
+  'status.peak_official': 'Pico · só oficiais',
+  'status.peak_all': 'Pico · todas pausadas',
+}
+
 /** Dictionary key union. */
 export type SessionGuardKey = keyof typeof zh
 
-/** Combined dictionary map — all 9 languages, for one-call registration. */
-export const dictionaries: Record<string, Record<string, string>> = { zh, en, ja, ko, fr, de, it, ru, es }
+/** Combined dictionary map — all 10 languages, for one-call registration. */
+export const dictionaries: Record<string, Record<string, string>> = { zh, en, ja, ko, fr, de, it, ru, es, pt }

@@ -9,6 +9,7 @@
 - [Guida all'installazione in italiano](./INSTALL.it.md)
 - [Руководство по установке на русском](./INSTALL.ru.md)
 - [Guía de instalación en español](./INSTALL.es.md)
+- [Guia de instalação em português](./INSTALL.pt.md)
 - [日本語 README](./README.ja.md)
 - [English README](./README.en.md)
 - [中文 README](./README.md)

@@ -1,6 +1,6 @@
 {
   "name": "dsh-session-guard",
-  "version": "4.2.12",
+  "version": "4.2.13",
   "publishConfig": {
     "registry": "https://registry.npmjs.org",
     "tag": "latest"
@@ -46,6 +46,7 @@
     "README.it.md",
     "README.ru.md",
     "README.es.md",
+    "README.pt.md",
     "INSTALL.md",
     "INSTALL.zh.md",
     "INSTALL.ja.md",
@@ -55,6 +56,7 @@
     "INSTALL.it.md",
     "INSTALL.ru.md",
     "INSTALL.es.md",
+    "INSTALL.pt.md",
     "CHANGELOG.md",
     "CHANGELOG.ja.md",
     "CHANGELOG.ko.md",
@@ -63,6 +65,7 @@
     "CHANGELOG.it.md",
     "CHANGELOG.ru.md",
     "CHANGELOG.es.md",
+    "CHANGELOG.pt.md",
     "locale",
     "LICENSE"
   ],

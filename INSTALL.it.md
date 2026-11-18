@@ -11,6 +11,7 @@ Questa guida usa solo il comando ufficiale `dsh plugin` di DSH.
 - [Installationsanleitung auf Deutsch](./INSTALL.de.md)
 - [Руководство по установке на русском](./INSTALL.ru.md)
 - [Guía de instalación en español](./INSTALL.es.md)
+- [Guia de instalação em português](./INSTALL.pt.md)
 - [English README](./README.en.md)
 - [中文 README](./README.md)
 - [日本語 README](./README.ja.md)
@@ -20,6 +21,7 @@ Questa guida usa solo il comando ufficiale `dsh plugin` di DSH.
 - [README in italiano](./README.it.md)
 - [README in russo](./README.ru.md)
 - [README en español](./README.es.md)
+- [README em português](./README.pt.md)
 - [Changelog](./CHANGELOG.md)
 - [日本語 changelog](./CHANGELOG.ja.md)
 - [한국어 changelog](./CHANGELOG.ko.md)
@@ -28,6 +30,7 @@ Questa guida usa solo il comando ufficiale `dsh plugin` di DSH.
 - [Changelog in italiano](./CHANGELOG.it.md)
 - [Changelog in russo](./CHANGELOG.ru.md)
 - [Changelog en español](./CHANGELOG.es.md)
+- [Changelog em português](./CHANGELOG.pt.md)
 
 ## 0. Prerequisiti
 

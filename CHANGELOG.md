@@ -9,6 +9,7 @@
 - **修法**：壳补齐 `has` / `list` 两个转发方法，未就绪时返回中性值（`false` / `[]`）而不是抛错 —— 构造期 `deferralsRef` 还是 `null`，而 `/state` 随时可能被读到。
 - **不变量钉死**：新增 `tests/bridge-deferrals-shell.test.mjs`，从 `bridge.js` 源码里抽出**所有** `deferrals.<name>` 读取点，逐一断言 `index.js` 的壳里有同名键。以后 `bridge.js` 多读一个方法，测试立刻红 —— 不需要有人记得回来同步改壳。这正是 4.2.11 漏掉的那道防线。
 - **全量**：289 tests / 289 pass / 0 fail（lint 干净）。
+- i18n: add Portuguese (pt-BR) locale — runtime dictionary, package metadata and README/INSTALL/CHANGELOG mirrors.
 
 ## 4.2.11 (2026-11-17)
 
@@ -44,6 +45,7 @@ All notable changes to `dsh-session-guard` are recorded here. Versions follow se
 - [Changelog in italiano](./CHANGELOG.it.md)
 - [Changelog на русском](./CHANGELOG.ru.md)
 - [Changelog en español](./CHANGELOG.es.md)
+- [Changelog em português](./CHANGELOG.pt.md)
 
 ## 4.2.1 — 2026-10-17 (host enumeration: +0.2.1-rc.1)
 

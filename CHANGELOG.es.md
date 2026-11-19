@@ -12,6 +12,13 @@ Todos los cambios notables de `dsh-session-guard` se registran aquí. Las versio
 - [Changelog en español](./CHANGELOG.es.md)
 - [Changelog em português](./CHANGELOG.pt.md)
 
+## 4.3.0 (2026-11-19)
+
+- **Tabla integrada de 2027: 34 filas = 29 descansos + 5 recuperos laborales** (contenido del aviso del Consejo de Estado content_7085102, leído por máquina vía holiday-cn; huella de la instantánea `sha256:8f999d47…9780331af`). Hasta ahora la cobertura integrada era solo la de 2026, de modo que 2027 dependía por completo de la red: una máquina sin conexión — o una fijada con `DSH_SESSION_GUARD_HOLIDAY_FETCH=0` — juzgaba mal el descanso de 10 días del Festival de Primavera y los 5 fines de semana de recuperación. Ahora la tabla integrada lo respalda: **semántica correcta de días de descanso sin red alguna**.
+- Los 5 recuperos laborales — 2027-01-31 (dom), 2027-02-14 (dom), 2027-05-08 (sáb), 2027-09-26 (dom) y 2027-10-09 (sáb) — caen todos en fin de semana y entran con normalidad al gating de punta; el Festival de Primavera (2/5–2/13) y el Día Nacional (10/1–10/7) permanecen fuera de punta todo el día.
+- El comportamiento de red no cambia: si la huella remota coincide con la integrada, solo se mueve la marca de tiempo de la comprobación (sin escritura); si difiere, la tabla remota sustituye a la integrada dentro del presupuesto de 24 h y queda en la caché — la tabla integrada es un suelo, no un candado.
+- Pruebas: nuevas aserciones estructurales `BUILTIN_2027` (34/29/5, los recuperos deben caer en fin de semana, tramos contiguos de Festival de Primavera y Día Nacional, coherencia del año consigo mismo, huella que fija la instantánea para que una edición de la tabla aguas arriba ponga la prueba en rojo); `BUILTIN_TABLES` afirmada como de dos años, ordenada y sin duplicados; los fixtures del store se trasladan a 2028 (2026 y 2027 ya son integradas y 2028 es el único año que queda para ejercitar «tabla integrada ausente → descargada»), más una aserción de que el modo sin conexión sigue reconociendo el recupero del Festival de Primavera de 2027. Incluye además el trabajo de la 4.2.13 todavía sin publicar: el locale pt-BR y la enumeración de peers `0.2.2-rc.2`…`rc.5`. Ejecución completa: 291 pruebas / 291 pasan / 0 fallan (lint limpio).
+
 ## 4.2.1 — 2026-10-17 (enumeración de hosts: +0.2.1-rc.1)
 
 ### Fixed

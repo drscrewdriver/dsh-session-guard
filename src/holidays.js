@@ -6,9 +6,12 @@
  * `isOffDay: true` = 放假（含落在周末的假日）；`false` = 调休补班日
  * （本来是周六日但要上班）。表外日期回退自然周末判定。
  *
- * 内置快照只覆盖已定稿年份（2026，39 条 = 33 放假日 + 6 调休补班日）；
- * 未覆盖年份由 holiday-store.js 按年自动抓取，抓不到即退化为纯自然周末
- * （fail-open，与插件一贯风格一致）。
+ * 内置快照只覆盖已定稿年份（2026：39 条 = 33 放假日 + 6 调休补班日；
+ * 2027：34 条 = 29 放假日 + 5 调休补班日）；未覆盖年份由 holiday-store.js
+ * 按年自动抓取，抓不到即退化为纯自然周末（fail-open，与插件一贯风格一致）。
+ *
+ * 内置表让离线部署也有正确的放假/补班判定；联网时仍以远端指纹为准，
+ * 上游若有修订会在 24h 预算内覆盖内置表。
  */
 import { createHash } from 'node:crypto'
 
@@ -72,8 +75,61 @@ export const BUILTIN_2026 = Object.freeze({
   ]),
 })
 
+/**
+ * 2027 年国务院放假安排（公告 content_7085102，经 holiday-cn 机读；
+ * 快照指纹 sha256:8f999d47…9780331af，取表时点 2026-11）。
+ * 同样只保留 date / isOffDay。
+ */
+export const BUILTIN_2027 = Object.freeze({
+  year: 2027,
+  paper: 'https://www.gov.cn/zhengce/zhengceku/202611/content_7085102.htm',
+  days: Object.freeze([
+    // 元旦：1/1(五)-1/3(日) 放假，无补班
+    { date: '2027-01-01', isOffDay: true },
+    { date: '2027-01-02', isOffDay: true },
+    { date: '2027-01-03', isOffDay: true },
+    // 春节：2/5(五)-2/13(六) 放假，1/31(日)、2/14(日) 补班
+    { date: '2027-01-31', isOffDay: false },
+    { date: '2027-02-05', isOffDay: true },
+    { date: '2027-02-06', isOffDay: true },
+    { date: '2027-02-07', isOffDay: true },
+    { date: '2027-02-08', isOffDay: true },
+    { date: '2027-02-09', isOffDay: true },
+    { date: '2027-02-10', isOffDay: true },
+    { date: '2027-02-11', isOffDay: true },
+    { date: '2027-02-12', isOffDay: true },
+    { date: '2027-02-13', isOffDay: true },
+    { date: '2027-02-14', isOffDay: false },
+    // 清明：4/3(六)-4/5(一) 放假，无补班
+    { date: '2027-04-03', isOffDay: true },
+    { date: '2027-04-04', isOffDay: true },
+    { date: '2027-04-05', isOffDay: true },
+    // 劳动节：5/1(六)-5/5(三) 放假，5/8(六) 补班
+    { date: '2027-05-01', isOffDay: true },
+    { date: '2027-05-02', isOffDay: true },
+    { date: '2027-05-03', isOffDay: true },
+    { date: '2027-05-04', isOffDay: true },
+    { date: '2027-05-05', isOffDay: true },
+    { date: '2027-05-08', isOffDay: false },
+    // 端午：6/9(三) 放假一天，无补班
+    { date: '2027-06-09', isOffDay: true },
+    // 中秋：9/15(三) 放假一天，无补班
+    { date: '2027-09-15', isOffDay: true },
+    // 国庆：10/1(五)-10/7(四) 放假，9/26(日)、10/9(六) 补班
+    { date: '2027-09-26', isOffDay: false },
+    { date: '2027-10-01', isOffDay: true },
+    { date: '2027-10-02', isOffDay: true },
+    { date: '2027-10-03', isOffDay: true },
+    { date: '2027-10-04', isOffDay: true },
+    { date: '2027-10-05', isOffDay: true },
+    { date: '2027-10-06', isOffDay: true },
+    { date: '2027-10-07', isOffDay: true },
+    { date: '2027-10-09', isOffDay: false },
+  ]),
+})
+
 /** 内置快照数组（新定稿年份在此追加）。 */
-export const BUILTIN_TABLES = Object.freeze([BUILTIN_2026])
+export const BUILTIN_TABLES = Object.freeze([BUILTIN_2026, BUILTIN_2027])
 
 /**
  * 校验并归一化 holiday-cn `days` 数组。

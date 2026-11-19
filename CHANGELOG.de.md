@@ -12,6 +12,13 @@ Alle nennenswerten Änderungen an `dsh-session-guard` werden hier festgehalten. 
 - [Changelog en español](./CHANGELOG.es.md)
 - [Changelog em português](./CHANGELOG.pt.md)
 
+## 4.3.0 (2026-11-19)
+
+- **Integrierte 2027-Tabelle: 34 Zeilen = 29 Ruhetage + 5 Nacharbeitstage** (Staatsratsmitteilung content_7085102, maschinell über holiday-cn gelesen; Snapshot-Fingerabdruck `sha256:8f999d47…9780331af`). Bisher deckte der integrierte Stand nur 2026 ab, 2027 hing also vollständig am Netz: eine Offline-Maschine — oder eine mit `DSH_SESSION_GUARD_HOLIDAY_FETCH=0` festgelegte — beurteilte die 10-tägige Frühlingsfest-Pause und alle 5 Nacharbeit-Wochenenden falsch. Die integrierte Tabelle fängt das jetzt ab: **korrekte Ruhetag-Semantik ganz ohne Netz**.
+- Die 5 Nacharbeitstage: 2027-01-31 (So), 2027-02-14 (So), 2027-05-08 (Sa), 2027-09-26 (So), 2027-10-09 (Sa) — alle am Wochenende, sie treten normal in die Peak-Prüfung ein; Frühlingsfest 2/5–2/13 und Nationalfeiertag 10/1–10/7 bleiben ganztägig außerhalb der Peak-Zeit.
+- Das Netzverhalten ist unverändert: stimmt der entfernte Fingerabdruck mit dem integrierten überein, rückt nur der Prüfzeitpunkt vor (kein Schreiben); bei Abweichung überschreibt die entfernte Tabelle den integrierten Stand innerhalb des 24-h-Budgets und landet im Cache — der integrierte Stand ist eine Untergrenze, keine Sperre.
+- Tests: neue Strukturprüfungen für `BUILTIN_2027` (34/29/5, Nacharbeitstage müssen auf ein Wochenende fallen, zusammenhängende Läufe von Frühlingsfest und Nationalfeiertag, Jahreskonsistenz, Fingerabdruck, der den Snapshot festnagelt — eine Änderung der vorgelagerten Tabelle macht den Test rot); `BUILTIN_TABLES` als zweijährig, sortiert und entdoppelt geprüft; die Store-Fixtures wandern auf 2028 (2026 und 2027 sind jetzt beide integriert, 2028 ist das einzige Jahr, das noch „integriert fehlt → abgerufen" abdeckt), dazu die Zusicherung, dass der Offline-Modus den Frühlingsfest-Nacharbeitstag 2027 weiterhin erkennt. Enthält außerdem die noch unveröffentlichte 4.2.13-Arbeit: das pt-BR-Locale und die Peer-Aufzählung `0.2.2-rc.2`…`rc.5`. Vollständiger Lauf: 291 Tests / 291 bestanden / 0 fehlgeschlagen (Lint sauber).
+
 ## 4.2.1 — 2026-10-17 (Host-Aufzählung: +0.2.1-rc.1)
 
 ### Fixed

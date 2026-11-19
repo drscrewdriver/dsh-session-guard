@@ -12,6 +12,13 @@ Tutte le modifiche significative di `dsh-session-guard` vengono annotate qui. Le
 - [Changelog en español](./CHANGELOG.es.md)
 - [Changelog em português](./CHANGELOG.pt.md)
 
+## 4.3.0 (2026-11-19)
+
+- **Tabella integrata 2027: 34 righe = 29 giorni di riposo + 5 recuperi lavorativi** (avviso del Consiglio di Stato content_7085102, letto a macchina via holiday-cn; impronta dello snapshot `sha256:8f999d47…9780331af`). Finora la copertura integrata riguardava solo il 2026, quindi il 2027 dipendeva interamente dalla rete: una macchina offline — o fissata con `DSH_SESSION_GUARD_HOLIDAY_FETCH=0` — giudicava male i 10 giorni di pausa del Capodanno cinese e tutti i 5 fine settimana di recupero. Ora la tabella integrata li copre: **semantica corretta del giorno di riposo anche senza alcuna rete**.
+- I 5 recuperi lavorativi: 2027-01-31 (dom), 2027-02-14 (dom), 2027-05-08 (sab), 2027-09-26 (dom), 2027-10-09 (sab) — tutti nel fine settimana, entrano regolarmente nel gating della punta; Capodanno cinese 2/5–2/13 e Festa nazionale 10/1–10/7 restano fuori punta tutto il giorno.
+- Il comportamento di rete non cambia: se l'impronta remota coincide con quella integrata avanza solo l'istante di verifica (nessuna scrittura); se differisce, la tabella remota sostituisce quella integrata entro il budget di 24 h e finisce nella cache — quella integrata è un pavimento, non un lucchetto.
+- Test: nuove asserzioni strutturali `BUILTIN_2027` (34/29/5, i recuperi devono cadere nel fine settimana, segmenti contigui di Capodanno cinese e Festa nazionale, coerenza dell'anno con sé stesso, impronta che fissa lo snapshot — una modifica della tabella a monte fa diventare rosso il test); `BUILTIN_TABLES` verificata come biennale, ordinata e senza duplicati; i fixture dello store passano al 2028 (2026 e 2027 sono ora entrambe integrate, il 2028 è l'unico anno rimasto che esercita «tabella integrata assente → scaricata»), più l'asserzione che la modalità offline riconosce ancora il recupero del Capodanno cinese 2027. Include inoltre il lavoro 4.2.13 non ancora pubblicato: il locale pt-BR e l'enumerazione dei peer `0.2.2-rc.2`…`rc.5`. Esecuzione completa: 291 test / 291 superati / 0 falliti (lint pulito).
+
 ## 4.2.1 — 2026-10-17 (enumerazione host: +0.2.1-rc.1)
 
 ### Fixed

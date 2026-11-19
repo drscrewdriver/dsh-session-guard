@@ -12,6 +12,13 @@ Tous les changements notables de `dsh-session-guard` sont consignés ici. Les ve
 - [Changelog en español](./CHANGELOG.es.md)
 - [Changelog em português](./CHANGELOG.pt.md)
 
+## 4.3.0 (2026-11-19)
+
+- **Table intégrée 2027 : 34 lignes = 29 jours de repos + 5 jours de rattrapage** (avis du Conseil d'État content_7085102, lu par machine via holiday-cn ; empreinte de l'instantané `sha256:8f999d47…9780331af`). Jusqu'ici la couverture intégrée ne portait que sur 2026, si bien que 2027 dépendait entièrement du réseau : une machine hors ligne — ou figée avec `DSH_SESSION_GUARD_HOLIDAY_FETCH=0` — jugeait mal les 10 jours de congé du Nouvel An chinois et les 5 week-ends de rattrapage. La table intégrée les couvre désormais : **une sémantique de jour de repos correcte sans aucun réseau**.
+- Les 5 jours de rattrapage : 2027-01-31 (dim), 2027-02-14 (dim), 2027-05-08 (sam), 2027-09-26 (dim) et 2027-10-09 (sam) — tous le week-end, ils entrent normalement dans le fenêtrage de pointe ; le Nouvel An chinois (2/5–2/13) et la Fête nationale (10/1–10/7) restent hors pointe toute la journée.
+- Le comportement réseau est inchangé : si l'empreinte distante correspond à l'intégrée, seul l'horodatage de vérification avance (aucune écriture) ; sinon la table distante remplace l'intégrée dans le budget de 24 h et atterrit dans le cache — l'intégrée est un plancher, pas un verrou.
+- Tests : nouvelles assertions structurelles `BUILTIN_2027` (34/29/5, les jours de rattrapage doivent tomber un week-end, segments contigus du Nouvel An chinois et de la Fête nationale, cohérence de l'année avec elle-même, empreinte qui fige l'instantané — une modification de la table en amont fait passer le test au rouge) ; `BUILTIN_TABLES` vérifiée sur deux années, triée et dédoublonnée ; les fixtures du store passent à 2028 (2026 et 2027 sont désormais toutes deux intégrées, 2028 est la seule année restante pour exercer « table intégrée absente → récupérée »), plus une assertion que le mode hors ligne reconnaît toujours le rattrapage du Nouvel An chinois 2027. Embarque aussi le travail 4.2.13 encore non publié : la locale pt-BR et l'énumération des peers `0.2.2-rc.2`…`rc.5`. Exécution complète : 291 tests / 291 réussis / 0 échec (lint propre).
+
 ## 4.2.1 — 2026-10-17 (énumération des hôtes : +0.2.1-rc.1)
 
 ### Fixed

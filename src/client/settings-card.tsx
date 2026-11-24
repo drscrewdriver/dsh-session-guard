@@ -272,7 +272,7 @@ export function SessionGuardCard({ scope }: SettingsCardProps): JSX.Element {
   const readonly = unavailable || !snapshot.writable
   const value = (snapshot.value ?? {}) as Partial<SessionGuardConfig>
   const [open, setOpen] = useState(true)
-  // 首次使用引导：本地标记放在 localStorage，跨会话持久；卡底「重新查看引导」清标记重开。
+  // 首次使用引导：本地标记放在 localStorage，跨会话持久；卡顶「重新查看引导」清标记重开。
   const [guideOpen, setGuideOpen] = useState(() => !isGuideSkipped('session-guard'))
 
   injectCss()
@@ -303,6 +303,10 @@ export function SessionGuardCard({ scope }: SettingsCardProps): JSX.Element {
       </button>
       {open && (
         <div className="sgCardBody">
+          {/* 引导重启入口放在设置面上方：贴士也渲染在同一位置，跳过之后一眼就能重开。 */}
+          <p className="sgHint" style={{ marginBottom: 12 }}>
+            <GuideRestartButton ns="session-guard" onOpen={() => setGuideOpen(true)} />
+          </p>
           {guideOpen && (
             <GuidePanel
               ns="session-guard"
@@ -430,9 +434,6 @@ export function SessionGuardCard({ scope }: SettingsCardProps): JSX.Element {
                 排查误判访问 /session-guard/provider?provider=&lt;id&gt; 看 matchedBy。
               </p>
               {!snapshot.writable && <p className="sgReadonly">当前只读，无法修改。</p>}
-              <p className="sgHint" style={{ marginTop: 12 }}>
-                <GuideRestartButton ns="session-guard" onOpen={() => setGuideOpen(true)} />
-              </p>
             </>
           )}
         </div>

@@ -13,6 +13,39 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import type { JSX } from 'react'
 import type { SettingsScope } from './scope-face.ts'
+import { GuidePanel, GuideRestartButton, guideSteps, isGuideSkipped, type GuideLocale, type GuideStep } from './guide.tsx'
+
+/** 首次使用引导文案（zh/en 为一等公民；其余语种由 guide-kit 的回退链落到 en）。 */
+const GUIDE_STEPS: Partial<Record<GuideLocale, readonly GuideStep[]>> = {
+  zh: [
+    {
+      title: '它会替你踩刹车',
+      body: '高峰时段自动暂停运行中的会话，退峰后自动续跑；周末模式让你无视峰谷畅快跑。',
+    },
+    {
+      title: '判定口径按「官方源」',
+      body: '默认只拦 DeepSeek 官方源，本地/第三方 provider 照常跑；需要更严时再打开「官方源二维判定」下的名单。',
+    },
+    {
+      title: '状态永远可见',
+      body: '输入框右侧的徽标显示当前状态（正常 / 峰值暂停中）；停不下来时用旁边的暂停按钮手动接管。',
+    },
+  ],
+  en: [
+    {
+      title: 'It pumps the brakes for you',
+      body: 'Running sessions auto-pause during peak hours and resume off-peak. Weekend mode ignores peaks entirely.',
+    },
+    {
+      title: 'Official-source scoping',
+      body: 'By default only the DeepSeek official source is gated; local/third-party providers keep running. Tighten it via the official-source allowlists when needed.',
+    },
+    {
+      title: 'Status stays visible',
+      body: 'The badge right of the composer shows the current state (Normal / Peak paused). Use the pause button beside it to take over manually.',
+    },
+  ],
+}
 
 /** 命名空间值形状（与 host 的 DEFAULT_SETTINGS 对应）。 */
 export interface SessionGuardConfig {
@@ -239,6 +272,8 @@ export function SessionGuardCard({ scope }: SettingsCardProps): JSX.Element {
   const readonly = unavailable || !snapshot.writable
   const value = (snapshot.value ?? {}) as Partial<SessionGuardConfig>
   const [open, setOpen] = useState(true)
+  // 首次使用引导：本地标记放在 localStorage，跨会话持久；卡底「重新查看引导」清标记重开。
+  const [guideOpen, setGuideOpen] = useState(() => !isGuideSkipped('session-guard'))
 
   injectCss()
 
@@ -268,6 +303,13 @@ export function SessionGuardCard({ scope }: SettingsCardProps): JSX.Element {
       </button>
       {open && (
         <div className="sgCardBody">
+          {guideOpen && (
+            <GuidePanel
+              ns="session-guard"
+              steps={guideSteps(GUIDE_STEPS)}
+              onClose={() => setGuideOpen(false)}
+            />
+          )}
           {unavailable ? (
             <p style={{ margin: '0', padding: '12px 0', fontSize: '13px', color: 'var(--dsw-alias-label-tertiary)' }}>
               设置命名空间不可用：请确认 dsh-session-guard 已装配进此 profile。
@@ -388,6 +430,9 @@ export function SessionGuardCard({ scope }: SettingsCardProps): JSX.Element {
                 排查误判访问 /session-guard/provider?provider=&lt;id&gt; 看 matchedBy。
               </p>
               {!snapshot.writable && <p className="sgReadonly">当前只读，无法修改。</p>}
+              <p className="sgHint" style={{ marginTop: 12 }}>
+                <GuideRestartButton ns="session-guard" onOpen={() => setGuideOpen(true)} />
+              </p>
             </>
           )}
         </div>

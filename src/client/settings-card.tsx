@@ -14,6 +14,7 @@ import { useEffect, useState, useSyncExternalStore } from 'react'
 import type { JSX } from 'react'
 import type { SettingsScope } from './scope-face.ts'
 import { GuidePanel, GuideRestartButton, guideSteps, isGuideSkipped, type GuideLocale, type GuideStep } from './guide.tsx'
+import { mountStarRow } from './star-row-copy.ts'
 
 /** 首次使用引导文案（zh/en 为一等公民；其余语种由 guide-kit 的回退链落到 en）。 */
 const GUIDE_STEPS: Partial<Record<GuideLocale, readonly GuideStep[]>> = {
@@ -438,6 +439,9 @@ export function SessionGuardCard({ scope }: SettingsCardProps): JSX.Element {
           )}
         </div>
       )}
+      <span
+        ref={(node: HTMLElement | null) => { if (node && !node.firstChild) node.appendChild(mountStarRow()) }}
+      />
     </li>
   )
 }

@@ -1,5 +1,18 @@
 # Changelog
 
+## 4.6.0
+
+**暂停资源范围补齐（P0）：暂停会话时一并停其后台任务与子会话，并按四态如实上报。**
+
+- 之前 `pause` 只停当前 agent 回合，完全不管 `run_in_background` 起的后台 job 与子代理/子任务会话——它们在峰期继续烧 token。现在按会话作用域收干净。
+- 新增 `src/resource-scope.js`：`collectPauseScope` 编排 list → **settlement shield（先挂 `jobs.wait`）→ kill → 停子会话 → 有界补杀循环（3 轮×250ms）→ drain → settle**。活跃口径照抄宿主 `activeJobCount`（`running || stopping`）。
+- **四态如实上报**（写进暂停快照 `scope`）：`killedJobs` / `interruptedChildren` / `unknown` / `partial`，服务缺失归 `unsupported`（≠ unknown）。禁止把「请求了」写成「停了」；轮外仍活跃/未捕获的一律进 `unknown` 并标 `partial`，绝不报「干净暂停」。
+- 子会话经官方 `subagents.interruptByUser(childSessionId)` 停止（缺该方法时退化 `agent.cancel`，仍失败进 unknown）；`jobs.kill(id, sessionId, reason)` 的 caller 传本会话 id，依赖宿主 `JOB_FOREIGN_SESSION` 越权栅栏。
+- 服务经 `ctx.get('jobs')` / `ctx.get('subagents')` **鸭子探测**，不写进 `inject`；缺服务的宿主静默降级（标 unsupported），暂停主线照常完成。
+- 新增三配置（默认全开，关掉是逃生舱）：`pauseStopsJobs` / `pauseStopsChildren`（bool，默认 true）、`pauseScopeDrainMs`（默认 3000，min 500）；设置卡「纳入子代理请求」下方新增两个开关（走 10 语字典）。
+- 顺带修 `describeToolPurpose()` 的 bash-only：改 `['bash','pwsh'].includes(info.name)`，Windows 上 force-pause 的 pwsh 命令不再退化成 `JSON.stringify` 弱文案。
+- 新增 `tests/pause-scope.test.mjs`（23 例）+ `tests/pause-scope-wiring.test.mjs`（仿真 jobs/subagents 驱动真实 `createPauseGate()`，断言 kill 参数、shield 先于 kill、四态进快照、开关关闭整维度不动、服务缺失 unsupported）。全量 366 tests / 366 pass / 0 fail。
+
 ## 4.5.0
 
 **重试模块加固（四项）：失败分档不再被回显参数击穿 + 瞬时 429 不误判额度耗尽 + 断网挂起（默认关）+ 记录 `turn/start.reason`。**

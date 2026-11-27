@@ -73,6 +73,8 @@ export interface SessionGuardConfig {
   queueFallback: boolean
   retryEnabled: boolean
   retryPauseWhenOffline: boolean
+  pauseStopsJobs: boolean
+  pauseStopsChildren: boolean
   timezone: string
   pauseMode: 'safe' | 'force'
   pauseReason: 'wait' | 'stop'
@@ -419,6 +421,20 @@ export function SessionGuardCard({ scope }: SettingsCardProps): JSX.Element {
                 checked={value.guardSubagents ?? true}
                 disabled={readonly}
                 onChange={(next) => toggle('guardSubagents', next)}
+              />
+              <SwitchRow
+                label={t('settings.pauseStopsJobs')}
+                description={t('settings.pauseStopsJobs.desc')}
+                checked={value.pauseStopsJobs ?? true}
+                disabled={readonly}
+                onChange={(next) => toggle('pauseStopsJobs', next)}
+              />
+              <SwitchRow
+                label={t('settings.pauseStopsChildren')}
+                description={t('settings.pauseStopsChildren.desc')}
+                checked={value.pauseStopsChildren ?? true}
+                disabled={readonly}
+                onChange={(next) => toggle('pauseStopsChildren', next)}
               />
               <SwitchRow
                 label="低谷自动恢复"

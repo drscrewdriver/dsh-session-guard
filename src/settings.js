@@ -51,6 +51,10 @@ export const DEFAULT_SETTINGS = Object.freeze({
   deferredMode: 'hold', // hold（挂起不报错）/ error（抛错 + 记延后）
   deferredMaxHoldMs: 6 * 60 * 60 * 1000, // 挂起上限（6h），到期转 error
   guardSubagents: true, // 是否纳入子代理请求
+  // ── 暂停资源范围（附加计划 A：后台任务 + 子会话）──
+  pauseStopsJobs: true, // 暂停时停该会话的后台任务（默认开：属「暂停」应有之义）
+  pauseStopsChildren: true, // 暂停时停该会话的子会话（默认开）
+  pauseScopeDrainMs: 3000, // 等资源进入终态的有界超时（min 500）
 })
 
 /**
@@ -90,6 +94,9 @@ export const SettingsSchema = z.object({
   deferredMode: z.union([z.const('hold'), z.const('error')]).default(DEFAULT_SETTINGS.deferredMode).volatile(),
   deferredMaxHoldMs: z.number().min(0).default(DEFAULT_SETTINGS.deferredMaxHoldMs).volatile(),
   guardSubagents: z.boolean().default(DEFAULT_SETTINGS.guardSubagents).volatile(),
+  pauseStopsJobs: z.boolean().default(DEFAULT_SETTINGS.pauseStopsJobs).volatile(),
+  pauseStopsChildren: z.boolean().default(DEFAULT_SETTINGS.pauseStopsChildren).volatile(),
+  pauseScopeDrainMs: z.number().min(500).default(DEFAULT_SETTINGS.pauseScopeDrainMs).volatile(),
 })
 
 /**

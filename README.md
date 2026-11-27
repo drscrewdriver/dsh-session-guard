@@ -158,6 +158,8 @@ dsh plugin --profile web add dsh-session-guard@dsh-0.1.2
 | `deferredResume` | on | **退峰自动继续**：关闭后延后的请求/会话不自动续跑，需手动 `/resume` |
 | `queueFallback` | on | 自研会话门不可用时回退锁等待队列（fail-open） |
 | `retryEnabled` | off | **自动重试（后端）**：瞬时失败自动续跑（默认关，保守） |
+| `pauseStopsJobs` | on | **暂停时停后台任务**：暂停会话时一并停其拥有的 `run_in_background` 任务（含 stopping）；关掉则后台任务继续跑（逃生舱，一般不要关） |
+| `pauseStopsChildren` | on | **暂停时停子会话**：暂停会话时一并中断其子代理/子任务会话（含多层后代）；关掉则子会话继续跑 |
 
 附属配置：
 
@@ -168,6 +170,7 @@ dsh plugin --profile web add dsh-session-guard@dsh-0.1.2
 - 官方源判定：`officialProviders`（追加官方 provider id，逗号分隔，优先级最高）、`officialBaseURLs`（官方端点 host 名单，默认 `api.deepseek.com`）；
 - 延后队列：`deferredMode`（`hold` 挂起等待 / `error` 报错并延后）、`deferredResumeText`（退峰续跑文案）、`deferredMaxHoldMs`（挂起上限，默认 6 小时，到期转 error）；
 - 重试参数：`retryText`、`retryGraceMs`、`retryCooldownMs`、`retryBackoffFactor`、`retryBackoffMaxMs`、`retryMaxConsecutive`。
+- 暂停资源范围：`pauseScopeDrainMs`（默认 3000，min 500）——暂停时等待后台任务/子会话进入终态的**有界**超时；超时仍未停掉的写进 `unknown` 并标 `partial`（绝不谎报「干净暂停」）。宿主没有 jobs/subagents 服务时静默降级为 `unsupported`，不影响暂停本身。
 
 ## 行为
 

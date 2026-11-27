@@ -190,7 +190,22 @@ export function apply(ctx, config = {}) {
       }
     },
   })
-  const pauseGate = createPauseGate({ ctx, pauseStore, stepGate })
+  // 暂停资源范围：apply 期经 `ctx.get()` 鸭子探测取 jobs/subagents（**不写进 inject**，
+  // 否则缺该服务的宿主会拒载整个插件）；取不到就返回 undefined → pause-gate 旧行为。
+  const getScope = () => {
+    let jobsSvc
+    let subagentsSvc
+    try {
+      jobsSvc = typeof ctx.get === 'function' ? ctx.get('jobs') : undefined
+    } catch { jobsSvc = undefined }
+    try {
+      subagentsSvc = typeof ctx.get === 'function' ? ctx.get('subagents') : undefined
+    } catch { subagentsSvc = undefined }
+    if (jobsSvc === undefined && subagentsSvc === undefined) return undefined
+    const c = readCfg()
+    return { jobsSvc, subagentsSvc, cfg: c }
+  }
+  const pauseGate = createPauseGate({ ctx, pauseStore, stepGate, getScope })
   pauseGateRef = pauseGate
   const gate = createGate({ getCtx: () => ctx, getSettings: readCfg, store, pauseGate })
   // deferrals 在 createWiring 里才构造；先留引用，bridge 用 late-bound 读（构造期循环依赖）。

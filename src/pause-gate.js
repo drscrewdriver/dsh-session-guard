@@ -25,6 +25,7 @@
  * 0.1.1 与 0.1.2 的回放日志都同时保留 `content[].toolCallId` 与 `source.callId` 两种形态。
  */
 import { readToolResultBlockId, readToolResultCallId } from './tool-call-id.js'
+import { collectPauseScope } from './resource-scope.js'
 
 /**
  * 构造一条 plugin-source 的 user 消息（形状与 `dsh-llm` 的 `createUserMessage` 一致：
@@ -84,13 +85,16 @@ export function enqueueFollowup(agent, message, ctx) {
  * @param {string} [deps.pluginId] followup 消息的 source.plugin（默认 'session-guard'）
  * @param {(input: {content: object, source: object}) => unknown} [deps.makeFollowupMessage] 恢复消息构造（默认本地构造；测试注入）
  * @param {ReturnType<import('./step-gate.js').createStepGate>} [deps.stepGate] step 级门控（v0.2.0）
+ * @param {() => ({ jobsSvc?:object, subagentsSvc?:object, cfg?:object } | undefined)} [deps.getScope]
+ *   暂停时取后台任务/子会话服务与配置（apply 期经 `ctx.get()` 鸭子探测）；缺省 undefined →
+ *   不收集资源，`applyPauseNow` 行为与改造前逐字节等价。
  *
  * **为什么 pause/resume/cancel 必须先释放 step gate（F6 死锁）**：step 门控挂起在
  * `agent/pre-step`，此刻既不会产生 `assistant/message` 也不会产生 `tool/result`；
  * 而 safe+wait / safe+stop 都靠这两个事件落地暂停 → 两边互等，会话永久卡死。
  */
-export function createPauseGate({ ctx, pauseStore, pluginId = 'session-guard', makeFollowupMessage = createPluginUserMessage, stepGate }) {
-  const state = { inFlight: new Map(), pendingPause: new Map() }
+export function createPauseGate({ ctx, pauseStore, pluginId = 'session-guard', makeFollowupMessage = createPluginUserMessage, stepGate, getScope }) {
+  const state = { inFlight: new Map(), pendingPause: new Map(), scopePromises: new Map() }
   const getAgent = (sessionId) => (ctx && typeof ctx.agents?.get === 'function' ? ctx.agents.get(sessionId) : undefined)
 
   /** 先解开 step 门（若存在），再走 turn 级逻辑；任何异常都不阻断暂停动作。 */
@@ -142,7 +146,9 @@ export function createPauseGate({ ctx, pauseStore, pluginId = 'session-guard', m
     }
     const args = typeof raw === 'string' ? parseArgs(raw) : raw
     if (args !== null && typeof args.description === 'string' && args.description.length > 0) return args.description
-    if (info.name === 'bash' && args !== null && typeof args.command === 'string') return `运行命令：${args.command}`
+    // bash / pwsh 都走「运行命令」文案：DSH profile 里 bash/pwsh 按平台二选一（win32 用 pwsh）；
+    // 只认 bash 会让 Windows 上的 force-pause 文案退化成 JSON.stringify 弱展示。
+    if (['bash', 'pwsh'].includes(info.name) && args !== null && typeof args.command === 'string') return `运行命令：${args.command}`
     if (args !== null) {
       try {
         return JSON.stringify(args).slice(0, 120)
@@ -247,7 +253,7 @@ export function createPauseGate({ ctx, pauseStore, pluginId = 'session-guard', m
     return pauseStore.current(id)
   }
 
-  function markPaused(id, resumeContent, forcedContext, deferredTools) {
+  function markPaused(id, resumeContent, forcedContext, deferredTools, scope) {
     const snapshot = {
       sessionId: String(id),
       paused: true,
@@ -255,10 +261,38 @@ export function createPauseGate({ ctx, pauseStore, pluginId = 'session-guard', m
       forced: forcedContext?.forced === true,
       interruptedTool: forcedContext?.interruptedTool ?? null,
       deferredTools: deferredTools ?? null,
+      scope: scope ?? null, // 四态上报：killedJobs/interruptedChildren/unknown/partial/unsupported
       updatedAt: Date.now(),
     }
     pauseStore.set(id, snapshot)
     return snapshot
+  }
+
+  /** 把后台任务/子会话收集作为「暂停之后」的异步补充，不阻断暂停同步返回；完成后回写 snapshot.scope。 */
+  function startScopeCollection(id, scopeSvc) {
+    if (!scopeSvc) return null
+    const p = Promise.resolve()
+      .then(() => collectPauseScope({
+        sessionId: id,
+        jobsSvc: scopeSvc.jobsSvc,
+        subagentsSvc: scopeSvc.subagentsSvc,
+        cfg: scopeSvc.cfg ?? {},
+        ctx,
+        sleep: scopeSvc.sleep,
+        log: (m) => ctx?.logger?.info?.(m),
+      }))
+      .then((scope) => {
+        const cur = pauseStore.get(id)
+        if (cur && cur.paused === true) pauseStore.set(id, { ...cur, scope })
+        return scope
+      })
+      .catch((e) => {
+        ctx?.logger?.warn?.('[session-guard] pause scope collect failed: ' + String(e && e.message || e))
+        return null
+      })
+      .finally(() => state.scopePromises.delete(id))
+    state.scopePromises.set(id, p)
+    return p
   }
 
   function clearPaused(id) {
@@ -282,8 +316,8 @@ export function createPauseGate({ ctx, pauseStore, pluginId = 'session-guard', m
 
   // ── 立即落地暂停 ────────────────────────────────────────────────────
 
-  /** 立即停止运行回合（agent.cancel 保 inbox）+ 停 goal + 持久化快照。 */
-  function applyPauseNow(id, resumeContent, forcedContext, deferredTools) {
+  /** 立即停止运行回合（agent.cancel 保 inbox）+ 停 goal + 持久化快照（+ 异步收资源）。 */
+  function applyPauseNow(id, resumeContent, forcedContext, deferredTools, scopeSvc) {
     state.pendingPause.delete(id)
     const current = currentPause(id)
     if (current.paused) return { kind: 'success', text: 'task is already paused' }
@@ -291,8 +325,10 @@ export function createPauseGate({ ctx, pauseStore, pluginId = 'session-guard', m
     if (agent !== undefined && agent.status === 'running') agent.cancel({ kind: 'user' }, { keepInbox: true })
     clearInflight(id)
     if (agent !== undefined) pauseSessionGoal(agent)
-    markPaused(id, resumeContent, forcedContext, deferredTools)
-    return { kind: 'success', text: agent !== undefined && agent.status === 'running' ? 'task paused — the running turn was stopped' : 'task paused' }
+    const snapshot = markPaused(id, resumeContent, forcedContext, deferredTools)
+    // 会话已先标记暂停（任何 job 结束事件到达时都不会再唤醒）→ 再后台停资源。
+    const scopeReady = startScopeCollection(id, scopeSvc)
+    return { kind: 'success', text: agent !== undefined && agent.status === 'running' ? 'task paused — the running turn was stopped' : 'task paused', scope: snapshot.scope, scopeReady }
   }
 
   // ── 暂停主逻辑（三粒度） ─────────────────────────────────────────────
@@ -317,15 +353,18 @@ export function createPauseGate({ ctx, pauseStore, pluginId = 'session-guard', m
       if (agent.status === 'running') agent.cancel({ kind: 'user' }, { keepInbox: true })
       clearInflight(sessionId)
       pauseSessionGoal(agent)
-      markPaused(sessionId, resumeContent, {
+      const snapshot = markPaused(sessionId, resumeContent, {
         forced: true,
         interruptedTool: interruptedTool ? { name: interruptedTool.name, arguments: interruptedTool.arguments, callId: interruptedTool.callId } : null,
       })
+      const scopeReady = startScopeCollection(sessionId, typeof getScope === 'function' ? getScope() : undefined)
       return {
         kind: 'success',
         text: interruptedTool !== null
           ? `task force-paused — interrupted tool ${interruptedTool.name}（预期目的：${describeToolPurpose(interruptedTool)}），可能已部分执行`
           : 'task force-paused — interrupted the running turn',
+        scope: snapshot.scope,
+        scopeReady,
       }
     }
 
@@ -338,7 +377,7 @@ export function createPauseGate({ ctx, pauseStore, pluginId = 'session-guard', m
       state.pendingPause.set(sessionId, { resumeContent, mode: 'safe', reason: 'wait' })
       return { kind: 'success', text: 'task pausing — waiting for the current reasoning to complete before pausing' }
     }
-    return applyPauseNow(sessionId, resumeContent, { forced: false, interruptedTool: null })
+    return applyPauseNow(sessionId, resumeContent, { forced: false, interruptedTool: null }, null, typeof getScope === 'function' ? getScope() : undefined)
   }
 
   // ── 恢复主逻辑 ───────────────────────────────────────────────────────
@@ -455,7 +494,7 @@ export function createPauseGate({ ctx, pauseStore, pluginId = 'session-guard', m
           state.pendingPause.delete(sessionId)
           return
         }
-        applyPauseNow(sessionId, resumeContent, { forced: false, interruptedTool: null }, deferredTools)
+        applyPauseNow(sessionId, resumeContent, { forced: false, interruptedTool: null }, deferredTools, typeof getScope === 'function' ? getScope() : undefined)
       } catch (e) {
         ctx?.logger?.warn?.('[session-guard] deferred pause failed: ' + String(e))
         state.pendingPause.delete(sessionId)
@@ -526,6 +565,7 @@ export function createPauseGate({ ctx, pauseStore, pluginId = 'session-guard', m
       interruptedTool: current.interruptedTool ?? null,
       deferredTools: current.deferredTools ?? null,
       resumeContent: current.resumeContent ?? null,
+      scope: current.scope ?? null, // 四态上报（后台任务 / 子会话停止结果）
     }
   }
 
@@ -540,5 +580,7 @@ export function createPauseGate({ ctx, pauseStore, pluginId = 'session-guard', m
     _inflightCount: (id) => inflightOf(id).size,
     /** 是否挂起了延迟暂停（测试用）。 */
     _pendingCount: () => state.pendingPause.size,
+    /** 取某会话正在跑的后台资源收集 promise（接线测试/状态文案 await 用）。 */
+    _scopeReady: (id) => state.scopePromises.get(id),
   }
 }

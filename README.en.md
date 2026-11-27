@@ -133,6 +133,8 @@ Restart dsh web and refresh the page after installation.
 | `deferredResume` | on | **Auto-resume after peak**: off = deferred requests/sessions stay parked until a manual `/resume` |
 | `queueFallback` | on | Fallback to lock-wait queue when custom session gate is unavailable (fail-open) |
 | `retryEnabled` | off | **Auto-retry (backend)**: transient failure auto-resume (off by default, conservative) |
+| `pauseStopsJobs` | on | **Pause stops background jobs**: pausing a session also stops its `run_in_background` jobs (incl. stopping); off = they keep running (escape hatch, normally leave on) |
+| `pauseStopsChildren` | on | **Pause stops child sessions**: pausing a session also interrupts its subagent/subtask sessions (incl. deep descendants); off = they keep running |
 
 Additional configuration:
 
@@ -143,6 +145,7 @@ Additional configuration:
 - Official-source guard: `officialProviders` (extra official provider ids, comma separated, highest priority), `officialBaseURLs` (official endpoint hosts, default `api.deepseek.com`);
 - Deferral queue: `deferredMode` (`hold` / `error`), `deferredResumeText`, `deferredMaxHoldMs` (hold cap, default 6h, then converts to an error);
 - Retry parameters: `retryText`, `retryGraceMs`, `retryCooldownMs`, `retryBackoffFactor`, `retryBackoffMaxMs`, `retryMaxConsecutive`.
+- Pause resource scope: `pauseScopeDrainMs` (default 3000, min 500) — **bounded** timeout for waiting background jobs / child sessions to reach a terminal state on pause; anything not stopped by then goes into `unknown` and sets `partial` (never falsely reports a "clean pause"). When the host has no jobs/subagents service it silently degrades to `unsupported` without affecting the pause itself.
 
 ## Behavior
 

@@ -63,6 +63,8 @@ export function apply(ctx, config = {}) {
 
   /** 读实时设置（settings 服务不可用时回退默认）。 */
   let configSource = config
+  /** 后端自动重试接线句柄（声明在前，供 legacy 设置钩子的 onChange 取消挂起用）。 */
+  let retryRef = null
   /** 组合条目快照：volatile 字段解引，供默认值合并。 */
   function resolveEntryConfig() {
     const source = configSource ?? config
@@ -100,7 +102,11 @@ export function apply(ctx, config = {}) {
           configSource = typeof source === 'function' ? source() : source
         },
         onChange: () => {
-          // 状态机按 tick 读 readCfg(),无需即时动作。
+          // 状态机按 tick 读 readCfg(),无需即时动作；唯一例外是重试开关被关掉
+          // 时要立刻解除可能在跑的断网挂起（否则用户看到「关了但会话仍挂着」）。
+          try {
+            if (readCfg().retryPauseWhenOffline !== true) retryRef?.cancelOfflineHolds?.()
+          } catch { /* fail-open */ }
         },
       }
       if (typeof service.installSection === 'function') {
@@ -348,7 +354,7 @@ export function apply(ctx, config = {}) {
   ctx.inject?.(['commands'], installSessionGuardCommands)
 
   // ── 后端自动重试（D9）：冻结/门控期间让路，绝不绕过会话门 ──
-  createRetry({
+  retryRef = createRetry({
     ctx,
     getSettings: readCfg,
     isFrozen: (sessionId) => {

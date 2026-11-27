@@ -40,6 +40,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
   retryBackoffFactor: DEFAULT_RETRY.retryBackoffFactor,
   retryBackoffMaxMs: DEFAULT_RETRY.retryBackoffMaxMs,
   retryMaxConsecutive: DEFAULT_RETRY.retryMaxConsecutive,
+  retryPauseWhenOffline: DEFAULT_RETRY.retryPauseWhenOffline, // 断网时暂停重试（默认关）
+  retryOfflineCheckMs: DEFAULT_RETRY.retryOfflineCheckMs, // 挂起期间重探间隔
   // ── 官方 provider 二维判定（高峰 × 目标源）──
   providerGuard: true, // 二维判定总开关；关掉 = 现有纯时间判定
   officialProviders: [], // 追加的官方 provider id（精确匹配，最高优先级）
@@ -78,6 +80,8 @@ export const SettingsSchema = z.object({
   retryBackoffFactor: z.number().min(1).default(DEFAULT_SETTINGS.retryBackoffFactor).volatile(),
   retryBackoffMaxMs: z.number().min(0).default(DEFAULT_SETTINGS.retryBackoffMaxMs).volatile(),
   retryMaxConsecutive: z.number().min(0).default(DEFAULT_SETTINGS.retryMaxConsecutive).volatile(),
+  retryPauseWhenOffline: z.boolean().default(DEFAULT_SETTINGS.retryPauseWhenOffline).volatile(),
+  retryOfflineCheckMs: z.number().min(3000).default(DEFAULT_SETTINGS.retryOfflineCheckMs).volatile(),
   providerGuard: z.boolean().default(DEFAULT_SETTINGS.providerGuard).volatile(),
   officialProviders: z.array(z.string()).default(DEFAULT_SETTINGS.officialProviders).volatile(),
   officialBaseURLs: z.array(z.string()).default(DEFAULT_SETTINGS.officialBaseURLs).volatile(),

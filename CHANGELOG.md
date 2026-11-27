@@ -1,5 +1,17 @@
 # Changelog
 
+## 4.5.0
+
+**重试模块加固（四项）：失败分档不再被回显参数击穿 + 瞬时 429 不误判额度耗尽 + 断网挂起（默认关）+ 记录 `turn/start.reason`。**
+
+- **① 失败分类改分档判定（P0）**：`src/retry.js` 新增 `classifyFailure({code,status,message})`，判定顺序固定为 code 白名单 → HTTP status → 才降级文本。此前 `MALFORMED_RESPONSE` 的 message 会原样回显模型的工具参数，参数里带 `auth` / `permission` 就把一次可重试的失败判成永久、会话不再续跑。现在命中 code 白名单即定档，**完全不读 message**（getter 哨兵单测钉死）。`isTransientFailure()` 保留为薄封装，签名与语义向后兼容。
+- **② 瞬时 429 不再判额度耗尽（P1）**：移除旧的 `insufficient` 与 `quota` 组合正则——`insufficient_quota` 在多家上游是 tpm/rpm 限流（瞬时），文本层面与「额度耗尽」不可区分；真账务由 402 与 `billing`/`payment`/`insufficient balance` 等明确词覆盖。
+- **③ 断网挂起（P1，新 `src/offline.js`）**：网络类失败（`TRANSPORT`/`TIMEOUT`/`DNS`/`CONNECTION`）在 `retryPauseWhenOffline` 打开时进入挂起循环，只重探、不发请求；探测走 host 侧 `node:os` 网卡 + 一次 `node:dns` 解析，**零 HTTP 请求**，代理环境下只查网卡，探测自身抛错则 fail-open。**「挂起不消耗 `retryMaxConsecutive`」与开关解耦**——即便关掉挂起，断网失败也不计入重试预算。默认 **关**（跟着默认关的主开关走）。用户消息 / 新回合 / 冻结 / 关闭开关四个触发点都取消挂起。
+- **④ 记录 `turn/start.reason`（P1）**：`onEvent` 新增 `case 'turn/start'` 记 `s.turnReason`，`turn/end` 时若本回合 reason 不在「模型发起」白名单内则视为宿主合成回合，不重试、不计 consecutive。白名单保守：无 reason / `unknown` 视为模型回合（宿主 0.2.3-alpha.2 实测 `turn/start` 只有 `{turn}`，无 reason 字段）。
+- **顺带修一处隐藏死代码**：`schedule()` 的预检此前把 `{ ...s, pending: true }` 传进 `shouldRetry`，而后者首行即 `if (s.pending) return false`——导致**整个自动重试路径从未真正发出过任何一次续跑**。预检改传真实状态 `s`（去重仍由上方 `if (s.pending) return` 保证）。新增的挂起/合成回合判定正是接在这条被激活的路径上。
+- 新增 `tests/retry-classify.test.mjs` / `tests/retry-offline.test.mjs` / `tests/retry-turnreason.test.mjs`；`tests/*.test.mjs` 为 glob，自动进 CI。全量 **336 tests / 336 pass / 0 fail**（基线 293）。
+- 设置面 `src/settings.js` 加 `retryPauseWhenOffline`（默认 false）与 `retryOfflineCheckMs`（默认 15000，schema `min(3000)`）两键；设置卡「自动重试」下方新增开关，文案走 10 语字典（`settings.retryPauseWhenOffline` / `.desc`），不增硬编码（locale 棘轮仍 58）。
+
 ## 4.4.3 (2026-11-26)
 
 **设置卡底栏 Star 快车道：★ 直接打开仓库页（不再只静默收起），隐藏独立成 ×。**

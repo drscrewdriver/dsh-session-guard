@@ -13,8 +13,25 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import type { JSX } from 'react'
 import type { SettingsScope } from './scope-face.ts'
+import { dictionaries } from './locales'
 import { GuidePanel, GuideRestartButton, guideSteps, isGuideSkipped, type GuideLocale, type GuideStep } from './guide.tsx'
 import { mountStarRow } from './star-row-copy.ts'
+
+/**
+ * 本卡片历史上方均硬编码中文（旧债，本次不动），但 locale 棘轮只降不升，
+ * 所以新增行一律走字典。根据 <html lang> 取词，认不出落 en（再落 zh）。
+ */
+const LOCALE_LANGS = ['zh', 'en', 'ja', 'ko', 'fr', 'de', 'it', 'ru', 'es', 'pt']
+function currentLocale(): string {
+  const doc = typeof document !== 'undefined' ? document.documentElement?.lang ?? '' : ''
+  const nav = typeof navigator !== 'undefined' ? navigator.language ?? '' : ''
+  const base = (doc || nav || 'en').toLowerCase().split('-')[0]
+  return LOCALE_LANGS.includes(base) ? base : 'en'
+}
+function t(key: string): string {
+  const loc = currentLocale()
+  return dictionaries[loc]?.[key] ?? dictionaries.en?.[key] ?? dictionaries.zh?.[key] ?? key
+}
 
 /** 首次使用引导文案（zh/en 为一等公民；其余语种由 guide-kit 的回退链落到 en）。 */
 const GUIDE_STEPS: Partial<Record<GuideLocale, readonly GuideStep[]>> = {
@@ -55,6 +72,7 @@ export interface SessionGuardConfig {
   weekendMode: boolean
   queueFallback: boolean
   retryEnabled: boolean
+  retryPauseWhenOffline: boolean
   timezone: string
   pauseMode: 'safe' | 'force'
   pauseReason: 'wait' | 'stop'
@@ -429,6 +447,13 @@ export function SessionGuardCard({ scope }: SettingsCardProps): JSX.Element {
                 checked={value.retryEnabled ?? false}
                 disabled={readonly}
                 onChange={(next) => toggle('retryEnabled', next)}
+              />
+              <SwitchRow
+                label={t('settings.retryPauseWhenOffline')}
+                description={t('settings.retryPauseWhenOffline.desc')}
+                checked={value.retryPauseWhenOffline ?? false}
+                disabled={readonly}
+                onChange={(next) => toggle('retryPauseWhenOffline', next)}
               />
               <p className="sgHint">
                 判定口径：显式 id 名单 → baseURL 端点 → catalog 默认端点 → 内置 id。

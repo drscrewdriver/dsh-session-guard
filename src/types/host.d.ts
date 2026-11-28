@@ -90,15 +90,31 @@ export interface HostCommandsService {
     name: string
     description?: string
     input?: { hint?: string }
-    handler: (invocation: HostCommandInvocation) => HostCommandResult | Promise<HostCommandResult>
+    handler: (invocation: HostCommandInvocation) => unknown
   }): () => void
+}
+
+/** HTTP 请求最小面（宿主 webServer 路由 handler 入参）。 */
+export interface HostHttpReq {
+  url?: string
+  method?: string
+  on?(event: string, fn: (...args: unknown[]) => void): void
+  [Symbol.asyncIterator]?(): AsyncIterator<Uint8Array>
+}
+
+/** HTTP 响应最小面。 */
+export interface HostHttpRes {
+  writeHead(code: number, headers: Record<string, string>): void
+  write(chunk: string): void
+  end(body?: string): void
+  on?(event: string, fn: (...args: unknown[]) => void): void
 }
 
 /** webServer 路由面（0.1.5+ 契约不变）。 */
 export interface HostWebRoute {
   kind?: 'prefix' | 'exact'
   path: string
-  handler: (req: unknown, res: unknown) => unknown
+  handler: (req: HostHttpReq, res: HostHttpRes) => unknown
 }
 
 export interface HostWebServer {
@@ -126,7 +142,12 @@ export interface HostLogger {
  */
 export interface HostCtx {
   get?(name: string): unknown
-  on?(event: string, fn: (session: HostSession, event: SessionEvent) => void): () => void
+  /**
+   * 事件订阅。回调签名按宿主代际不同（`session/event` 是 (session, event)，
+   * `agent/request` / `agent/pre-step` 是 (payload, next)），故这里用最宽的
+   * `unknown` 参数；各消费点自行收窄。
+   */
+  on?(event: string, fn: (a: unknown, b: unknown) => unknown): () => void
   effect?(fn: () => (() => void) | void, label?: string): void
   inject?(deps: string[], fn: (ctx: HostCtx) => void): void
   provide?(name: string, value: unknown): void

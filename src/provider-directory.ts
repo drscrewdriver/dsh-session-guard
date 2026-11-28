@@ -15,13 +15,46 @@
  * 每次请求实时计算（两次内存读 + 一次目录枚举），不缓存 → 免疫 provider 配置热改。
  */
 import { classifyProvider } from './provider.js'
+import type { ProviderVerdict } from './provider.js'
+
+/** 目录条目（llm.listConfigurableProviders 返回项的最小读面）。 */
+export interface DirectoryEntry {
+  provider?: string
+  settingsNs?: string
+  settingsPath?: unknown
+  [k: string]: unknown
+}
+
+/** 带可解释信息的判定结果。 */
+export interface ProviderDescription extends ProviderVerdict {
+  provider: string
+  endpoint: string | null
+}
+
+/** 目录依赖注入面。 */
+export interface ProviderDirectoryDeps {
+  ctx: {
+    get?(name: string): unknown
+    settings?: { get?(ns: unknown): unknown }
+  }
+  getSettings?: () => unknown
+  warn?: (msg: string) => void
+}
+
+/** 目录对外面。 */
+export interface ProviderDirectory {
+  classify(providerId: string): ProviderVerdict
+  describe(providerId: string): ProviderDescription
+  endpointOf(providerId: string): string | null
+  entries(): DirectoryEntry[]
+}
 
 /** 逐层按 path 取值；任一层不是对象即返回 undefined。 */
-function pickPath(root, path) {
-  let cur = root
+function pickPath(root: unknown, path: readonly string[]): unknown {
+  let cur: unknown = root
   for (const key of path) {
     if (cur === null || typeof cur !== 'object') return undefined
-    cur = cur[key]
+    cur = (cur as Record<string, unknown>)[key]
   }
   return cur
 }
@@ -33,23 +66,24 @@ function pickPath(root, path) {
  * @param {(msg:string)=>void} [deps.warn] 诊断日志
  * @returns {{classify:(providerId:string)=>{official:boolean,matchedBy:string}, describe:(providerId:string)=>object, endpointOf:(providerId:string)=>string|null, entries:()=>object[]}}
  */
-export function createProviderDirectory({ ctx, getSettings, warn }) {
-  function readCfg() {
+export function createProviderDirectory({ ctx, getSettings, warn }: ProviderDirectoryDeps): ProviderDirectory {
+  function readCfg(): Record<string, unknown> {
     try {
-      const v = getSettings()
-      return v && typeof v === 'object' ? v : {}
+      const v = typeof getSettings === 'function' ? getSettings() : undefined
+      return v && typeof v === 'object' ? (v as Record<string, unknown>) : {}
     } catch {
       return {}
     }
   }
 
   /** 目录条目（llm 服务缺失 / 抛错 → 空数组）。 */
-  function entries() {
+  function entries(): DirectoryEntry[] {
     try {
       const llm = ctx && typeof ctx.get === 'function' ? ctx.get('llm') : null
-      if (!llm || typeof llm.listConfigurableProviders !== 'function') return []
-      const list = llm.listConfigurableProviders()
-      return Array.isArray(list) ? list : []
+      const svc = llm as { listConfigurableProviders?: () => unknown } | null | undefined
+      if (!svc || typeof svc.listConfigurableProviders !== 'function') return []
+      const list = svc.listConfigurableProviders()
+      return Array.isArray(list) ? (list as DirectoryEntry[]) : []
     } catch {
       return []
     }
@@ -60,7 +94,7 @@ export function createProviderDirectory({ ctx, getSettings, warn }) {
    * @param {string} providerId
    * @returns {string|null}
    */
-  function endpointOf(providerId) {
+  function endpointOf(providerId: string): string | null {
     if (typeof providerId !== 'string' || providerId === '') return null
     try {
       const entry = entries().find((e) => e && e.provider === providerId)
@@ -69,10 +103,10 @@ export function createProviderDirectory({ ctx, getSettings, warn }) {
       if (!settings || typeof settings.get !== 'function') return null
       const section = settings.get(entry.settingsNs)
       const profile = pickPath(section, Array.isArray(entry.settingsPath) ? entry.settingsPath : [])
-      const baseURL = profile && typeof profile === 'object' ? profile.baseURL : undefined
+      const baseURL = profile && typeof profile === 'object' ? (profile as { baseURL?: unknown }).baseURL : undefined
       return typeof baseURL === 'string' && baseURL.trim() !== '' ? baseURL : null
     } catch (e) {
-      if (warn) warn(`provider directory lookup failed for "${providerId}": ${String(e && e.message || e)}`)
+      if (warn) warn(`provider directory lookup failed for "${providerId}": ${String((e as Error)?.message || e)}`)
       return null
     }
   }
@@ -82,17 +116,19 @@ export function createProviderDirectory({ ctx, getSettings, warn }) {
    * @param {string} providerId
    * @returns {{official:boolean, matchedBy:'explicit'|'endpoint'|'endpoint-default'|'route-id'|'unknown'}}
    */
-  function classify(providerId) {
+  function classify(providerId: string): ProviderVerdict {
     const cfg = readCfg()
+    const asStringList = (v: unknown): readonly string[] | undefined =>
+      Array.isArray(v) ? (v.filter((x): x is string => typeof x === 'string')) : undefined
     return classifyProvider(providerId, {
       endpoint: endpointOf(providerId),
-      officialProviders: cfg.officialProviders,
-      officialHosts: cfg.officialBaseURLs,
+      officialProviders: asStringList(cfg.officialProviders),
+      officialHosts: asStringList(cfg.officialBaseURLs),
     })
   }
 
   /** 带可解释信息的判定结果（日志 / 路由诊断用）。 */
-  function describe(providerId) {
+  function describe(providerId: string): ProviderDescription {
     const r = classify(providerId)
     return { provider: providerId, official: r.official, matchedBy: r.matchedBy, endpoint: endpointOf(providerId) }
   }

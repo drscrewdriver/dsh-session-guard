@@ -19,8 +19,25 @@ import { createStore } from '../lib/store.js'
 import { createGate } from '../lib/gate.js'
 
 const ROOT = join(fileURLToPath(import.meta.url), '..', '..')
-const BRIDGE_SRC = readFileSync(join(ROOT, 'src', 'bridge.js'), 'utf8')
-const INDEX_SRC = readFileSync(join(ROOT, 'src', 'index.js'), 'utf8')
+
+/**
+ * 读 host 半源码（v4.7.0：模块已 .js → .ts）。
+ * 逐个试扩展名，避免重命名批次让静态闸假红/假绿。
+ */
+function hostSrc(name) {
+  const base = join(ROOT, 'src', name.replace(/\.js$/, ''))
+  for (const ext of ['.ts', '.js']) {
+    try {
+      return readFileSync(`${base}${ext}`, 'utf8')
+    } catch {
+      /* 试下一个扩展名 */
+    }
+  }
+  throw new Error(`source not found: ${name}`)
+}
+
+const BRIDGE_SRC = hostSrc('bridge.js')
+const INDEX_SRC = hostSrc('index.js')
 
 /** 去掉块注释与行注释，只留可执行代码（JSDoc 里的 `deferrals.js` 不是方法读取）。 */
 function stripComments(src) {

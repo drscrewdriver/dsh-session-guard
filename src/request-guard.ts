@@ -26,7 +26,7 @@ import type { Deferrals } from './deferrals.js'
 /** 请求守卫依赖注入面。 */
 export interface RequestGuardDeps {
   ctx: {
-    on?(event: string, fn: (payload: unknown, next: () => Promise<unknown>) => unknown): () => void
+    on?(event: string, fn: (a: unknown, b: unknown) => unknown): () => void
     agents?: {
       roots?(): unknown[]
       list?(): unknown[]
@@ -238,7 +238,7 @@ export function createRequestGuard({
   /** 注册 waterfall 监听；返回 disposer（同时释放全部挂起，避免 promise 泄漏）。 */
   function install(): () => void {
     if (!ctx || typeof ctx.on !== 'function') return () => {}
-    const off = ctx.on('agent/request', (payload, next) => handle(payload, next))
+    const off = ctx.on('agent/request', (payload, next) => handle(payload, next as () => Promise<unknown>))
     return () => {
       if (typeof off === 'function') off()
       try {

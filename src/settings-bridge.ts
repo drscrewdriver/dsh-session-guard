@@ -10,32 +10,62 @@
  */
 
 /** 一个 settings ns 的桥路由对——client 侧（src/client/settings-bridge.ts）必须同式派生（测试钉死一致）。 */
-function settingsBridgeRoutesFor(ns) {
+/** 请求/响应最小面（宿主 http 形状；只声明本文件用到的成员）。 */
+interface BridgeReq {
+  method?: string
+  on(event: string, fn: (...args: unknown[]) => void): void
+  resume?(): void
+}
+
+interface BridgeRes {
+  writeHead(code: number, headers: Record<string, string>): void
+  end(body?: string): void
+}
+
+/** settings 服务最小面（describe/mutate；writable 可选）。 */
+interface SettingsSvcFace {
+  describe(opts: { redactSecrets: boolean }): { ns?: string; [k: string]: unknown }[]
+  mutate?(ns: string, ops: unknown[], expectedRevision?: number): Promise<unknown>
+  writable?: boolean
+}
+
+/** 宿主 webServer 最小面（只用到 register 的 exact 形态）。 */
+interface BridgeServerFace {
+  register(route: { kind: string; path: string; handler: (req: BridgeReq, res: BridgeRes) => void }): () => void
+}
+
+/** mutate 请求体。 */
+interface MutateBody {
+  ops?: unknown
+  expectedRevision?: unknown
+}
+
+function settingsBridgeRoutesFor(ns: string): { describe: string; mutate: string } {
   return { describe: `/api/${ns}/settings/describe`, mutate: `/api/${ns}/settings/mutate` }
 }
 
-function readJsonBody(req, limit = 256 * 1024) {
-  return new Promise((resolve, reject) => {
-    const chunks = []
+function readJsonBody(req: BridgeReq, limit: number = 256 * 1024): Promise<MutateBody> {
+  return new Promise<MutateBody>((resolve, reject) => {
+    const chunks: Uint8Array[] = []
     let size = 0
-    req.on('data', (chunk) => {
-      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
-      size += buf.length
+    req.on('data', (chunk: unknown) => {
+      const buf = Buffer.isBuffer(chunk) ? (chunk as Uint8Array) : (Buffer.from(chunk as string | Uint8Array) as unknown as Uint8Array)
+      size += (buf as { length: number }).length
       if (size > limit) {
         reject(new Error('bridge body too large'))
         if (typeof req.resume === 'function') req.resume()
         return
       }
-      chunks.push(buf)
+      chunks.push(buf as Uint8Array)
     })
     req.on('end', () => {
-      const raw = Buffer.concat(chunks).toString('utf8')
+      const raw = Buffer.concat(chunks as Uint8Array[]).toString('utf8')
       if (raw === '') {
         resolve({})
         return
       }
       try {
-        resolve(JSON.parse(raw))
+        resolve(JSON.parse(raw) as MutateBody)
       } catch (e) {
         reject(e instanceof Error ? e : new Error(String(e)))
       }
@@ -44,16 +74,16 @@ function readJsonBody(req, limit = 256 * 1024) {
   })
 }
 
-function sendJson(res, code, body) {
+function sendJson(res: BridgeRes, code: number, body: unknown): void {
   res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-cache' })
   res.end(JSON.stringify(body))
 }
 
-function isConflict(e) {
+function isConflict(e: unknown): boolean {
   return e instanceof Error && /conflict|revision/i.test(e.message)
 }
 
-function describeNs(svc, ns) {
+function describeNs(svc: SettingsSvcFace, ns: string): { ns?: string; [k: string]: unknown } | undefined {
   return svc.describe({ redactSecrets: true }).find((d) => d.ns === ns)
 }
 
@@ -64,11 +94,15 @@ function describeNs(svc, ns) {
  * @param {string} ns 自家 settings 命名空间
  * @returns {Array<() => void>} 注销函数数组
  */
-export function registerSettingsBridgeRoutes(server, getSettingsSvc, ns) {
+export function registerSettingsBridgeRoutes(
+  server: unknown,
+  getSettingsSvc: () => unknown,
+  ns: string,
+): (() => void)[] {
   if (typeof server !== 'object' || server === null) return []
-  const ws = typeof server.register === 'function' ? server : undefined
+  const ws = typeof (server as { register?: unknown }).register === 'function' ? (server as BridgeServerFace) : undefined
   if (ws === undefined) return []
-  const offs = []
+  const offs: (() => void)[] = []
   const routes = settingsBridgeRoutesFor(ns)
 
   offs.push(ws.register({
@@ -79,7 +113,7 @@ export function registerSettingsBridgeRoutes(server, getSettingsSvc, ns) {
         sendJson(res, 405, { ok: false, code: 'method-not-allowed' })
         return
       }
-      const svc = getSettingsSvc()
+      const svc = getSettingsSvc() as SettingsSvcFace | undefined | null
       if (svc === undefined || svc === null || typeof svc.describe !== 'function') {
         sendJson(res, 200, { ok: false, code: 'settings-unavailable', message: 'settings service not resolved yet' })
         return
@@ -105,20 +139,20 @@ export function registerSettingsBridgeRoutes(server, getSettingsSvc, ns) {
         sendJson(res, 405, { ok: false, code: 'method-not-allowed' })
         return
       }
-      const svc = getSettingsSvc()
+      const svc = getSettingsSvc() as SettingsSvcFace | undefined | null
       if (svc === undefined || svc === null || typeof svc.mutate !== 'function') {
         sendJson(res, 200, { ok: false, code: 'settings-unavailable', message: 'settings service mutate not available' })
         return
       }
       readJsonBody(req).then((body) => {
         const ops = body.ops
-        const valid = Array.isArray(ops) && ops.every((op) => op !== null && typeof op === 'object' && (op.op === 'set' || op.op === 'unset'))
+        const valid = Array.isArray(ops) && ops.every((op) => op !== null && typeof op === 'object' && ((op as { op?: unknown }).op === 'set' || (op as { op?: unknown }).op === 'unset'))
         if (!valid) {
           sendJson(res, 200, { ok: false, code: 'settings-rejected', message: 'malformed bridge mutate ops' })
           return
         }
         const expectedRevision = typeof body.expectedRevision === 'number' ? body.expectedRevision : undefined
-        svc.mutate(ns, ops, expectedRevision).then(() => {
+        void svc.mutate?.(ns, ops, expectedRevision).then(() => {
           // mutate 成功即 describe 回填（写路径归口宿主服务，无第二份状态）
           const descriptor = describeNs(svc, ns)
           if (descriptor === undefined) {
@@ -126,12 +160,12 @@ export function registerSettingsBridgeRoutes(server, getSettingsSvc, ns) {
             return
           }
           sendJson(res, 200, { ok: true, value: { descriptor } })
-        }).catch((e) => {
+        }).catch((e: unknown) => {
           sendJson(res, 200, isConflict(e)
             ? { ok: false, code: 'settings-conflict', message: e instanceof Error ? e.message : String(e) }
             : { ok: false, code: 'internal', message: e instanceof Error ? e.message : String(e) })
         })
-      }).catch((e) => {
+      }).catch((e: unknown) => {
         sendJson(res, 200, { ok: false, code: 'bad-request', message: e instanceof Error ? e.message : String(e) })
       })
     },

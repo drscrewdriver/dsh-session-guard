@@ -23,8 +23,61 @@ import { isNetworkClassFailure, createOfflineWaiter, probeOnline } from './offli
 import { networkInterfaces } from 'node:os'
 import { lookup as dnsLookup } from 'node:dns'
 
+/** 失败事实（分类器的输入）。 */
+export interface FailureFacts {
+  code?: string
+  status?: number
+  message?: string
+}
+
+/** 分档结果（三值：unknown 按可重试处理）。 */
+export type FailureClass = 'transient' | 'permanent' | 'unknown'
+
+/** 会话重试状态。 */
+export interface RetryState {
+  consecutive: number
+  lastAttemptAt: number
+  pending: boolean
+  turnReason: string | null
+}
+
+/** 重试配置（settings 投影子集）。 */
+export interface RetryConfig {
+  retryEnabled?: boolean
+  retryText?: string
+  retryGraceMs?: number
+  retryCooldownMs?: number
+  retryBackoffFactor?: number
+  retryBackoffMaxMs?: number
+  retryMaxConsecutive?: number
+  retryPauseWhenOffline?: boolean
+  retryOfflineCheckMs?: number
+}
+
+/** createRetry 依赖。 */
+export interface RetryDeps {
+  ctx: {
+    on?(event: string, fn: (session: { id?: unknown } | undefined, event: { type?: string; data?: Record<string, unknown> } | undefined) => void): () => void
+    agents: { get(id: string): { status?: string; followup?(msg: unknown): void } | undefined }
+    logger?: { info?: (m: string) => void; warn?: (m: string) => void }
+  }
+  getSettings?: () => RetryConfig | undefined
+  isFrozen: (sessionId: string) => boolean
+  send?: (sessionId: string, text: string) => void
+  probe?: () => Promise<boolean>
+}
+
+/** createRetry 对外面。 */
+export interface Retry {
+  onEvent(session: { id?: unknown } | undefined, event: { type?: string; data?: Record<string, unknown> } | undefined): void
+  state(sessionId: string): RetryState
+  states: Map<string, RetryState>
+  cancelOfflineHolds(sessionId?: string): void
+  waiters: Map<string, { cancel(): void; wait(): Promise<string>; isPending(): boolean; dispose(): void }>
+}
+
 /** 默认重试配置。 */
-export const DEFAULT_RETRY = Object.freeze({
+export const DEFAULT_RETRY: Readonly<Required<RetryConfig>> = Object.freeze({
   retryEnabled: false, // ← 自动重试开关（默认关，保守）
   retryText: '继续（自动重试）',
   retryGraceMs: 3000, // 失败后等待多久再发
@@ -51,13 +104,13 @@ export const PEAK_DEFERRED_CODE = 'PEAK_DEFERRED'
  * **严禁**在这里加 `高峰` / `已延后` / `拦截` 之类宽泛关键词——那会误伤真实错误，
  * 也会破坏 429 / 传输层的重试语义。
  */
-export function isPeakDeferredFailure({ code, message } = {}) {
+export function isPeakDeferredFailure({ code, message }: FailureFacts = {}): boolean {
   if (code === PEAK_DEFERRED_CODE) return true
   return typeof message === 'string' && message.startsWith(`${PEAK_DEFERRED_CODE}:`)
 }
 
 /** 瞬时 vs 永久失败分类：瞬时值得重试，永久重试无益。 */
-export function isTransientFailure(failure = {}) {
+export function isTransientFailure(failure: FailureFacts = {}): boolean {
   // 本插件自己的延后失败是「永久」——重试只会再被拦一次，形成放大。
   // 精确短路优先于分档判定，不得被新分类覆盖。
   if (isPeakDeferredFailure(failure)) return false
@@ -70,13 +123,13 @@ export function isTransientFailure(failure = {}) {
  * 命中即定档，**完全不读 message**——`MALFORMED_RESPONSE` 的 message 会回显
  * 模型当时的工具参数（含 `auth` / `permission` 等词），文本参与判定即被击穿。
  */
-export const ALWAYS_TRANSIENT_CODES = Object.freeze(new Set([
+export const ALWAYS_TRANSIENT_CODES: ReadonlySet<string> = Object.freeze(new Set([
   'MALFORMED_RESPONSE', 'TRANSPORT', 'TIMEOUT', 'DNS', 'CONNECTION',
   'RATE_LIMIT', 'RESOURCE_EXHAUSTED', 'OVERLOADED',
 ]))
 
 /** 「必然永久」的 code 白名单（同样大小写不敏感）。 */
-export const ALWAYS_PERMANENT_CODES = Object.freeze(new Set([
+export const ALWAYS_PERMANENT_CODES: ReadonlySet<string> = Object.freeze(new Set([
   'AUTH', 'UNAUTHORIZED', 'FORBIDDEN', 'INVALID_REQUEST',
   'MODEL_NOT_FOUND', 'CONTEXT_LENGTH_EXCEEDED',
 ]))
@@ -87,12 +140,12 @@ export const ALWAYS_PERMANENT_CODES = Object.freeze(new Set([
  * 且全 asar 零命中 `message-ops` —— 所以 `undefined` / `null` 才是现状常态，必须视为
  * 模型回合（否则改造后一次都不续跑）。白名单只预防未来宿主补上该字段的情形。
  */
-export const MODEL_START_REASONS = Object.freeze(new Set([
+export const MODEL_START_REASONS: ReadonlySet<string> = Object.freeze(new Set([
   'user', 'user-message', 'model', 'agent', 'followup', 'retry', 'queue', 'inbox', 'prompt',
 ]))
 
 /** 本回合是否由模型发起（可参与重试判定）。合成回合返回 false。 */
-export function isModelStartReason(reason) {
+export function isModelStartReason(reason: unknown): boolean {
   if (reason === undefined || reason === null || reason === '') return true
   if (typeof reason === 'string') {
     if (reason === 'unknown') return true
@@ -109,7 +162,7 @@ export function isModelStartReason(reason) {
  * @param {{code?:string, status?:number, message?:string}} [failure]
  * @param {{warn?:(msg:string)=>void}} [opts] 兜底路径的观测口（补白名单用）
  */
-export function classifyFailure(failure = {}, opts = {}) {
+export function classifyFailure(failure: FailureFacts = {}, opts: { warn?: (msg: string) => void } = {}): FailureClass {
   const { code, status } = failure
   const key = typeof code === 'string' ? code.toUpperCase() : ''
   // ① code 白名单：命中即定档，不读 message（故 message 只在③ 处惰取）
@@ -134,7 +187,7 @@ export function classifyFailure(failure = {}, opts = {}) {
  * - **移除**旧的 insufficient 与 quota 组合正则：`insufficient_quota` 在多家上游是瞬时 tpm/rpm 限流，
  *   文本层面与「额度耗尽」不可区分 → 交给 code/status 定档，真账务由 402 与账务词覆盖。
  */
-export function classifyByMessage(message) {
+export function classifyByMessage(message: unknown): FailureClass {
   const text = typeof message === 'string' ? message.toLowerCase() : ''
   if (text === '') return 'unknown'
   if (/insufficient[_\s-]*(balance|credit)|billing|payment|account.*suspend/i.test(text)) return 'permanent'
@@ -153,8 +206,12 @@ export function classifyByMessage(message) {
  * - interrupted（崩溃修复）→ 可重试
  * - max-tokens → 可重试
  */
-export function classifyTurnEnd(reason, failure, classify) {
-  const kind = reason && reason.kind
+export function classifyTurnEnd(
+  reason: { kind?: string; error?: unknown } | null | undefined,
+  failure: FailureFacts,
+  classify?: (f: FailureFacts) => FailureClass,
+): boolean {
+  const kind = reason?.kind
   if (kind === 'completed' || kind === 'aborted' || kind === 'blocked') return false
   if (kind === 'error') {
     if (isPeakDeferredFailure(failure)) return false
@@ -166,7 +223,7 @@ export function classifyTurnEnd(reason, failure, classify) {
 }
 
 /** 自适应退避：consecutive 次连续后 cooldown * factor^n，封顶 max。 */
-export function effectiveCooldown(consecutive, base, factor, max) {
+export function effectiveCooldown(consecutive: number, base: number, factor: number, max: number): number {
   const mult = Math.pow(factor, Math.max(0, consecutive))
   return Math.min(Math.max(base, base * mult), Math.max(base, max))
 }
@@ -178,17 +235,24 @@ export function effectiveCooldown(consecutive, base, factor, max) {
  * @param {boolean} frozen 会话是否被门控（高峰暂停/队列锁）
  * @param {number} now
  */
-export function shouldRetry(s, cfg, frozen, now = Date.now()) {
-  if (!cfg.retryEnabled) return false
+export function shouldRetry(s: RetryState, cfg: RetryConfig, frozen: boolean, now: number = Date.now()): boolean {
+  if (cfg.retryEnabled !== true) return false
   if (frozen) return false // 冻结让路（D9）
   if (s.pending) return false // 已有排队重试
-  if (s.consecutive >= cfg.retryMaxConsecutive) return false
-  if (now - s.lastAttemptAt < effectiveCooldown(s.consecutive, cfg.retryCooldownMs, cfg.retryBackoffFactor, cfg.retryBackoffMaxMs)) return false
+  const maxConsecutive = cfg.retryMaxConsecutive ?? DEFAULT_RETRY.retryMaxConsecutive
+  if (s.consecutive >= maxConsecutive) return false
+  const cooldown = effectiveCooldown(
+    s.consecutive,
+    cfg.retryCooldownMs ?? DEFAULT_RETRY.retryCooldownMs,
+    cfg.retryBackoffFactor ?? DEFAULT_RETRY.retryBackoffFactor,
+    cfg.retryBackoffMaxMs ?? DEFAULT_RETRY.retryBackoffMaxMs,
+  )
+  if (now - s.lastAttemptAt < cooldown) return false
   return true
 }
 
 /** 会话状态工厂。 */
-export function freshRetryState() {
+export function freshRetryState(): RetryState {
   return { consecutive: 0, lastAttemptAt: 0, pending: false, turnReason: null }
 }
 
@@ -201,14 +265,20 @@ export function freshRetryState() {
  * @param {(sessionId:string, text:string)=>void} [deps.send] 发送函数（默认 agent.followup）
  * @param {()=>Promise<boolean>} [deps.probe] 在线探测（默认为 offline.js 的零请求探测，测试可注 fake）
  */
-export function createRetry({ ctx, getSettings, isFrozen, send, probe }) {
-  const states = new Map()
-  const waiters = new Map()
-  const isOnline = typeof probe === 'function'
+export function createRetry({ ctx, getSettings, isFrozen, send, probe }: RetryDeps): Retry {
+  const states = new Map<string, RetryState>()
+  const waiters = new Map<string, { cancel(): void; wait(): Promise<string>; isPending(): boolean; dispose(): void }>()
+  const isOnline: () => Promise<boolean> = typeof probe === 'function'
     ? probe
     : () => probeOnline({ lookup: dnsLookup, interfaces: networkInterfaces, timeoutMs: 2000 })
 
-  function state(sessionId) {
+  /** 读实时配置（缺省空对象；调用方各处都要 cfg 必有）。 */
+  function readCfg(): RetryConfig {
+    const v = typeof getSettings === 'function' ? getSettings() : undefined
+    return v ?? {}
+  }
+
+  function state(sessionId: string): RetryState {
     let s = states.get(sessionId)
     if (!s) {
       s = freshRetryState()
@@ -217,10 +287,10 @@ export function createRetry({ ctx, getSettings, isFrozen, send, probe }) {
     return s
   }
 
-  function waiterFor(sessionId) {
+  function waiterFor(sessionId: string): { cancel(): void; wait(): Promise<string>; isPending(): boolean; dispose(): void } {
     let w = waiters.get(sessionId)
     if (!w) {
-      const cfg = getSettings() ?? {}
+      const cfg = readCfg()
       w = createOfflineWaiter({
         // 挂起期间的重探：冻结或重新在线都算「停止等待」（冻结后由 post-wait 的 shouldRetry 拦下）。
         probe: () => (isFrozen(sessionId) ? Promise.resolve(true) : isOnline()),
@@ -234,7 +304,7 @@ export function createRetry({ ctx, getSettings, isFrozen, send, probe }) {
   }
 
   /** 取消挂起（用户消息 / 新回合 / 冻结 / 关闭开关都走这里）。 */
-  function cancelOfflineHolds(sessionId) {
+  function cancelOfflineHolds(sessionId?: string): void {
     if (typeof sessionId === 'string') {
       const w = waiters.get(sessionId)
       if (w) w.cancel()
@@ -245,23 +315,23 @@ export function createRetry({ ctx, getSettings, isFrozen, send, probe }) {
   }
 
   /** 从 turn/end reason 提取失败事实。 */
-  function failureFacts(reason) {
-    const error = reason && reason.error
+  function failureFacts(reason: { kind?: string; error?: unknown } | null | undefined): FailureFacts {
+    const error = reason?.error as { code?: unknown; message?: unknown; status?: unknown } | null | undefined
     return {
-      code: error && typeof error.code === 'string' ? error.code : 'UNKNOWN',
-      message: error && typeof error.message === 'string' ? error.message : '',
-      status: error && typeof error.status === 'number' ? error.status : undefined,
+      code: typeof error?.code === 'string' ? error.code : 'UNKNOWN',
+      message: typeof error?.message === 'string' ? error.message : '',
+      status: typeof error?.status === 'number' ? error.status : undefined,
     }
   }
 
   /** 分档（带观测）：未识别 code 落进文本兜底时打 warn，便于后续补白名单。 */
-  function classifyWithLog(failure) {
+  function classifyWithLog(failure: FailureFacts): FailureClass {
     return classifyFailure(failure, { warn: (msg) => ctx.logger?.warn?.(msg) })
   }
 
-  function schedule(sessionId, reason) {
+  function schedule(sessionId: string, reason: { kind?: string; error?: unknown } | null | undefined): (() => void) | undefined {
     const s = state(sessionId)
-    const cfg = getSettings()
+    const cfg = readCfg()
     if (s.pending) return // 已有排队重试（真正的去重门；下面的预检不得再伪造 pending）
     const frozen = isFrozen(sessionId)
     // 预检用**真实状态** `s`（pending 已为 false）：旧代码传 `{ ...s, pending: true }`
@@ -279,7 +349,7 @@ export function createRetry({ ctx, getSettings, isFrozen, send, probe }) {
         return
       }
       if (!shouldRetry(s, cfg, false)) return
-      const pauseOffline = (getSettings() ?? cfg).retryPauseWhenOffline === true
+      const pauseOffline = readCfg().retryPauseWhenOffline === true
       const networkClass = isNetworkClassFailure(failure)
       // ③ 计数豁免（与开关解耦）：断网导致的失败不消耗重试预算。
       //   开=挂起等网回来；关=本次直接跳过（不发送、也不涨 consecutive）。
@@ -297,7 +367,7 @@ export function createRetry({ ctx, getSettings, isFrozen, send, probe }) {
           s.pending = false
           if (verdict !== 'online') return
           // 网回来后走原有 grace + cooldown；若期间被冻结则让路放弃。
-          if (!shouldRetry(s, getSettings() ?? cfg, isFrozen(sessionId))) return
+          if (!shouldRetry(s, readCfg(), isFrozen(sessionId))) return
           offline = false
         }
         if (offline) {
@@ -314,7 +384,7 @@ export function createRetry({ ctx, getSettings, isFrozen, send, probe }) {
           send(sessionId, text)
         } else {
           // 与 autoresume 同构：直接构造 plugin-source 消息，避免运行时依赖。
-          agent.followup({
+          agent.followup?.({
             id: `session-guard-retry-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
             role: 'user',
             content: [{ type: 'text', text }],
@@ -325,7 +395,7 @@ export function createRetry({ ctx, getSettings, isFrozen, send, probe }) {
         s.consecutive += 1
         ctx.logger?.info?.(`[session-guard] auto-retry ${sessionId} (${String(reason && reason.kind)}), #${s.consecutive}`)
       } catch (e) {
-        ctx.logger?.warn?.(`[session-guard] auto-retry send failed: ${String(e && e.message || e)}`)
+        ctx.logger?.warn?.(`[session-guard] auto-retry send failed: ${String((e as Error)?.message || e)}`)
       }
     }, grace)
     // 会话对象上的清理钩子（若宿主提供）。
@@ -333,15 +403,19 @@ export function createRetry({ ctx, getSettings, isFrozen, send, probe }) {
     return dispose
   }
 
-  function onEvent(session, event) {
-    const sessionId = session && session.id
+  function onEvent(
+    session: { id?: unknown } | undefined,
+    event: { type?: string; data?: Record<string, unknown> } | undefined,
+  ): void {
+    const sessionId = session?.id
     if (typeof sessionId !== 'string') return
+    if (event === undefined) return
     const s = state(sessionId)
     switch (event.type) {
       case 'turn/start': {
         // ④ 记录宿主合成回合的 reason；新回合一律取消可能在跑的断网挂起。
         cancelOfflineHolds(sessionId)
-        const raw = event.data && event.data.reason
+        const raw = event.data?.reason
         s.turnReason = typeof raw === 'string' ? raw : null
         if (raw !== undefined && raw !== null && !isModelStartReason(raw)) {
           if (!MODEL_START_REASONS.has(String(raw).toLowerCase()) && String(raw) !== 'unknown') {
@@ -353,7 +427,7 @@ export function createRetry({ ctx, getSettings, isFrozen, send, probe }) {
         return
       }
       case 'turn/end': {
-        const reason = event.data && event.data.reason
+        const reason = event.data?.reason as { kind?: string; error?: unknown } | null | undefined
         if (reason && reason.kind === 'completed') {
           s.consecutive = 0 // 成功回合重置
           s.pending = false
@@ -380,7 +454,8 @@ export function createRetry({ ctx, getSettings, isFrozen, send, probe }) {
       }
       case 'user/message': {
         // 用户手动介入：重置（无论是否我们的回显都保守重置），并取消挂起。
-        if (event.data && event.data.source && event.data.source.kind === 'user') {
+        const src = event.data?.source as { kind?: unknown } | undefined
+        if (src && src.kind === 'user') {
           s.consecutive = 0
           s.pending = false
           cancelOfflineHolds(sessionId)
@@ -392,11 +467,11 @@ export function createRetry({ ctx, getSettings, isFrozen, send, probe }) {
     }
   }
 
-  ctx.on('session/event', (session, event) => {
+  ctx.on?.('session/event', (session, event) => {
     try {
       onEvent(session, event)
     } catch (e) {
-      ctx.logger?.warn?.(`[session-guard] retry event failed: ${String(e && e.message || e)}`)
+      ctx.logger?.warn?.(`[session-guard] retry event failed: ${String((e as Error)?.message || e)}`)
     }
   })
 

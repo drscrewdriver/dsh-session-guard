@@ -18,23 +18,43 @@
  */
 
 /** 内置官方 provider id 名单（catalog 路由 id）。 */
-export const BUILTIN_OFFICIAL_IDS = Object.freeze(['deepseek-official'])
+/** 官方判定结论（`matchedBy` 说明命中哪一层，诊断用）。 */
+export interface ProviderVerdict {
+  official: boolean
+  matchedBy: string
+}
+
+/** classifyProvider 选项。 */
+export interface ClassifyOptions {
+  /** 实时端点（settings 里的 baseURL，取不到为 null）。 */
+  endpoint?: string | null
+  /** 用户显式追加的官方 provider id（精确匹配，最高优先级）。 */
+  officialProviders?: readonly string[]
+  /** 官方端点 host 名单（baseURL 归一化后的 host）。 */
+  officialHosts?: readonly string[]
+  /** 内置官方 id 名单（缺省用 BUILTIN_OFFICIAL_IDS）。 */
+  builtinIds?: readonly string[]
+  /** 内置路由 → 默认端点（缺省用 BUILTIN_OFFICIAL_ENDPOINTS）。 */
+  builtinEndpoints?: Record<string, string>
+}
+
+export const BUILTIN_OFFICIAL_IDS: readonly string[] = Object.freeze(['deepseek-official'])
 
 /**
  * 内置路由 → 默认端点映射。
  * - `deepseek-official`：`dsh-llm-deepseek` 的 `PUBLIC_BASE_URL`（schema 无默认值，用户没配时用它兜底）。
  * - `deepseek`：pi-ai 内置 catalog 的两个模型 `baseUrl` 均为官方端点（本机 pi-ai 0.82.1 实测）。
  */
-export const BUILTIN_OFFICIAL_ENDPOINTS = Object.freeze({
+export const BUILTIN_OFFICIAL_ENDPOINTS: Readonly<Record<string, string>> = Object.freeze({
   'deepseek-official': 'https://api.deepseek.com',
   deepseek: 'https://api.deepseek.com',
 })
 
 /** 默认官方端点 host 名单（`officialBaseURLs` 设置项可增删）。 */
-export const DEFAULT_OFFICIAL_HOSTS = Object.freeze(['api.deepseek.com'])
+export const DEFAULT_OFFICIAL_HOSTS: readonly string[] = Object.freeze(['api.deepseek.com'])
 
 /** `matchedBy` 的全部合法取值。 */
-export const MATCHED_BY = Object.freeze(['explicit', 'endpoint', 'endpoint-default', 'route-id', 'unknown'])
+export const MATCHED_BY: readonly string[] = Object.freeze(['explicit', 'endpoint', 'endpoint-default', 'route-id', 'unknown'])
 
 /**
  * 归一化端点 → host（小写、无协议、无 www.、无端口、无路径）。
@@ -44,7 +64,7 @@ export const MATCHED_BY = Object.freeze(['explicit', 'endpoint', 'endpoint-defau
  * @param {unknown} raw 原始端点（provider 的 `baseURL`）
  * @returns {string|null} 归一化后的 host，或 null
  */
-export function normalizeEndpoint(raw) {
+export function normalizeEndpoint(raw: unknown): string | null {
   if (typeof raw !== 'string') return null
   let s = raw.trim().toLowerCase()
   if (s === '') return null
@@ -80,7 +100,7 @@ export function normalizeEndpoint(raw) {
  * @param {readonly string[]|undefined} hosts 官方 host 名单（可含协议/端口，会被归一化）
  * @returns {boolean}
  */
-export function isOfficialEndpoint(host, hosts) {
+export function isOfficialEndpoint(host: string | null | undefined, hosts: readonly string[] | undefined): boolean {
   if (typeof host !== 'string' || host === '') return false
   const list = Array.isArray(hosts) && hosts.length > 0 ? hosts : DEFAULT_OFFICIAL_HOSTS
   for (const item of list) {
@@ -101,7 +121,7 @@ export function isOfficialEndpoint(host, hosts) {
  * @param {Record<string,string>} [options.builtinEndpoints] 内置路由 → 默认端点
  * @returns {{official: boolean, matchedBy: 'explicit'|'endpoint'|'endpoint-default'|'route-id'|'unknown'}}
  */
-export function classifyProvider(providerId, options = {}) {
+export function classifyProvider(providerId: unknown, options: ClassifyOptions = {}): ProviderVerdict {
   const id = typeof providerId === 'string' ? providerId.trim() : ''
   const explicit = Array.isArray(options.officialProviders) ? options.officialProviders : []
   const hosts = options.officialHosts

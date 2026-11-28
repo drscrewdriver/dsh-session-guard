@@ -3,7 +3,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { computeState, transition, STATES } from '../src/scheduler.js'
+import { computeState, transition, STATES } from '../lib/scheduler.js'
 
 const SETTINGS = {
   enabled: true,

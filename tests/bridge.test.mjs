@@ -6,10 +6,10 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createStore } from '../src/store.js'
-import { createGate } from '../src/gate.js'
-import { createBridge } from '../src/bridge.js'
-import { detectTaskControl, detectSessionGuard, detectInputTrafficBridge } from '../src/detect.js'
+import { createStore } from '../lib/store.js'
+import { createGate } from '../lib/gate.js'
+import { createBridge } from '../lib/bridge.js'
+import { detectTaskControl, detectSessionGuard, detectInputTrafficBridge } from '../lib/detect.js'
 
 function fakeCtx(services) {
   return { get: (n) => services[n] }

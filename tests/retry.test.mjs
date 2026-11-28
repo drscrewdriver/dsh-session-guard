@@ -12,7 +12,7 @@ import {
   freshRetryState,
   DEFAULT_RETRY,
   PEAK_DEFERRED_CODE,
-} from '../src/retry.js'
+} from '../lib/retry.js'
 
 const CFG = { ...DEFAULT_RETRY, retryEnabled: true }
 

@@ -3,7 +3,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { createTargets, readTarget, UNKNOWN } from '../src/targets.js'
+import { createTargets, readTarget, UNKNOWN } from '../lib/targets.js'
 
 const headerEvent = (provider, model) => ({ type: 'request/header', data: { header: { config: { provider, model } }, reason: 'initial' } })
 

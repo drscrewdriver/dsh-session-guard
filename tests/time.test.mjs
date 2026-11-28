@@ -6,8 +6,8 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { parseHHMM, inWindow, wallClock, isWeekend, shouldPause, msUntilOffPeak, localMidnight, BILLING_TIMEZONE } from '../src/time.js'
-import { buildMap, BUILTIN_2026 } from '../src/holidays.js'
+import { parseHHMM, inWindow, wallClock, isWeekend, shouldPause, msUntilOffPeak, localMidnight, BILLING_TIMEZONE } from '../lib/time.js'
+import { buildMap, BUILTIN_2026 } from '../lib/holidays.js'
 
 const SETTINGS = {
   enabled: true,

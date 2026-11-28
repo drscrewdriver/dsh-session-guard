@@ -8,9 +8,9 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { isNetworkClassFailure, createOfflineWaiter, probeOnline, NETWORK_CLASS_CODES } from '../src/offline.js'
-import { createRetry, DEFAULT_RETRY } from '../src/retry.js'
-import { DEFAULT_SETTINGS } from '../src/settings.js'
+import { isNetworkClassFailure, createOfflineWaiter, probeOnline, NETWORK_CLASS_CODES } from '../lib/offline.js'
+import { createRetry, DEFAULT_RETRY } from '../lib/retry.js'
+import { DEFAULT_SETTINGS } from '../lib/settings.js'
 
 const LAN_ON = { en0: [{ address: '192.168.1.10', internal: false, family: 'IPv4' }] }
 const LAN_OFF = { lo0: [{ address: '127.0.0.1', internal: true, family: 'IPv4' }] }

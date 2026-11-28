@@ -5,7 +5,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { createStepGate, decideStepHold, DEFAULT_STEP_TIMEOUT_MS } from '../src/step-gate.js'
+import { createStepGate, decideStepHold, DEFAULT_STEP_TIMEOUT_MS } from '../lib/step-gate.js'
 
 const PEAK_NOW = () => new Date('2026-08-19T02:00:00Z').getTime() // 北京周三 10:00（高峰）
 const OFFPEAK_NOW = () => new Date('2026-08-19T04:00:00Z').getTime() // 北京周三 12:00（谷时）

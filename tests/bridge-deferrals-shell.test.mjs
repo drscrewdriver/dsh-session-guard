@@ -14,9 +14,9 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
-import { createBridge } from '../src/bridge.js'
-import { createStore } from '../src/store.js'
-import { createGate } from '../src/gate.js'
+import { createBridge } from '../lib/bridge.js'
+import { createStore } from '../lib/store.js'
+import { createGate } from '../lib/gate.js'
 
 const ROOT = join(fileURLToPath(import.meta.url), '..', '..')
 const BRIDGE_SRC = readFileSync(join(ROOT, 'src', 'bridge.js'), 'utf8')

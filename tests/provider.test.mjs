@@ -16,7 +16,7 @@ import {
   BUILTIN_OFFICIAL_ENDPOINTS,
   DEFAULT_OFFICIAL_HOSTS,
   MATCHED_BY,
-} from '../src/provider.js'
+} from '../lib/provider.js'
 
 test('normalizeEndpoint：协议 / 大小写 / 路径', () => {
   assert.equal(normalizeEndpoint('https://api.deepseek.com'), 'api.deepseek.com')

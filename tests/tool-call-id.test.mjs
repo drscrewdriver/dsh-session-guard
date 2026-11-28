@@ -7,7 +7,7 @@
  */
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { readToolResultBlockId, readToolResultCallId } from '../src/tool-call-id.js'
+import { readToolResultBlockId, readToolResultCallId } from '../lib/tool-call-id.js'
 
 test('readToolResultCallId：v4 native 顶层 toolCallId（第一顺位）', () => {
   const message = { role: 'tool', toolCallId: 'call-native', isError: true, content: [{ type: 'text', text: 'boom' }] }

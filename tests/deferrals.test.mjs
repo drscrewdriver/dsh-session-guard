@@ -3,7 +3,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { createDeferrals, PeakDeferredError, PEAK_DEFERRED_CODE } from '../src/deferrals.js'
+import { createDeferrals, PeakDeferredError, PEAK_DEFERRED_CODE } from '../lib/deferrals.js'
 
 const CONFIG = Object.freeze({ provider: 'deepseek-official', model: 'deepseek-v4-pro' })
 

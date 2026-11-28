@@ -1,6 +1,13 @@
 # CI baseline for dsh-session-guard.
-# Generated 2026-11-05. Chain: install -> lint -> test -> build.
-# Rationale: this repo is an owned DSH plugin and previously had no workflow;
+# Generated 2026-11-05; re-chained 2026-11-28 for the TypeScript rewrite.
+#
+# Chain: install -> build -> typecheck -> lint -> test -> lib-sync
+# Rationale for the order:
+#   * build FIRST: `lib/` is a committed artifact and tests import `../lib/*.js`,
+#     so a stale build would silently test yesterday's code.
+#   * typecheck before lint: a type error is the more precise signal.
+#   * lib-sync LAST: it rebuilds into a temp dir and byte-compares against the
+#     committed `lib/`, proving the artifact actually matches the sources.
 # publish.yml is intentionally NOT included (npm secret is not uploaded to
 # GitHub Actions; releases stay manual until Trusted Publishing is configured).
 
@@ -8,7 +15,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'refactor/*']
   pull_request: {}
 
 permissions:
@@ -17,7 +24,7 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -28,6 +35,8 @@ jobs:
           node-version: '22'
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+      - run: pnpm run typecheck
       - run: pnpm run lint
       - run: pnpm test
-      - run: pnpm run build
+      - run: node _tools/gate-lib-sync.mjs

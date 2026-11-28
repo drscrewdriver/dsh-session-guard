@@ -5,7 +5,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { createWiring } from '../src/wiring.js'
+import { createWiring } from '../lib/wiring.js'
 
 const BASE_CFG = {
   enabled: true,

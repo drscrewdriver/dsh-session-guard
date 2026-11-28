@@ -1,6 +1,6 @@
 {
   "name": "dsh-session-guard",
-  "version": "4.6.0-rc.2",
+  "version": "4.7.0-rc.1",
   "publishConfig": {
     "registry": "https://registry.npmjs.org",
     "tag": "latest"
@@ -25,15 +25,16 @@
     "url": "git+https://github.com/drscrewdriver/dsh-session-guard.git"
   },
   "homepage": "https://github.com/drscrewdriver/dsh-session-guard",
-  "main": "src/index.js",
+  "main": "./lib/index.js",
   "exports": {
-    ".": "./src/index.js",
+    ".": "./lib/index.js",
     "./client": "./lib/client.js",
     "./locale/*.json": "./locale/*.json",
     "./package.json": "./package.json"
   },
   "files": [
     "src/",
+    "!src/types/",
     "lib/",
     "cordis.patch.yml",
     "dsh.plugin.json",
@@ -81,8 +82,12 @@
     }
   },
   "scripts": {
-    "build": "tsdown",
-    "prepack": "npm run build",
+    "build:host": "tsc -p tsconfig.host.json",
+    "build:client": "tsdown",
+    "build": "pnpm run build:host && pnpm run build:client",
+    "typecheck": "tsc -p tsconfig.host.json --noEmit && tsc -p tsconfig.client.json",
+    "pretest": "pnpm run build:host",
+    "prepack": "pnpm run build",
     "lint": "eslint src tests",
     "test": "node --test \"tests/*.test.mjs\""
   },

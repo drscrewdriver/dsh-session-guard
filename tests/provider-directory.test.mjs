@@ -6,7 +6,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { createProviderDirectory } from '../src/provider-directory.js'
+import { createProviderDirectory } from '../lib/provider-directory.js'
 
 const CFG = { officialProviders: [], officialBaseURLs: ['api.deepseek.com'] }
 

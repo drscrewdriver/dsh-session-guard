@@ -14,7 +14,7 @@ import {
   stopJobs,
   stopChildren,
   ACTIVE_JOB_STATUSES,
-} from '../src/resource-scope.js'
+} from '../lib/resource-scope.js'
 
 const immediateSleep = async () => {}
 

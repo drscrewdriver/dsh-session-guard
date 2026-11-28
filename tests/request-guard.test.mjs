@@ -14,8 +14,8 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { createRequestGuard } from '../src/request-guard.js'
-import { createDeferrals, PEAK_DEFERRED_CODE } from '../src/deferrals.js'
+import { createRequestGuard } from '../lib/request-guard.js'
+import { createDeferrals, PEAK_DEFERRED_CODE } from '../lib/deferrals.js'
 
 const CONFIG = Object.freeze({ provider: 'deepseek-official', model: 'deepseek-v4-pro' })
 const PEAK_NOW = () => new Date('2026-08-19T02:00:00Z') // 北京周三 10:00

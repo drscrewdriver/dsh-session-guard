@@ -18,8 +18,8 @@ import {
   buildMap,
   ymdOf,
   isRestDay,
-} from '../src/holidays.js'
-import { createHolidayStore, holidayFilePath } from '../src/holiday-store.js'
+} from '../lib/holidays.js'
+import { createHolidayStore, holidayFilePath } from '../lib/holiday-store.js'
 
 /**
  * 抓取夹具用 2028：2026 / 2027 都已在 BUILTIN_TABLES 里，

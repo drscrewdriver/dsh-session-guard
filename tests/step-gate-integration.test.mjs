@@ -9,9 +9,9 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createPauseStore } from '../src/pause-store.js'
-import { createPauseGate } from '../src/pause-gate.js'
-import { createStepGate } from '../src/step-gate.js'
+import { createPauseStore } from '../lib/pause-store.js'
+import { createPauseGate } from '../lib/pause-gate.js'
+import { createStepGate } from '../lib/step-gate.js'
 
 const PEAK_NOW = () => new Date('2026-08-19T02:00:00Z').getTime() // 北京周三 10:00
 

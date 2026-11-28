@@ -6,8 +6,8 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createStore, idleState } from '../src/store.js'
-import { createGate } from '../src/gate.js'
+import { createStore, idleState } from '../lib/store.js'
+import { createGate } from '../lib/gate.js'
 
 /** 内存 fake ctx（get 返回可注入的服务）。 */
 function fakeCtx(services) {

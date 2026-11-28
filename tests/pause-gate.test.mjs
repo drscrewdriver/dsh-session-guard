@@ -8,8 +8,8 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createPauseStore } from '../src/pause-store.js'
-import { createPauseGate, createPluginUserMessage } from '../src/pause-gate.js'
+import { createPauseStore } from '../lib/pause-store.js'
+import { createPauseGate, createPluginUserMessage } from '../lib/pause-gate.js'
 
 /** 每测试独立临时状态目录（pause 根 = state 根/pause）。 */
 function tmpEnv(t) {

@@ -7,7 +7,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { createPauseGate } from '../src/pause-gate.js'
+import { createPauseGate } from '../lib/pause-gate.js'
 
 const immediateSleep = async () => {}
 

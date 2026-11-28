@@ -9,7 +9,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { apply, name, inject } from '../src/index.js'
+import { apply, name, inject } from '../lib/index.js'
 
 /** 最小 cordis 风格 ctx：effect 立即执行回调（与 cordis 语义一致）并收集 disposer。 */
 function fakeCtx() {

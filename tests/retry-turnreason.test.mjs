@@ -7,9 +7,9 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { createRetry, freshRetryState, isModelStartReason, MODEL_START_REASONS } from '../src/retry.js'
-import { DEFAULT_RETRY } from '../src/retry.js'
-import { DEFAULT_SETTINGS } from '../src/settings.js'
+import { createRetry, freshRetryState, isModelStartReason, MODEL_START_REASONS } from '../lib/retry.js'
+import { DEFAULT_RETRY } from '../lib/retry.js'
+import { DEFAULT_SETTINGS } from '../lib/settings.js'
 
 const settle = (ms) => new Promise((r) => setTimeout(r, ms))
 const TRANSIENT = { reason: { kind: 'error', error: { code: 'OVERLOADED', message: 'busy' } } }

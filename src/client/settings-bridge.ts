@@ -186,7 +186,12 @@ export class BridgeDocHandle<T> {
     return this.inflight
   }
 
-  private async mutate(ops: MutateOp[]): Promise<boolean> {
+  /**
+   * 批量写入（v4.7.0 由 private 改 public）：`SettingsScope.mutate` 是可选的
+   * **公开**方法，桥句柄要能被 `currentScope()` 当作同一面消费，可见性必须一致
+   * （private 会让 `BridgeDocHandle` 无法赋值给 `SettingsScope`）。
+   */
+  async mutate(ops: MutateOp[]): Promise<boolean> {
     const body = await this.request(this.routes.mutate, { ops, expectedRevision: this.revision })
     if (body.ok && body.value?.descriptor !== undefined) {
       this.applyDescriptor(body.value.descriptor, this.snapshot.writable)

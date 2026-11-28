@@ -72,9 +72,11 @@ jobs:
       - name: 门禁
         run: |
           set -euo pipefail
+          pnpm run build
+          pnpm run typecheck
           pnpm run lint
           pnpm test
-          pnpm run build
+          node _tools/gate-lib-sync.mjs
 
       # ④ 入包清单断言（防漏文件 / 防发错来源）
       - name: 打包清单

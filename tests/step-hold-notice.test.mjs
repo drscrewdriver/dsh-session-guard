@@ -1,7 +1,7 @@
 // TUI 可见反馈：拉门时必须向会话追加一条 plugin 源 user/message（dsh-tui 折叠成 `· …`）。
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createStepGate } from '../src/step-gate.js'
+import { createStepGate } from '../lib/step-gate.js'
 
 function makeGate() {
   return createStepGate({

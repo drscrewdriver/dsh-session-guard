@@ -1,7 +1,7 @@
 {
   "id": "dsh-external/dsh-session-guard",
-  "version": "4.6.0-rc.2",
-  "main": "./src/index.js",
+  "version": "4.7.0-rc.1",
+  "main": "./lib/index.js",
   "description": "高峰自动会话门：step 级门控 + 周末模式 + 高峰自动暂停 + 官方源二维判定 + 会话级冻结 + 后端自动重试。",
   "engines": {
     "dsh": ">=0.1.0-rc.2 <0.3.0-0"

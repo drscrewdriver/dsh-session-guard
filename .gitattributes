@@ -1,0 +1,18 @@
+# Build artifacts / vendored code — excluded from GitHub language statistics (linguist).
+# src/** and tests/** are hand-written sources and are intentionally NOT marked.
+
+# host half: `tsc -p tsconfig.host.json` emit (src/*.js|ts -> lib/*.js).
+# Committed so `npm pack` / `dsh plugin add` ship a ready-to-run build; the
+# `git diff --exit-code -- lib` gate keeps it in lockstep with src.
+lib/*.js linguist-generated=true
+lib/*.js.map linguist-generated=true
+
+# tsdown client bundle (window.__ModuleLoader__.load injected by build)
+lib/client.js linguist-generated=true
+lib/client.js.map linguist-generated=true
+
+# future build dirs (currently untracked, guard for when they get committed)
+dist/** linguist-generated=true
+test-dist/** linguist-generated=true
+.delivery/** linguist-generated=true
+assets/vendor/** linguist-generated=true

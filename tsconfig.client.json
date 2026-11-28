@@ -1,0 +1,23 @@
+{
+  "//": "client 半 typecheck：只查类型，不 emit（bundle 由 tsdown 从 src/client/index.ts 出）。",
+  "//jsx": "react-jsx：与仓内 tsdown 构建（自动 runtime）一致，不要求 import React。",
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noEmit": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "allowImportingTsExtensions": true,
+    "types": ["react"]
+  },
+  "include": ["src/client/**/*.ts", "src/client/**/*.tsx"],
+  "exclude": ["node_modules", "lib", "tests"]
+}

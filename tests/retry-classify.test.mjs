@@ -13,7 +13,7 @@ import {
   isTransientFailure,
   ALWAYS_TRANSIENT_CODES,
   ALWAYS_PERMANENT_CODES,
-} from '../src/retry.js'
+} from '../lib/retry.js'
 
 // ── 常量形状 ──
 

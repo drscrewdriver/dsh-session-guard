@@ -1,0 +1,38 @@
+{
+  "//": "host 半构建：src/*.{js,ts} → lib/（tsc emit，无 bundler）。",
+  "//allowJs": "过渡期保留：已改名的 .ts 走 strict，未改的 .js 原样透传（emit 后 lib/ 形态不变），因此每个 rc 都能独立发布。rc.6 全量转完后删除 allowJs/checkJs 并把 include 收到 src/**/*.ts。",
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": [
+      "ES2023"
+    ],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "rootDir": "src",
+    "outDir": "lib",
+    "allowJs": true,
+    "checkJs": false,
+    "strict": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "forceConsistentCasingInFileNames": true,
+    "declaration": false,
+    "sourceMap": false,
+    "removeComments": false,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "verbatimModuleSyntax": false,
+    "isolatedModules": true
+  },
+  "include": [
+    "src/*.js",
+    "src/*.ts",
+    "src/types/*.d.ts"
+  ],
+  "exclude": [
+    "src/client",
+    "src/**/*.tsx",
+    "node_modules",
+    "lib"
+  ]
+}

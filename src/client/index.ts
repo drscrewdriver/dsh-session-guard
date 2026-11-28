@@ -257,7 +257,7 @@ export function apply(ctx: ClientCtx) {
           label: () => '起子插件设置',
           inject: () => ({
             hooks: makeGuardFamilyTabsHooks(ctx.slots),
-            renderContributor,
+            renderContributor: (id: string) => renderContributor(ctx.slots, id),
             // 接管时本插件既是 owner 又是成员：自宣子槽不触发自身 inject（账本恒无本卡），
             // 故本卡内联直挂（ownId/renderOwn）。scope 走 currentScope()——apply 级原生/桥两轨兜底，恒非空。
             ownId: 'session-guard',
@@ -283,10 +283,14 @@ export function apply(ctx: ClientCtx) {
 
 /** 直接挂载面（≤0.1.5 壳无 renderSlot 的降级）：从账本原始条目现挂激活卡。
  * entries 每代都带 component + inject（ui-slots SlotCore.entries 原始记录）；
- * 任何失败（条目消失/抛错 inject）降级为 null，不炸接管节。 */
-function renderContributor(id: string): JSX.Element | null {
+ * 任何失败（条目消失/抛错 inject）降级为 null，不炸接管节。
+ *
+ * v4.7.0：`slots` 改为显式入参。原实现直接引用模块级 `ctx`（apply 的闭包变量），
+ * 在 apply 作用域外调用时是未定义标识符——strict 检查把它暴露了出来。
+ */
+function renderContributor(slots: SlotsFace, id: string): JSX.Element | null {
   try {
-    const entry = ctx.slots.entries(FAMILY_CHILD_KEY).find(e => e.options.id === id)
+    const entry = slots.entries(FAMILY_CHILD_KEY).find(e => e.options.id === id)
     if (entry === undefined || typeof entry.component !== 'function') return null
     const injected = typeof entry.inject === 'function' ? entry.inject() : undefined
     return createElement(

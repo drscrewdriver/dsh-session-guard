@@ -12,6 +12,34 @@
  * resume 对称：自研 resume（从暂停点续跑）或清 queueLock。
  */
 import { idleState } from './store.js'
+import type { QueueState, Store } from './store.js'
+import type { PauseGate, PauseMode, PauseReason } from './pause-gate.js'
+
+/** 恢复/停止的入参。 */
+export interface GateResumeOpts {
+  confirm?: boolean
+  choice?: 'rerun' | 'skip'
+  reason?: string
+  mode?: string
+}
+
+/** gate 依赖注入面。 */
+export interface GateDeps {
+  getCtx?: () => unknown
+  getSettings?: () => Record<string, unknown>
+  store: Store
+  pauseGate?: PauseGate
+  emit?: (event: string, sessionId: string, payload?: Record<string, unknown>) => void
+}
+
+/** gate 对外面。 */
+export interface Gate {
+  stopNextTurn(sessionId: string, opts?: { mode?: string; reason?: string }): Promise<{ ok: boolean; via: string; result?: unknown; error?: string }>
+  resume(sessionId: string, opts?: GateResumeOpts): Promise<{ ok: boolean; via: string; needConfirmation?: boolean; result?: unknown }>
+  lockQueue(sessionId: string, reason: string): QueueState
+  unlockQueue(sessionId: string): QueueState
+  taskControlAvailable(): boolean
+}
 
 /**
  * @param {object} deps
@@ -21,8 +49,8 @@ import { idleState } from './store.js'
  * @param {ReturnType<import('./pause-gate.js').createPauseGate>} [deps.pauseGate] 自研会话门引擎
  * @param {(event:string, sessionId:string, payload?:object)=>void} [deps.emit] 状态变化通知
  */
-export function createGate({ getCtx: _getCtx, getSettings, store, pauseGate, emit }) {
-  function lockQueue(sessionId, reason) {
+export function createGate({ getCtx: _getCtx, getSettings, store, pauseGate, emit }: GateDeps): Gate {
+  function lockQueue(sessionId: string, reason: string): QueueState {
     const cur = store.get(sessionId)
     const next = { ...(cur || idleState(sessionId)), queueLocked: true, lockReason: reason, updatedAt: Date.now() }
     store.set(sessionId, next)
@@ -30,7 +58,7 @@ export function createGate({ getCtx: _getCtx, getSettings, store, pauseGate, emi
     return next
   }
 
-  function unlockQueue(sessionId) {
+  function unlockQueue(sessionId: string): QueueState {
     const cur = store.get(sessionId)
     const next = { ...(cur || idleState(sessionId)), queueLocked: false, lockReason: null, updatedAt: Date.now() }
     store.set(sessionId, next)
@@ -44,13 +72,16 @@ export function createGate({ getCtx: _getCtx, getSettings, store, pauseGate, emi
    * @param {string} sessionId
    * @param {object} [opts] { mode, reason }
    */
-  async function stopNextTurn(sessionId, opts = {}) {
-    const cfg = getSettings()
+  async function stopNextTurn(
+    sessionId: string,
+    opts: { mode?: string; reason?: string } = {},
+  ): Promise<{ ok: boolean; via: string; result?: unknown; error?: string }> {
+    const cfg = (typeof getSettings === 'function' ? getSettings() : {}) ?? {}
     if (pauseGate) {
       try {
         const mode = opts.mode ?? cfg.pauseMode ?? 'safe'
         const reason = opts.reason ?? cfg.pauseReason ?? 'wait'
-        const r = pauseGate.pause(sessionId, { mode, reason })
+        const r = pauseGate.pause(sessionId, { mode: mode as PauseMode, reason: reason as PauseReason })
         if (r && r.kind === 'success') return { ok: true, via: 'pauseGate', result: r }
         // kind === 'error'（如 no live agent）→ 落到降级，语义如实上报。
       } catch {
@@ -78,7 +109,10 @@ export function createGate({ getCtx: _getCtx, getSettings, store, pauseGate, emi
    * @param {string} sessionId
    * @param {{confirm?:boolean, choice?:'rerun'|'skip', reason?:string}} [opts]
    */
-  async function resume(sessionId, opts = {}) {
+  async function resume(
+    sessionId: string,
+    opts: GateResumeOpts = {},
+  ): Promise<{ ok: boolean; via: string; needConfirmation?: boolean; result?: unknown }> {
     if (pauseGate) {
       try {
         const r = pauseGate.resume(sessionId, {

@@ -21,14 +21,72 @@
  */
 
 /** 活跃 job 状态口径（照抄宿主 activeJobCount：running + stopping）。 */
-export const ACTIVE_JOB_STATUSES = Object.freeze(['running', 'stopping'])
+/** 单项停止结果（纯决策层输入）。 */
+export interface ScopeResult {
+  kind: 'job' | 'child' | string | undefined
+  id: string
+  outcome: 'killed' | 'handoff' | 'unknown' | 'unsupported' | string
+}
+
+/**
+ * 暂停资源范围四态快照。
+ *
+ * 四态语义（互斥、必须如实上报）：
+ * - `killedJobs` / `interruptedChildren`：**确认已停**；
+ * - `unknown`：没确认停掉（handoff / 抛错）→ 同时置 `partial`；
+ * - `unsupported`：维度级无能力（服务缺失/无方法），**≠ unknown**；
+ * - `partial`：有任何一项落到 unknown。
+ */
+export interface PauseScopeReport {
+  killedJobs: string[]
+  interruptedChildren: string[]
+  unknown: string[]
+  unsupported: string[]
+  partial: boolean
+}
+
+/** 目标（job 或 child）通用形状。 */
+export interface ScopeTarget {
+  id?: string
+  sessionId?: string
+  status?: string
+  [k: string]: unknown
+}
+
+/** jobs 服务的最小面。 */
+export interface JobsFace {
+  list?(sessionId: string): unknown
+  wait?(id: string, ms?: number, sessionId?: string, opts?: unknown): unknown
+  kill?(id: string, sessionId: string, reason: string): unknown
+  [k: string]: unknown
+}
+
+/** subagents 服务的最小面。 */
+export interface SubagentsFace {
+  listDescendants?(sessionId: string): unknown
+  interruptByUser?(sessionId: string): unknown
+  [k: string]: unknown
+}
+
+/** collectPauseScope 依赖。 */
+export interface CollectScopeDeps {
+  sessionId: string
+  jobsSvc?: JobsFace
+  subagentsSvc?: SubagentsFace
+  ctx?: { agents?: { get?(id: string): unknown; list?(): unknown[] } }
+  cfg?: { pauseStopsJobs?: boolean; pauseStopsChildren?: boolean; pauseScopeDrainMs?: number }
+  log?: (msg: string) => void
+  sleep?: (ms: number) => Promise<void>
+}
+
+export const ACTIVE_JOB_STATUSES: readonly string[] = Object.freeze(['running', 'stopping'])
 
 /** 有界补杀循环的默认轮数与每轮间隔（轮数刻意保守，见头注约束 3）。 */
 export const DEFAULT_ROUNDS = 3
 export const DEFAULT_POLL_MS = 250
 
 /** 一次暂停要收的资源快照（四态 + unsupported）。 */
-export function emptyScope() {
+export function emptyScope(): PauseScopeReport {
   return { killedJobs: [], interruptedChildren: [], unknown: [], unsupported: [], partial: false }
 }
 
@@ -41,12 +99,13 @@ export function emptyScope() {
  * - handoff / unknown → 进 unknown（**没确认停掉就不算停掉**）并置 partial；
  * - unsupported（维度级无能力）→ 进 unsupported（≠ unknown）。
  */
-export function settleScope(results) {
+export function settleScope(results: unknown): PauseScopeReport {
   const scope = emptyScope()
-  for (const r of Array.isArray(results) ? results : []) {
-    if (!r || typeof r !== 'object') continue
-    const kind = r.kind
-    const id = r.id
+  for (const raw of Array.isArray(results) ? results : []) {
+    if (!raw || typeof raw !== 'object') continue
+    const r = raw as { kind?: unknown; id?: unknown; outcome?: unknown }
+    const kind = r.kind as string | undefined
+    const id = r.id as string
     switch (r.outcome) {
       case 'killed':
         if (kind === 'job') {
@@ -82,15 +141,23 @@ export function settleScope(results) {
  * @param {(ms:number)=>Promise<void>} [opts.sleep] 定时注入（测试用即时 sleep）
  * @returns {Promise<{ settled: Array, timedOut: Array }>}
  */
-export async function drainScope(targets, opts = {}) {
-  const rounds = Number.isFinite(opts.rounds) ? Math.max(1, opts.rounds) : DEFAULT_ROUNDS
-  const pollMs = Number.isFinite(opts.pollMs) ? opts.pollMs : DEFAULT_POLL_MS
-  const sleep = typeof opts.sleep === 'function' ? opts.sleep : (ms) => new Promise((r) => setTimeout(r, ms))
+export async function drainScope(
+  targets: unknown,
+  opts: {
+    isTerminal?: (t: unknown) => boolean | Promise<boolean>
+    rounds?: number
+    pollMs?: number
+    sleep?: (ms: number) => Promise<void>
+  } = {},
+): Promise<{ settled: unknown[]; timedOut: unknown[] }> {
+  const rounds = typeof opts.rounds === 'number' && Number.isFinite(opts.rounds) ? Math.max(1, opts.rounds) : DEFAULT_ROUNDS
+  const pollMs = typeof opts.pollMs === 'number' && Number.isFinite(opts.pollMs) ? opts.pollMs : DEFAULT_POLL_MS
+  const sleep = typeof opts.sleep === 'function' ? opts.sleep : (ms: number) => new Promise<void>((r) => setTimeout(() => r(), ms))
   const isTerminal = typeof opts.isTerminal === 'function' ? opts.isTerminal : () => false
-  let pending = Array.isArray(targets) ? [...targets] : []
-  const settled = []
+  let pending: unknown[] = Array.isArray(targets) ? [...targets] : []
+  const settled: unknown[] = []
   for (let round = 0; round < rounds && pending.length > 0; round++) {
-    const still = []
+    const still: unknown[] = []
     for (const t of pending) {
       let done
       try {
@@ -110,8 +177,8 @@ export async function drainScope(targets, opts = {}) {
 // ── IO 薄边界（服务调用集中于此，可被仿真服务驱动）───────────────────────
 
 /** 鸭子探测：服务是否存在且具备某方法。 */
-function svcHas(svc, method) {
-  return Boolean(svc) && typeof svc[method] === 'function'
+function svcHas(svc: unknown, method: string): boolean {
+  return Boolean(svc) && typeof (svc as Record<string, unknown>)[method] === 'function'
 }
 
 /**
@@ -119,38 +186,41 @@ function svcHas(svc, method) {
  * 服务缺失 / list 抛错 → 返回 `null`（=无能力，上层标 unsupported）。
  * 有服务但无 owned job → 返回 `[]`（≠ null）。
  */
-export async function listOwnedJobs(jobsSvc, sessionId) {
-  if (!svcHas(jobsSvc, 'list')) return null
-  let view
+export async function listOwnedJobs(jobsSvc: JobsFace | undefined, sessionId: string): Promise<ScopeTarget[] | null> {
+  const svc = jobsSvc
+  if (!svcHas(svc, 'list')) return null
+  let view: unknown
   try {
-    view = await jobsSvc.list(sessionId)
+    view = await svc?.list?.(sessionId)
   } catch {
     return null
   }
   if (!Array.isArray(view)) return []
-  const owned = []
-  for (const j of view) {
+  const owned: ScopeTarget[] = []
+  for (const j of view as ScopeTarget[]) {
     if (!j || j.id === undefined) continue
     // owner 作用域：只认本会话 owned（view 通常已按 caller 过滤，这里再兜一层）；unowned 不碰。
-    const owner = j.owner && typeof j.owner === 'object' ? j.owner.id : j.owner
+    const ownerRaw = (j as { owner?: unknown }).owner
+    const owner = ownerRaw && typeof ownerRaw === 'object' ? (ownerRaw as { id?: unknown }).id : ownerRaw
     if (owner !== undefined && owner !== null && String(owner) !== String(sessionId)) continue
-    if (ACTIVE_JOB_STATUSES.includes(j.status)) owned.push({ id: j.id, status: j.status })
+    if (typeof j.status === 'string' && ACTIVE_JOB_STATUSES.includes(j.status)) owned.push({ id: j.id, status: j.status })
   }
   return owned
 }
 
 /** 从 listDescendants 的多形态返回里抽子会话 id（含多层后代）。 */
-function extractDescendantIds(node, out, depth = 0) {
+function extractDescendantIds(node: unknown, out: Set<string>, depth: number = 0): Set<string> {
   if (node == null || depth > 16) return out
   if (Array.isArray(node)) {
     for (const n of node) extractDescendantIds(n, out, depth)
     return out
   }
   if (typeof node === 'object') {
-    const id = node.sessionId ?? node.childSessionId ?? node.id
+    const obj = node as Record<string, unknown>
+    const id = obj.sessionId ?? obj.childSessionId ?? obj.id
     if (typeof id === 'string' && id !== '') out.add(id)
     for (const key of ['descendants', 'children', 'nodes', 'tree', 'items', 'list']) {
-      if (node[key] !== undefined) extractDescendantIds(node[key], out, depth + 1)
+      if (obj[key] !== undefined) extractDescendantIds(obj[key], out, depth + 1)
     }
   }
   return out
@@ -161,16 +231,21 @@ function extractDescendantIds(node, out, depth = 0) {
  * 优先 `subagentsSvc.listDescendants`；退化 `ctx.agents.list()` 过滤 running；
  * 两条都不可用 / 抛错 → 返回 `null`（=无能力）。
  */
-export async function listActiveChildren(subagentsSvc, sessionId, ctx) {
-  if (svcHas(subagentsSvc, 'listDescendants')) {
-    let tree
+export async function listActiveChildren(
+  subagentsSvc: SubagentsFace | undefined,
+  sessionId: string,
+  ctx?: CollectScopeDeps['ctx'],
+): Promise<{ sessionId: string }[] | null> {
+  const svc = subagentsSvc
+  if (svcHas(svc, 'listDescendants')) {
+    let tree: unknown
     try {
-      tree = await subagentsSvc.listDescendants(sessionId)
+      tree = await svc?.listDescendants?.(sessionId)
     } catch {
       tree = null
     }
     if (tree !== null && tree !== undefined) {
-      const ids = extractDescendantIds(tree, new Set())
+      const ids = extractDescendantIds(tree, new Set<string>())
       return [...ids].filter((id) => String(id) !== String(sessionId)).map((id) => ({ sessionId: id }))
     }
     // listDescendants 存在但返回空 → 视为「有能力、无子会话」，不再走 ctx 退化
@@ -183,10 +258,11 @@ export async function listActiveChildren(subagentsSvc, sessionId, ctx) {
       const list = agents.list()
       if (Array.isArray(list)) {
         return list
+          .map((a) => a as Record<string, unknown>)
           .filter((a) => a && a.id && String(a.id) !== String(sessionId)
             && (a.status === 'running' || a.status === 'stopping')
             && (a.parentId === sessionId || a.parentSessionId === sessionId))
-          .map((a) => ({ sessionId: a.id }))
+          .map((a) => ({ sessionId: String(a.id) }))
       }
     } catch {
       /* ignore */
@@ -200,15 +276,21 @@ export async function listActiveChildren(subagentsSvc, sessionId, ctx) {
  * **必须在 kill 之前调用**（否则 job 结束事件会在会话未标记暂停时把它唤醒）。
  * wait 抛错静默（shield 是尽力而为，不阻断暂停主线）。
  */
-export async function armShields(jobsSvc, jobs, sessionId, waitMs) {
+export async function armShields(
+  jobsSvc: JobsFace | undefined,
+  jobs: ScopeTarget[] | undefined,
+  sessionId: string,
+  waitMs: number,
+): Promise<Promise<unknown>[]> {
   if (!svcHas(jobsSvc, 'wait') || !Array.isArray(jobs)) return []
-  const handles = []
-  for (const job of jobs) {
+  const handles: Promise<unknown>[] = []
+  const svc = jobsSvc
+  for (const job of jobs ?? []) {
     if (!job || job.id === undefined) continue
     try {
-      const h = jobsSvc.wait(job.id, waitMs, sessionId, undefined)
-      if (h && typeof h.then === 'function') {
-        handles.push(h.catch(() => undefined)) // shield 尽力而为
+      const h = svc?.wait?.(job.id, waitMs, sessionId, undefined) as { then?: unknown; catch?: unknown } | undefined
+      if (h && typeof h.then === 'function' && typeof h.catch === 'function') {
+        handles.push((h as Promise<unknown>).catch(() => undefined)) // shield 尽力而为
         // 触发一次对 wait 的调用即可（记录在调用方 spy 里）
       }
     } catch {
@@ -219,18 +301,24 @@ export async function armShields(jobsSvc, jobs, sessionId, waitMs) {
 }
 
 /** 逐个 kill(id, sessionId, reason)；caller=本会话 id（越权栅栏依赖它）；单项失败记 unknown 不阻断其余。 */
-export async function stopJobs(jobsSvc, jobs, sessionId, reason) {
-  const results = []
-  if (!svcHas(jobsSvc, 'kill')) {
+export async function stopJobs(
+  jobsSvc: JobsFace | undefined,
+  jobs: ScopeTarget[] | undefined,
+  sessionId: string,
+  reason: string,
+): Promise<ScopeResult[]> {
+  const results: ScopeResult[] = []
+  const svc = jobsSvc
+  if (!svcHas(svc, 'kill')) {
     if (Array.isArray(jobs) && jobs.length) results.push({ kind: 'job', id: 'dimension', outcome: 'unsupported' })
     return results
   }
-  for (const job of jobs) {
+  for (const job of jobs ?? []) {
     if (!job || job.id === undefined) continue
     try {
-      const r = await jobsSvc.kill(job.id, sessionId, reason)
+      const r = (await svc?.kill?.(job.id, sessionId, reason)) as { handoff?: unknown } | null | undefined
       // 宿主 kill 可能返回 {handoff:true} 之类；未显式确认停掉的一律保守处理
-      const outcome = r && r.handoff ? 'handoff' : 'killed'
+      const outcome: ScopeResult['outcome'] = r && r.handoff ? 'handoff' : 'killed'
       results.push({ kind: 'job', id: job.id, outcome })
     } catch {
       results.push({ kind: 'job', id: job.id, outcome: 'unknown' })
@@ -243,16 +331,20 @@ export async function stopJobs(jobsSvc, jobs, sessionId, reason) {
  * 逐个 interruptByUser(childSessionId)；不存在该方法时退化 agent.cancel({kind:'user'})；
  * 都失败 → unknown。
  */
-export async function stopChildren(subagentsSvc, children, ctx) {
-  const results = []
+export async function stopChildren(
+  subagentsSvc: SubagentsFace | undefined,
+  children: ScopeTarget[] | undefined,
+  ctx?: CollectScopeDeps['ctx'],
+): Promise<ScopeResult[]> {
+  const results: ScopeResult[] = []
   if (!Array.isArray(children)) return results
   const canInterrupt = svcHas(subagentsSvc, 'interruptByUser')
   for (const child of children) {
-    const cid = child && (child.sessionId ?? child.id)
+    const cid = child && (child.sessionId ?? child.id) as string | undefined
     if (cid === undefined) continue
     if (canInterrupt) {
       try {
-        await subagentsSvc.interruptByUser(cid)
+        await subagentsSvc?.interruptByUser?.(cid)
         results.push({ kind: 'child', id: cid, outcome: 'killed' })
         continue
       } catch {
@@ -260,10 +352,10 @@ export async function stopChildren(subagentsSvc, children, ctx) {
       }
     }
     // 退化：agent.cancel
-    const agent = ctx && ctx.agents && typeof ctx.agents.get === 'function' ? ctx.agents.get(cid) : undefined
-    if (agent && typeof agent.cancel === 'function') {
+    const agent = ctx?.agents && typeof ctx.agents.get === 'function' ? ctx.agents.get(cid) : undefined
+    if (agent && typeof (agent as { cancel?: unknown }).cancel === 'function') {
       try {
-        agent.cancel({ kind: 'user' }, { keepInbox: true })
+        ;(agent as { cancel(o: { kind: string }, e: { keepInbox: boolean }): void }).cancel({ kind: 'user' }, { keepInbox: true })
         results.push({ kind: 'child', id: cid, outcome: 'killed' })
         continue
       } catch {
@@ -289,22 +381,22 @@ export async function stopChildren(subagentsSvc, children, ctx) {
  * @param {(ms:number)=>Promise<void>} [deps.sleep] 定时注入（测试即时）
  * @returns {Promise<object>} 四态快照
  */
-export async function collectPauseScope(deps) {
+export async function collectPauseScope(deps: CollectScopeDeps): Promise<PauseScopeReport> {
   const { sessionId, jobsSvc, subagentsSvc, ctx, cfg = {}, log } = deps
   const notify = typeof log === 'function' ? log : () => {}
-  const sleep = typeof deps.sleep === 'function' ? deps.sleep : (ms) => new Promise((r) => setTimeout(r, ms))
+  const sleep = typeof deps.sleep === 'function' ? deps.sleep : (ms: number) => new Promise<void>((r) => setTimeout(() => r(), ms))
   const drainMs = Math.max(500, Number(cfg.pauseScopeDrainMs) || 3000)
   const perRoundMs = Math.max(50, Math.floor(drainMs / (DEFAULT_ROUNDS + 1)))
   const stopJobsOn = cfg.pauseStopsJobs !== false
   const stopChildrenOn = cfg.pauseStopsChildren !== false
   const reason = 'session-guard:pause'
 
-  const attemptedJobs = new Set()
-  const killedJobs = new Set()
-  const attemptedChildren = new Set()
-  const killedChildren = new Set()
-  const unknown = new Set()
-  const unsupported = []
+  const attemptedJobs = new Set<string>()
+  const killedJobs = new Set<string>()
+  const attemptedChildren = new Set<string>()
+  const killedChildren = new Set<string>()
+  const unknown = new Set<string>()
+  const unsupported: string[] = []
 
   const jobsCapable = svcHas(jobsSvc, 'kill') || svcHas(jobsSvc, 'list')
   const childCapable = svcHas(subagentsSvc, 'interruptByUser') || svcHas(subagentsSvc, 'listDescendants') || (ctx && ctx.agents && typeof ctx.agents.list === 'function')
@@ -317,7 +409,7 @@ export async function collectPauseScope(deps) {
       if (owned === null) {
         if (round === 0) unsupported.push('jobs')
       } else {
-        const fresh = owned.filter((j) => !attemptedJobs.has(j.id))
+        const fresh = owned.filter((j) => j.id !== undefined && !attemptedJobs.has(j.id))
         if (fresh.length > 0) {
           await armShields(jobsSvc, fresh, sessionId, drainMs) // ① 先挂 shield
           const res = await stopJobs(jobsSvc, fresh, sessionId, reason) // ② 再 kill
@@ -340,7 +432,7 @@ export async function collectPauseScope(deps) {
         if (round === 0) unsupported.push('children')
       } else {
         const fresh = kids.filter((c) => {
-          const id = c.sessionId ?? c.id
+          const id = (c as { sessionId?: string; id?: string }).sessionId ?? (c as { id?: string }).id
           return id !== undefined && !attemptedChildren.has(id)
         })
         if (fresh.length > 0) {
@@ -370,10 +462,10 @@ export async function collectPauseScope(deps) {
 
   // ---- 轮外仍活跃 / 从未捕获 → unknown + partial ----
   const leftover = stopJobsOn && jobsCapable ? await listOwnedJobs(jobsSvc, sessionId) : null
-  if (leftover) for (const j of leftover) if (!killedJobs.has(j.id)) unknown.add(j.id)
+  if (leftover) for (const j of leftover) if (j.id !== undefined && !killedJobs.has(j.id)) unknown.add(j.id)
   const leftoverKids = stopChildrenOn && childCapable ? await listActiveChildren(subagentsSvc, sessionId, ctx) : null
   if (leftoverKids) for (const c of leftoverKids) {
-    const id = c.sessionId ?? c.id
+    const id = (c as { sessionId?: string; id?: string }).sessionId ?? (c as { id?: string }).id
     if (id !== undefined && !killedChildren.has(id)) unknown.add(id)
   }
 

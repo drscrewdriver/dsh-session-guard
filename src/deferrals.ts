@@ -24,12 +24,86 @@ export const PEAK_DEFERRED_CODE = 'PEAK_DEFERRED'
  * （findings 8.3）。本插件不能 value-import `@deepseek-ai/dsh-llm`，
  * 因此让 `code` 与 message 前缀同时携带同一个精确哨兵，两条路径都能识别。
  */
+/** 延后错误的机器可路由事实（诊断/日志用）。 */
+export interface DeferredFacts {
+  provider?: string | null
+  model?: string | null
+  sessionId?: string
+}
+
+/** 活跃挂起记录。 */
+interface HoldEntry {
+  sessionId: string
+  provider: string | null
+  model: string | null
+  config: unknown
+  since: number
+  resolve: (config: unknown) => void
+  reject: (err: unknown) => void
+  promise: Promise<unknown>
+  timer: { unref?: () => void } | undefined
+  signal: AbortSignalLike | null
+  onAbort: (() => void) | undefined
+}
+
+/** error 模式的延后记录。 */
+export interface DeferredRecord {
+  sessionId: string
+  provider: string | null
+  model: string | null
+  reason: string
+  since: number
+}
+
+/** 挂起快照（对外只读投影）。 */
+export interface HoldSnapshot {
+  sessionId: string
+  provider: string | null
+  model: string | null
+  since: number
+}
+
+/** AbortSignal 的最小面。 */
+export interface AbortSignalLike {
+  aborted?: boolean
+  addEventListener?(type: 'abort', fn: () => void, opts?: { once?: boolean }): void
+  removeEventListener?(type: 'abort', fn: () => void): void
+}
+
+/** 登记表依赖注入面。 */
+export interface DeferralsDeps {
+  maxHoldMs?: number | (() => number)
+  now?: () => number
+  unrefTimers?: boolean
+}
+
+/** 登记表面。 */
+export interface Deferrals {
+  hold(sessionId: string, info?: { provider?: string | null; model?: string | null; config?: unknown }, signal?: AbortSignalLike): Promise<unknown>
+  settle(sessionId: string, reason: string, outcome?: 'release' | 'reject'): boolean
+  releaseAll(reason?: string): { released: string[]; cleared: string[] }
+  rejectAll(reason?: string): string[]
+  remember(sessionId: string, info?: { provider?: string | null; model?: string | null; reason?: string }): DeferredRecord | null
+  list(): HoldSnapshot[]
+  deferredList(): DeferredRecord[]
+  isDeferred(sessionId: string): boolean
+  clearDeferred(sessionId: string): boolean
+  has(sessionId: string): boolean
+  size(): number
+  deferredSize(): number
+}
+
 export class PeakDeferredError extends Error {
+  /** 机器可路由的失败码（与 message 前缀同一哨兵）。 */
+  readonly code: string
+  /** 失败事实（provider/model/sessionId）。 */
+  readonly facts: DeferredFacts
+
   /**
-   * @param {string} [detail] 人类可读补充说明
-   * @param {object} [facts] { provider, model, sessionId }
+   * @param detail 人类可读补充说明
+   * @param facts { provider, model, sessionId }
    */
-  constructor(detail = 'peak hours, request deferred', facts = {}) {
+  constructor(detail: string = 'peak hours, request deferred', facts: DeferredFacts = {}) {
     super(`${PEAK_DEFERRED_CODE}: ${detail}`)
     this.name = 'PeakDeferredError'
     this.code = PEAK_DEFERRED_CODE
@@ -45,21 +119,19 @@ export class PeakDeferredError extends Error {
  * @param {boolean} [deps.unrefTimers] 定时器是否 unref（生产 true，测试可关以便等待定时器）
  * @returns {object} 延后登记表
  */
-export function createDeferrals({ maxHoldMs = 6 * 60 * 60 * 1000, now = () => Date.now(), unrefTimers = true } = {}) {
+export function createDeferrals({ maxHoldMs = 6 * 60 * 60 * 1000, now = () => Date.now(), unrefTimers = true }: DeferralsDeps = {}): Deferrals {
   const resolveMaxHold = typeof maxHoldMs === 'function' ? maxHoldMs : () => maxHoldMs
-  /** @type {Map<string, object>} 活跃挂起 */
-  const holds = new Map()
-  /** @type {Map<string, object>} error 模式的延后记录 */
-  const deferred = new Map()
+  const holds = new Map<string, HoldEntry>()
+  const deferred = new Map<string, DeferredRecord>()
 
-  function clearTimer(entry) {
-    if (entry && entry.timer !== null && entry.timer !== undefined) {
+  function clearTimer(entry: HoldEntry | undefined): void {
+    if (entry && entry.timer !== undefined) {
       clearTimeout(entry.timer)
-      entry.timer = null
+      entry.timer = undefined
     }
     if (entry && entry.signal && entry.onAbort) {
       try {
-        entry.signal.removeEventListener('abort', entry.onAbort)
+        entry.signal.removeEventListener?.('abort', entry.onAbort)
       } catch {
         /* 信号实现不完整时忽略 */
       }
@@ -73,7 +145,7 @@ export function createDeferrals({ maxHoldMs = 6 * 60 * 60 * 1000, now = () => Da
    * @param {'release'|'reject'} outcome
    * @returns {boolean} 是否真的结算了一条
    */
-  function settle(sessionId, reason, outcome = 'release') {
+  function settle(sessionId: string, reason: string, outcome: 'release' | 'reject' = 'release'): boolean {
     const key = String(sessionId ?? '')
     const entry = holds.get(key)
     if (!entry) return false
@@ -94,18 +166,22 @@ export function createDeferrals({ maxHoldMs = 6 * 60 * 60 * 1000, now = () => Da
    * @param {AbortSignal} [signal]
    * @returns {Promise<unknown>} 退峰 resolve 原 config
    */
-  function hold(sessionId, info = {}, signal) {
+  function hold(
+    sessionId: string,
+    info: { provider?: string | null; model?: string | null; config?: unknown } = {},
+    signal?: AbortSignalLike,
+  ): Promise<unknown> {
     const key = String(sessionId ?? '')
     // 重复 hold：先结算旧的（新请求代表同一会话的最新意图）
     if (holds.has(key)) settle(key, 'superseded', 'reject')
 
-    let resolveFn
-    let rejectFn
-    const promise = new Promise((resolve, reject) => {
+    let resolveFn!: (config: unknown) => void
+    let rejectFn!: (err: unknown) => void
+    const promise = new Promise<unknown>((resolve, reject) => {
       resolveFn = resolve
       rejectFn = reject
     })
-    const entry = {
+    const entry: HoldEntry = {
       sessionId: key,
       provider: info.provider ?? null,
       model: info.model ?? null,
@@ -114,9 +190,9 @@ export function createDeferrals({ maxHoldMs = 6 * 60 * 60 * 1000, now = () => Da
       resolve: resolveFn,
       reject: rejectFn,
       promise,
-      timer: null,
+      timer: undefined,
       signal: null,
-      onAbort: null,
+      onAbort: undefined,
     }
     holds.set(key, entry)
 
@@ -124,8 +200,9 @@ export function createDeferrals({ maxHoldMs = 6 * 60 * 60 * 1000, now = () => Da
       entry.timer = setTimeout(() => {
         if (holds.get(key) !== entry) return
         settle(key, 'max-hold-exceeded', 'reject')
-      }, resolveMaxHold())
-      if (entry.timer && unrefTimers && typeof entry.timer.unref === 'function') entry.timer.unref()
+      }, resolveMaxHold()) as { unref?: () => void }
+      const handle = entry.timer
+      if (handle !== undefined && unrefTimers && typeof handle.unref === 'function') handle.unref()
     }
 
     if (signal && typeof signal.addEventListener === 'function') {
@@ -144,8 +221,8 @@ export function createDeferrals({ maxHoldMs = 6 * 60 * 60 * 1000, now = () => Da
   }
 
   /** 放行全部挂起（退峰）：resolve 原 config，并清空延后记录。 */
-  function releaseAll(reason = 'off-peak') {
-    const released = []
+  function releaseAll(reason: string = 'off-peak'): { released: string[]; cleared: string[] } {
+    const released: string[] = []
     for (const key of [...holds.keys()]) {
       if (settle(key, reason, 'release')) released.push(key)
     }
@@ -155,8 +232,8 @@ export function createDeferrals({ maxHoldMs = 6 * 60 * 60 * 1000, now = () => Da
   }
 
   /** 拒绝全部挂起（插件卸载 / 关闭自动续跑）。 */
-  function rejectAll(reason = 'disposed') {
-    const rejected = []
+  function rejectAll(reason: string = 'disposed'): string[] {
+    const rejected: string[] = []
     for (const key of [...holds.keys()]) {
       if (settle(key, reason, 'reject')) rejected.push(key)
     }
@@ -164,10 +241,13 @@ export function createDeferrals({ maxHoldMs = 6 * 60 * 60 * 1000, now = () => Da
   }
 
   /** error 模式：登记一条延后记录（退峰时按 deferredResume 决定是否 followup）。 */
-  function remember(sessionId, info = {}) {
+  function remember(
+    sessionId: string,
+    info: { provider?: string | null; model?: string | null; reason?: string } = {},
+  ): DeferredRecord | null {
     const key = String(sessionId ?? '')
     if (key === '') return null
-    const rec = {
+    const rec: DeferredRecord = {
       sessionId: key,
       provider: info.provider ?? null,
       model: info.model ?? null,

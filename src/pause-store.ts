@@ -20,15 +20,13 @@ export interface PausedTool {
   callId: string
 }
 
-/** 暂停资源范围四态上报（见 resource-scope.ts）。 */
-export interface PauseScopeReport {
-  killedJobs?: number
-  interruptedChildren?: number
-  unknown?: boolean
-  partial?: boolean
-  unsupported?: boolean
-  [k: string]: unknown
-}
+/**
+ * 暂停资源范围四态上报 —— **单一真源在 `resource-scope.ts`**。
+ * 这里 re-export 只是为了让 `PauseSnapshot` 的消费者不必多导一个模块；
+ * 不要在本文件重新声明同名字段（形状漂移会让 pause-gate 的类型转换报错）。
+ */
+export type { PauseScopeReport } from './resource-scope.js'
+import type { PauseScopeReport } from './resource-scope.js'
 
 /**
  * 暂停快照（持久化形状）。

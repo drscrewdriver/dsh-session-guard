@@ -85,6 +85,8 @@ declare function setTimeout(fn: () => void, ms: number): unknown
 declare function clearTimeout(handle: unknown): void
 declare function setInterval(fn: () => void, ms: number): unknown
 declare function clearInterval(handle: unknown): void
+/** `queueMicrotask`（暂停落地用：跳出当前事件派发，避免 resume→followup→事件 重入）。 */
+declare function queueMicrotask(fn: () => void): void
 
 /** `console` 全局（宿主日志兜底；与 eslint 的 readonly 声明一致）。 */
 declare const console: {

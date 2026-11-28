@@ -13,7 +13,21 @@ import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-const src = (name) => readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src', name), 'utf8')
+/**
+ * 读 host 半源码（v4.7.0：模块已 .js → .ts，逐个试扩展名，避免重命名批次
+ * 让静态闸假红/假绿）。
+ */
+const src = (name) => {
+  const base = join(dirname(fileURLToPath(import.meta.url)), '..', 'src', name.replace(/\.js$/, ''))
+  for (const ext of ['.ts', '.js']) {
+    try {
+      return readFileSync(`${base}${ext}`, 'utf8')
+    } catch {
+      /* 试下一个扩展名 */
+    }
+  }
+  throw new Error(`source not found: ${name}`)
+}
 
 test('wiring.js：延迟恢复注入使用 plugin:session-guard + form:notice', () => {
   const code = src('wiring.js')

@@ -19,9 +19,118 @@
  * 零 `@deepseek-ai/*` 值导入；所有判定异常 fail-open 放行。
  */
 import { shouldPause } from './time.js'
+import type { TimeSettings } from './time.js'
 
 /** 默认 step 门控超时（防死锁，与 PRD §2.2 的 5min 一致）。 */
 export const DEFAULT_STEP_TIMEOUT_MS = 300_000
+
+/** 拉门判定入参。 */
+export interface StepHoldInput {
+  cfg?: Partial<TimeSettings> & { stepLevelPause?: boolean; guardSubagents?: boolean } | null
+  step?: number
+  isRoot?: boolean
+  pauseVerdict?: { pause: boolean; reason: string } | null
+  shouldHoldSession?: (cfg: unknown, sessionId?: string) => boolean
+  isHeldByDeferrals?: boolean
+  bypassed?: boolean
+  alreadyHeld?: boolean
+  manual?: boolean
+}
+
+/** 拉门判定结果。 */
+export interface StepHoldDecision {
+  hold: boolean
+  why: string
+}
+
+/** step 门控状态（SSE / state() 投影）。 */
+export interface StepState {
+  held: boolean
+  step: number | null
+  since: number | null
+  bypass: boolean
+  manual: boolean
+}
+
+/** `hold()` 的 payload（agent/pre-step waterfall 入参）。 */
+export interface StepPayload {
+  agent?: { id?: unknown } & Record<string, unknown>
+  step?: number
+  turn?: number
+  signal?: AbortSignalLike | null
+  messages?: unknown[]
+}
+
+/** AbortSignal 的最小面（不引入 DOM lib）。 */
+export interface AbortSignalLike {
+  aborted?: boolean
+  addEventListener?(type: 'abort', fn: () => void, opts?: { once?: boolean }): void
+  removeEventListener?(type: 'abort', fn: () => void): void
+}
+
+/** 定时器句柄（Node 返回对象，浏览器返回数字；只关心可选 unref）。 */
+type TimerHandle = { unref?: () => void } | number
+
+/** 挂起门记录。 */
+interface HoldEntry {
+  sessionId: string
+  step: number
+  turn: number
+  since: number
+  resolve: ((v: { released: boolean; reason: string }) => void) | undefined
+  timer: TimerHandle | undefined
+  signal: AbortSignalLike | null
+  onAbort: (() => void) | undefined
+  manual: boolean
+}
+
+/** 释放结果。 */
+export interface ReleaseResult {
+  released: boolean
+  reason: string
+}
+
+/** 拉门时给宿主的可见反馈信息。 */
+export interface HoldInfo {
+  why: string
+  step: number
+  turn: number
+  manual: boolean
+  since: number
+}
+
+/** step 门控依赖注入面。 */
+export interface StepGateDeps {
+  getSettings?: () => unknown
+  shouldHoldSession?: (cfg: unknown, sessionId: string) => boolean
+  isHeldByDeferrals?: (sessionId: string) => boolean
+  isRootAgent?: (agent: unknown) => boolean
+  pauseGate?: { pause?: (id: string, opts: { mode: string; reason: string }) => unknown }
+  logger?: { warn?: (m: string) => void; info?: (m: string) => void }
+  now?: () => number
+  setTimer?: (fn: () => void, ms: number) => unknown
+  clearTimer?: (handle: unknown) => void
+  unrefTimers?: boolean
+  onChange?: (sessionId: string, state: StepState) => void
+  onHold?: (sessionId: string, agent: unknown, info: HoldInfo) => void
+}
+
+/** step 门控对外面。 */
+export interface StepGate {
+  hold(payload: StepPayload, next?: () => Promise<unknown>): Promise<unknown>
+  release(sessionId: string, reason?: string): ReleaseResult
+  releaseAll(reason?: string): string[]
+  requestPause(sessionId: string): { requested: boolean; held: boolean }
+  escalate(sessionId: string): void
+  markBypass(sessionId: string): void
+  clearBypass(sessionId: string): void
+  clearAllBypass(): void
+  state(sessionId: string): StepState
+  heldIds(): string[]
+  _count(): number
+  _bypassed(): string[]
+  _manualPending(): string[]
+}
 
 /**
  * 纯判定：该 step 是否应拉门。
@@ -54,7 +163,7 @@ export function decideStepHold({
   bypassed = false,
   alreadyHeld = false,
   manual = false,
-} = {}) {
+}: StepHoldInput = {}): StepHoldDecision {
   // 手动暂停：用户显式意图，绕过 enabled / stepLevelPause / step>1 / 峰谷 / provider 判定，
   // 仅保留互斥铁律（请求已 hold）与防双门。
   if (manual === true) {
@@ -108,22 +217,21 @@ export function createStepGate({
   unrefTimers = true,
   onChange,
   onHold,
-} = {}) {
-  /** sessionId -> { sessionId, step, turn, since, resolve, timer, signal, onAbort } */
-  const holds = new Map()
+}: StepGateDeps = {}): StepGate {
+  const holds = new Map<string, HoldEntry>()
   /** 本峰内被用户手动跳过的会话 */
-  const bypass = new Set()
+  const bypass = new Set<string>()
   /** 用户手动点「暂停会话」但还没到 pre-step 边界的会话 */
-  const manualPause = new Set()
+  const manualPause = new Set<string>()
 
-  const warn = (m) => {
+  const warn = (m: string): void => {
     try {
       logger?.warn?.(`[session-guard] ${m}`)
     } catch {
       /* 日志失败不影响门控 */
     }
   }
-  const info = (m) => {
+  const info = (m: string): void => {
     try {
       logger?.info?.(`[session-guard] ${m}`)
     } catch {
@@ -131,45 +239,45 @@ export function createStepGate({
     }
   }
 
-  function readCfg() {
+  function readCfg(): Record<string, unknown> {
     try {
-      const v = getSettings()
-      return v && typeof v === 'object' ? v : {}
+      const v = typeof getSettings === 'function' ? getSettings() : undefined
+      return v && typeof v === 'object' ? (v as Record<string, unknown>) : {}
     } catch {
       return {}
     }
   }
 
   /** 通知状态变化（SSE 推送；异常不得影响门控）。 */
-  function emitChange(sessionId) {
+  function emitChange(sessionId: string): void {
     if (typeof onChange !== 'function') return
     try {
       onChange(String(sessionId), state(sessionId))
     } catch (e) {
-      warn(`step gate onChange failed: ${String(e && e.message || e)}`)
+      warn(`step gate onChange failed: ${String((e as Error)?.message || e)}`)
     }
   }
 
   /** 摘掉一条挂起记录（不 resolve），幂等。 */
-  function detach(entry) {
+  function detach(entry: HoldEntry | null | undefined): boolean {
     if (!entry) return false
     if (holds.get(entry.sessionId) === entry) holds.delete(entry.sessionId)
     if (entry.timer !== null) {
       try {
-        clearTimer(entry.timer)
+        clearTimer?.(entry.timer)
       } catch {
         /* ignore */
       }
-      entry.timer = null
+      entry.timer = undefined
     }
     if (entry.signal && entry.onAbort) {
       try {
-        entry.signal.removeEventListener('abort', entry.onAbort)
+        entry.signal.removeEventListener?.('abort', entry.onAbort)
       } catch {
         /* ignore */
       }
     }
-    entry.onAbort = null
+    entry.onAbort = undefined
     return true
   }
 
@@ -178,7 +286,7 @@ export function createStepGate({
    * @param {string} sessionId
    * @param {string} [reason] manual | off-peak | abort | timeout | pause | cancel | command | disposed
    */
-  function release(sessionId, reason = 'manual') {
+  function release(sessionId: string, reason: string = 'manual'): ReleaseResult {
     const id = String(sessionId)
     const entry = holds.get(id)
     if (entry === undefined) {
@@ -190,16 +298,16 @@ export function createStepGate({
     manualPause.delete(id)
     info(`step gate released (${reason}) for ${id} (step ${entry.step})`)
     try {
-      entry.resolve({ released: true, reason })
+      entry.resolve?.({ released: true, reason })
     } catch (e) {
-      warn(`step gate resolve failed: ${String(e && e.message || e)}`)
+      warn(`step gate resolve failed: ${String((e as Error)?.message || e)}`)
     }
     emitChange(id)
     return { released: true, reason }
   }
 
   /** 释放全部挂起门（退峰 / 卸载）。返回被释放的会话 id 列表。 */
-  function releaseAll(reason = 'releaseAll') {
+  function releaseAll(reason: string = 'releaseAll'): string[] {
     const ids = [...holds.keys()]
     for (const id of ids) release(id, reason)
     for (const id of [...manualPause]) {
@@ -215,7 +323,7 @@ export function createStepGate({
    * 已挂起时幂等；同时撤销本峰 bypass（显式暂停优先）。
    * @returns {{requested:boolean, held:boolean}}
    */
-  function requestPause(sessionId) {
+  function requestPause(sessionId: string): { requested: boolean; held: boolean } {
     const id = String(sessionId)
     bypass.delete(id)
     if (holds.has(id)) return { requested: true, held: true }
@@ -226,39 +334,41 @@ export function createStepGate({
   }
 
   /** 超时：释放 + 升级为 turn 级 force 暂停（F8）。 */
-  function escalate(sessionId) {
+  function escalate(sessionId: string): void {
     const id = String(sessionId)
     release(id, 'timeout')
     if (!pauseGate || typeof pauseGate.pause !== 'function') return
     try {
       const r = pauseGate.pause(id, { mode: 'force', reason: 'stop' })
-      if (r && typeof r.then === 'function') {
-        r.then(undefined, (e) => warn(`step gate escalation pause failed for ${id}: ${String(e && e.message || e)}`))
+      const thenable = r as { then?: unknown } | null | undefined
+      if (thenable && typeof thenable.then === 'function') {
+        ;(thenable as Promise<unknown>).then(undefined, (e: unknown) =>
+          warn(`step gate escalation pause failed for ${id}: ${String((e as Error)?.message || e)}`))
       }
     } catch (e) {
-      warn(`step gate escalation pause threw for ${id}: ${String(e && e.message || e)}`)
+      warn(`step gate escalation pause threw for ${id}: ${String((e as Error)?.message || e)}`)
     }
   }
 
   /** 本峰内跳过该会话（用户手动继续）。 */
-  function markBypass(sessionId) {
+  function markBypass(sessionId: string): void {
     const id = String(sessionId)
     manualPause.delete(id)
     bypass.add(id)
     emitChange(id)
   }
 
-  function clearBypass(sessionId) {
+  function clearBypass(sessionId: string): void {
     const id = String(sessionId)
     if (bypass.delete(id)) emitChange(id)
   }
 
-  function clearAllBypass() {
+  function clearAllBypass(): void {
     bypass.clear()
   }
 
   /** 该会话的 step 门控状态。 */
-  function state(sessionId) {
+  function state(sessionId: string): StepState {
     const id = String(sessionId)
     const entry = holds.get(id)
     return {
@@ -271,7 +381,7 @@ export function createStepGate({
     }
   }
 
-  function heldIds() {
+  function heldIds(): string[] {
     return [...holds.keys()]
   }
 
@@ -280,7 +390,7 @@ export function createStepGate({
    * @param {{agent?:object, step?:number, turn?:number, signal?:AbortSignal, messages?:unknown[]}} payload
    * @param {()=>Promise<unknown>} next
    */
-  async function hold(payload, next) {
+  async function hold(payload: StepPayload, next?: () => Promise<unknown>): Promise<unknown> {
     const pass = () => (typeof next === 'function' ? next() : Promise.resolve({ kind: 'enter', messages: [] }))
     try {
       const agent = payload && payload.agent
@@ -290,9 +400,9 @@ export function createStepGate({
       const cfg = readCfg()
       let verdict
       try {
-        verdict = shouldPause(cfg, new Date(now()))
+        verdict = shouldPause(cfg as unknown as TimeSettings, new Date(now()))
       } catch (e) {
-        warn(`step gate peak verdict failed for ${id}: ${String(e && e.message || e)}`)
+        warn(`step gate peak verdict failed for ${id}: ${String((e as Error)?.message || e)}`)
         verdict = { pause: false, reason: 'fail-open' }
       }
 
@@ -301,7 +411,7 @@ export function createStepGate({
         try {
           targetOk = shouldHoldSession(cfg, id) === true
         } catch (e) {
-          warn(`step gate target verdict failed for ${id}: ${String(e && e.message || e)}`)
+          warn(`step gate target verdict failed for ${id}: ${String((e as Error)?.message || e)}`)
           targetOk = false // fail-open 放行
         }
       }
@@ -334,18 +444,18 @@ export function createStepGate({
       })
       if (!decision.hold) return pass()
 
-      const entry = {
+      const entry: HoldEntry = {
         sessionId: id,
         step: Number(payload && payload.step),
         turn: Number(payload && payload.turn),
         since: now(),
-        resolve: null,
-        timer: null,
-        signal: (payload && payload.signal) || null,
-        onAbort: null,
+        resolve: undefined,
+        timer: undefined,
+        signal: payload.signal ?? null,
+        onAbort: undefined,
         manual,
       }
-      const promise = new Promise((resolve) => {
+      const promise = new Promise<{ released: boolean; reason: string }>((resolve) => {
         entry.resolve = resolve
       })
       holds.set(id, entry)
@@ -358,7 +468,7 @@ export function createStepGate({
           onHold(id, agent, { why: decision.why, step: entry.step, turn: entry.turn, manual, since: entry.since })
         }
       } catch (e) {
-        warn(`step gate onHold failed: ${String((e && e.message) || e)}`)
+        warn(`step gate onHold failed: ${String((e as Error)?.message || e)}`)
       }
 
       // abort（agent.cancel / 冻结 / /pause / /cancel）→ 释放，让 loop 的 throwIfAborted 收尾
@@ -367,7 +477,7 @@ export function createStepGate({
         try {
           entry.signal.addEventListener('abort', entry.onAbort, { once: true })
         } catch {
-          entry.onAbort = null
+          entry.onAbort = undefined
         }
         if (entry.signal.aborted === true) release(id, 'abort')
       }
@@ -375,17 +485,18 @@ export function createStepGate({
       const rawTimeout = Number(cfg.stepGateTimeoutMs)
       const timeoutMs = Number.isFinite(rawTimeout) && rawTimeout > 0 ? rawTimeout : DEFAULT_STEP_TIMEOUT_MS
       entry.timer = setTimer(() => {
-        entry.timer = null
+        entry.timer = undefined
         escalate(id)
-      }, timeoutMs)
-      if (unrefTimers && entry.timer && typeof entry.timer.unref === 'function') entry.timer.unref()
+      }, timeoutMs) as { unref?: () => void } | undefined
+      const handle = entry.timer
+      if (unrefTimers && handle !== undefined && typeof handle === 'object' && typeof handle.unref === 'function') handle.unref()
 
       info(`step gate held for ${id} at step ${entry.step} (timeout ${timeoutMs}ms)`)
       await promise
       return pass()
     } catch (e) {
       // 门控自身异常 → fail-open 放行，绝不阻断回合
-      warn(`step gate failed open: ${String(e && e.message || e)}`)
+      warn(`step gate failed open: ${String((e as Error)?.message || e)}`)
       return pass()
     }
   }

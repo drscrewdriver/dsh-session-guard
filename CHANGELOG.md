@@ -1,5 +1,20 @@
 # Changelog
 
+## 4.7.0
+
+**TypeScript 全量化：host 半 24 个模块 + client 半 13 个全部 strict TS，构建产物仍为入库的 `lib/`。**
+
+无行为变化（4.6.0 的恢复等效修复单独发布，可独立回滚）。版本阶梯 `4.7.0-rc.1 … rc.4 → 4.7.0`。
+
+- **构建形态**：`tsconfig.host.json`（`tsc` emit `src/**/*.ts` → `lib/`，NodeNext / strict）+ `tsconfig.client.json`（`noEmit` 类型检查，bundle 仍由 `tsdown` 出 `lib/client.js`）。新增 `build:host` / `build:client` / `typecheck`；`pretest` 先 build，测试统一 import `../lib/*.js`。
+- **入口切换**：`package.json` 的 `main` / `exports["."]` 与 `dsh.plugin.json` 的 `main` 全部指向 `./lib/index.js`（原为 `./src/index.js`）。`files` 追加 `lib/` 并保留 `src/types/`（源码随包发布，类型声明需自洽）。
+- **新增 `_tools/gate-lib-sync.mjs`**：把 `lib/` 对拍变成可执行断言——临时目录重构建后逐字节比对 + 孤儿产物检测 + 入口存在性 + 版本三方对齐。CI 与 release 门禁链统一为 `build → typecheck → lint → test → lib-sync`（`_tools/release-matrix.json` 同步并重渲染 `release.yml`）。
+- **类型真源**：`src/types/host.d.ts`（ctx / agent / session / goals / jobs / subagents / webServer / timer / commands / logger 的最小声明，全可选以保留鸭子探测语义）、`src/types/node-shims.d.ts`（本插件实际用到的 Node API；本仓依赖树离线安装，`@types/node` 不可得，故本地声明而非引入装不上的 devDependency）。
+- **client 收紧**：`SettingsScope.mode` 补 `'bridge'` 第三态（≤0.1.5 线桥轨快照的 `mode`）；`LocaleNamespaceMap` 并入 `'session-guard': SessionGuardKey`，slot 注入的 `t` 因此在编译期做键级检查。
+- **strict 改造暴露并修掉的三个真实缺陷**：① `renderContributor` 引用 apply 作用域的 `ctx`（模块级函数 → 未定义标识符）；② `BridgeDocHandle.mutate` 是 `private`，与 `SettingsScope` 的公开可选 `mutate` 冲突；③ `SettingsScope.mode` 缺 `'bridge'` 导致桥兜底分支无法赋值。
+- **测试**：全量 **389 tests / 389 pass / 0 fail**（4.6.0 基线 366）。静态闸（`source-kind` / `bridge-deferrals-shell`）改为按 `.ts`/`.js` 试扩展名读源码，重命名批次不会让它们假红。
+- **locale 棘轮下压**：按钮文案全部搬进 10 语字典（新增 19 个 `pause.*` 键，键数 35 → 54），C-ui 硬编码 58 → 54。
+
 ## 4.6.0
 
 **恢复三入口统一 + 确认面（P0）：UI「继续会话」按钮与 `/guard resume` 逐项等效，真暂停放得掉。**
@@ -13,7 +28,7 @@
 - **新增 `tests/resume-equivalence.test.mjs`**：5 种暂停来源（force+中断工具 / safe+延迟工具 / 仅 step 门 / 仅请求级 hold / 未暂停）× 3 条入口 × {未确认, 已确认} 共 19 例，失败信息直接指名**是哪条入口**不一致；另含「未确认不清快照」「skip 原样透传」「step 门与请求级 hold 同时结算」等不变量。
 - 按钮文案搬进 10 语字典（`pause.*`，19 键）；`tests/pause-button-text.test.mjs` 增「10 语键集与 zh 完全一致」断言。
 
-## 4.6.0
+## 4.6.0-rc.1
 
 **暂停资源范围补齐（P0）：暂停会话时一并停其后台任务与子会话，并按四态如实上报。**
 

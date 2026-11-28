@@ -2,6 +2,19 @@
 
 ## 4.6.0
 
+**恢复三入口统一 + 确认面（P0）：UI「继续会话」按钮与 `/guard resume` 逐项等效，真暂停放得掉。**
+
+- **事故根因**：三条恢复路径各自演进——UI 按钮走 `stepResume`（只放 step 门 + 请求级 hold，**从不调 `pauseGate.resume`**）、`/guard resume` 走 `pauseGate.resume`、RPC `resume` 走 `gate.resume`（硬编码 `confirm:true`）。于是「真暂停时点按钮什么也没发生」，而命令却能恢复。
+- **唯一入口** `bridge.resumeSession(sessionId, {confirm, choice, reason, by})`：顺序固定为 ① `stepResume`（放门 + 结算请求级 hold + 置 bypass）→ ② `pauseGate.resume`（`confirm`/`choice` 原样透传），合并返回 `{step, pause, needConfirmation, resumed}`。**不吞 `needConfirmation`**：需要确认时暂停快照原样保留、`resumed=false`。
+- **四处收敛**：`/resume`、`/guard resume`、RPC `resume` / `stepResume` 全部改走它；`resumeForce` 保留一个 release 周期的旧隐式 `confirm:true` 语义（rc 后续删除）。`gate.resume` 的 `confirm` 缺省改为 **false**（与命令一致），不再硬编码 true。
+- **UI 确认面**：`needConfirmation === true` 时按钮下方就地展开三选一——**重新执行（confirm+rerun）/ 跳过（confirm+skip）/ 保持暂停**；仅 `resumed === true` 才做乐观更新。绝不隐式确认：重新执行可能已部分执行的工具必须是一次明示选择。
+- **状态投影补齐**：`bridge.state().pausedAny` 纳入 **turn 级真暂停**（`pausedState.paused`），新增 `pausedTurn` 字段；`readPauseState()` 认 `paused.turn` / `state.pausedTurn`。此前真暂停时按钮仍显示「暂停会话」，用户根本点不到恢复入口——这是本次事故的直接成因。
+- **SSE 增 `pause` 事件**：`pauseGate` 在 `markPaused` / `clearPaused` 时经 `onChange` 推送，连接建立即给一份快照；client 与 `step` 推送同权合并。此前 pauseGate 暂停/恢复只能靠 10s 轮询收敛（点完要等一整轮才变字，体感像「没反应」）。
+- **新增 `tests/resume-equivalence.test.mjs`**：5 种暂停来源（force+中断工具 / safe+延迟工具 / 仅 step 门 / 仅请求级 hold / 未暂停）× 3 条入口 × {未确认, 已确认} 共 19 例，失败信息直接指名**是哪条入口**不一致；另含「未确认不清快照」「skip 原样透传」「step 门与请求级 hold 同时结算」等不变量。
+- 按钮文案搬进 10 语字典（`pause.*`，19 键）；`tests/pause-button-text.test.mjs` 增「10 语键集与 zh 完全一致」断言。
+
+## 4.6.0
+
 **暂停资源范围补齐（P0）：暂停会话时一并停其后台任务与子会话，并按四态如实上报。**
 
 - 之前 `pause` 只停当前 agent 回合，完全不管 `run_in_background` 起的后台 job 与子代理/子任务会话——它们在峰期继续烧 token。现在按会话作用域收干净。

@@ -39,14 +39,131 @@ export function createBridge(ctx, gate, store, pauseGate, stepGate, deferrals) {
     return tcState
   }
 
+  /**
+   * 解开 step 门（v0.2.0）：放行被挂起的 step。
+   * 默认 `bypass=true`（用户手动「继续」）——本高峰窗口内不再拦该会话；
+   * 退峰/非官方切换等自动释放请用 `{ bypass: false }`。
+   *
+   * v4.2.11（issue #3）：**请求级 hold 也是「暂停」的一种**，但它在 step 1 就发生、
+   * step 门根本没拉过，于是 `stepGate.release()` 返回 `{released:false}`，
+   * 连 bypass 都不置——用户点「继续会话」放不掉任何东西（旧行为）。
+   * 现在这里同时结算请求级 hold，并且**只要用户显式要继续就置 bypass**，
+   * 不论门来自 step 级还是请求级。
+   * @param {string} sessionId
+   * @param {{bypass?:boolean, reason?:string}} [opts]
+   */
+  function stepResume(sessionId, opts = {}) {
+    const reason = opts.reason ?? 'manual'
+    const wantBypass = opts.bypass !== false
+    const id = String(sessionId)
+
+    // ① 请求级 hold：先结算，让挂住的 promise 以原 config resolve（请求照常发出）。
+    let requestReleased = false
+    if (deferrals !== undefined && typeof deferrals.settle === 'function') {
+      try {
+        requestReleased = deferrals.settle(id, reason, 'release') === true
+      } catch {
+        requestReleased = false
+      }
+    }
+    if (requestReleased && deferrals !== undefined && typeof deferrals.clearDeferred === 'function') {
+      try {
+        deferrals.clearDeferred(id)
+      } catch {
+        /* 延后记录清理失败不影响放行 */
+      }
+    }
+
+    // ② step 级门：没有门可放时 released=false，但这不代表「什么也没发生」。
+    if (!stepGate || typeof stepGate.release !== 'function') {
+      return { released: requestReleased, requestReleased, bypass: false, reason: 'no-step-gate' }
+    }
+    let r
+    try {
+      r = stepGate.release(id, reason)
+    } catch {
+      return { released: requestReleased, requestReleased, bypass: false, reason }
+    }
+    const released = !!(r && r.released === true)
+    let bypassed = false
+    if (wantBypass && typeof stepGate.markBypass === 'function') {
+      // 请求级 hold 也置 bypass：否则下一个请求立刻被同一峰期再挂一次，
+      // 「继续」就变成了「点一下放一条」的假放行。
+      try {
+        stepGate.markBypass(id)
+        bypassed = true
+      } catch {
+        /* ignore */
+      }
+    }
+    return { released: released || requestReleased, requestReleased, bypass: bypassed, reason }
+  }
+
+  /**
+   * **恢复唯一入口**（v4.6.0）：任何恢复路径都必须经这里，保证 UI 按钮、
+   * `/guard resume`、RPC、input-traffic 冻结桥四处的放行结果逐项一致。
+   *
+   * 顺序固定（不可交换）：
+   * ① `stepResume` —— 放 step 门 + 结算请求级 hold，并置 bypass（用户显式继续）；
+   * ② `pauseGate.resume` —— 从暂停点续跑，`confirm`/`choice` 原样透传。
+   *
+   * **不吞 `needConfirmation`**：force 中断工具 / safe 延迟工具时 `pauseGate.resume`
+   * 返回 `{kind:'error', needConfirmation:true}`，此处原样上抛给调用方，
+   * 由 UI 渲染三选一（重新执行 / 跳过 / 保持暂停），由命令面提示补 `confirm`。
+   * 此时**不清暂停快照**（暂停保持，等待用户选择），`resumed` 为 false。
+   *
+   * @param {string} sessionId
+   * @param {{confirm?:boolean, choice?:'rerun'|'skip', reason?:string, by?:string}} [opts]
+   * @returns {{step:object, pause:object, needConfirmation:boolean, resumed:boolean}}
+   */
+  function resumeSession(sessionId, opts = {}) {
+    const id = String(sessionId)
+    const reason = typeof opts.reason === 'string' && opts.reason !== '' ? opts.reason : 'manual'
+    const confirm = opts.confirm === true
+    const choice = opts.choice === 'skip' ? 'skip' : 'rerun'
+
+    // ① step 门 / 请求级 hold：用户显式继续 → bypass 置位（本峰内不再拦该会话）。
+    const step = stepResume(id, { bypass: true, reason })
+
+    // ② turn 级真暂停：confirm 缺省为 false（与 `/guard resume` 一致，绝不隐式确认）。
+    let pause
+    if (pauseGate && typeof pauseGate.resume === 'function') {
+      try {
+        pause = pauseGate.resume(id, { confirm, choice })
+      } catch (e) {
+        pause = { kind: 'error', text: `resume failed: ${String((e && e.message) || e)}` }
+      }
+    } else {
+      pause = { kind: 'error', text: 'no pause gate available' }
+    }
+
+    const needConfirmation = !!(pause && pause.needConfirmation === true)
+    const resumed = !!(pause && pause.kind === 'success')
+    // ③ 兜底清队列锁：真暂停放不掉时不清（保持暂停态，等用户选）。
+    if (resumed && gate && typeof gate.unlockQueue === 'function') {
+      try {
+        gate.unlockQueue(id)
+      } catch {
+        /* 队列锁清理失败不影响已完成的恢复 */
+      }
+    }
+    return { step, pause, needConfirmation, resumed }
+  }
+
   return {
     /** 停掉 session 下一回合（会话门 / 回退锁队列）。 */
     stopNextTurn(sessionId, opts) {
       return gate.stopNextTurn(sessionId, opts)
     },
-    /** 恢复。 */
-    resume(sessionId, opts) {
-      return gate.resume(sessionId, opts)
+    /** 恢复唯一入口（v4.6.0）。返回值形状见 {@link resumeSession}。 */
+    resumeSession,
+    /**
+     * 旧名转发（v4.6.0）：外部消费者（input-traffic 冻结桥 / RPC 老调用方）按旧名调用。
+     * 语义与 `resumeSession` 完全一致，**不再**隐式 `confirm:true`——不传 `confirm`
+     * 时会收到 `needConfirmation`，由调用方决定是否二次确认。
+     */
+    resume(sessionId, opts = {}) {
+      return resumeSession(sessionId, opts)
     },
     /** 显式锁队列（手动触发）。 */
     lockQueue(sessionId, reason = 'manual') {
@@ -74,64 +191,10 @@ export function createBridge(ctx, gate, store, pauseGate, stepGate, deferrals) {
       }
     },
     /**
-     * 解开 step 门（v0.2.0）：放行被挂起的 step。
-     * 默认 `bypass=true`（用户手动「继续」）——本高峰窗口内不再拦该会话；
-     * 退峰/非官方切换等自动释放请用 `{ bypass: false }`。
-     *
-     * v4.2.11（issue #3）：**请求级 hold 也是「暂停」的一种**，但它在 step 1 就发生、
-     * step 门根本没拉过，于是 `stepGate.release()` 返回 `{released:false}`，
-     * 连 bypass 都不置——用户点「继续会话」放不掉任何东西（旧行为）。
-     * 现在这里同时结算请求级 hold，并且**只要用户显式要继续就置 bypass**，
-     * 不论门来自 step 级还是请求级。
-     * @param {string} sessionId
-     * @param {{bypass?:boolean, reason?:string}} [opts]
+     * 解开 step 门 / 结算请求级 hold（v0.2.0 / v4.2.11）。
+     * 语义见上方 {@link stepResume}；`resumeSession` 内部第一步就是它。
      */
-    stepResume(sessionId, opts = {}) {
-      const reason = opts.reason ?? 'manual'
-      const wantBypass = opts.bypass !== false
-      const id = String(sessionId)
-
-      // ① 请求级 hold：先结算，让挂住的 promise 以原 config resolve（请求照常发出）。
-      let requestReleased = false
-      if (deferrals !== undefined && typeof deferrals.settle === 'function') {
-        try {
-          requestReleased = deferrals.settle(id, reason, 'release') === true
-        } catch {
-          requestReleased = false
-        }
-      }
-      if (requestReleased && deferrals !== undefined && typeof deferrals.clearDeferred === 'function') {
-        try {
-          deferrals.clearDeferred(id)
-        } catch {
-          /* 延后记录清理失败不影响放行 */
-        }
-      }
-
-      // ② step 级门：没有门可放时 released=false，但这不代表「什么也没发生」。
-      if (!stepGate || typeof stepGate.release !== 'function') {
-        return { released: requestReleased, requestReleased, bypass: false, reason: 'no-step-gate' }
-      }
-      let r
-      try {
-        r = stepGate.release(id, reason)
-      } catch {
-        return { released: requestReleased, requestReleased, bypass: false, reason }
-      }
-      const released = !!(r && r.released === true)
-      let bypassed = false
-      if (wantBypass && typeof stepGate.markBypass === 'function') {
-        // 请求级 hold 也置 bypass：否则下一个请求立刻被同一峰期再挂一次，
-        // 「继续」就变成了「点一下放一条」的假放行。
-        try {
-          stepGate.markBypass(id)
-          bypassed = true
-        } catch {
-          /* ignore */
-        }
-      }
-      return { released: released || requestReleased, requestReleased, bypass: bypassed, reason }
-    },
+    stepResume,
     /** 读一会话状态。 */
     state(sessionId) {
       const cur = store.get(sessionId)
@@ -179,8 +242,16 @@ export function createBridge(ctx, gate, store, pauseGate, stepGate, deferrals) {
         // 请求级 hold（v4.2.11）：与 step 门并列的第二种暂停，按钮文案要认它。
         requestHeld,
         requestHeldSince,
+        // turn 级真暂停（v4.6.0）：`pauseGate` 已落地的暂停快照。
+        // 旧投影漏了这一项 → 真暂停时按钮仍显示「暂停会话」，用户点不到恢复入口。
+        pausedTurn: pausedState.paused === true,
         // 任一来源处于暂停态即为「已暂停」——按钮文案只看这一个字段。
-        pausedAny: stepState.held === true || stepState.manual === true || requestHeld,
+        // v4.6.0：纳入 turn 级（pauseGate 真暂停）。四来源必须同时覆盖
+        // step / manual / request / turn，任一层遗漏都会重现「按钮像没反应」。
+        pausedAny: stepState.held === true
+          || stepState.manual === true
+          || requestHeld
+          || pausedState.paused === true,
         taskControlAvailable: gate.taskControlAvailable(),
         taskControl: taskControlState(sessionId),
         updatedAt: base.updatedAt ?? null,

@@ -67,15 +67,34 @@ export function createGate({ getCtx: _getCtx, getSettings, store, pauseGate, emi
 
   /**
    * 恢复 session 推进（从暂停点续跑）。
-   * ① 自研 resume（confirm + choice）；② 降级清 queueLock。
+   *
+   * v4.6.0：**`confirm` 缺省为 false**（与 `/guard resume` 一致），不再硬编码
+   * `{confirm:true, choice:'rerun'}`——隐式确认会让「重新执行可能已部分执行的工具」
+   * 变成一次静默误放行。需要确认时会原样返回 `{kind:'error', needConfirmation:true}`。
+   *
+   * 降级路径不变：自研门返回非 success（含 needConfirmation）→ 清 queueLock，
+   * 但**暂停快照保持**（needConfirmation 时不清，等用户选 rerun/skip）。
+   *
+   * @param {string} sessionId
+   * @param {{confirm?:boolean, choice?:'rerun'|'skip', reason?:string}} [opts]
    */
   async function resume(sessionId, opts = {}) {
     if (pauseGate) {
       try {
-        const r = pauseGate.resume(sessionId, { confirm: true, choice: opts.choice ?? 'rerun' })
-        if (r && r.kind === 'success') return { ok: true, via: 'pauseGate', result: r }
+        const r = pauseGate.resume(sessionId, {
+          confirm: opts.confirm === true,
+          choice: opts.choice === 'skip' ? 'skip' : 'rerun',
+        })
+        if (r && r.kind === 'success') {
+          unlockQueue(sessionId)
+          return { ok: true, via: 'pauseGate', result: r }
+        }
+        // needConfirmation：暂停保持，队列锁不动（保持暂停态，等用户选）。
+        if (r && r.needConfirmation === true) {
+          return { ok: false, via: 'pauseGate', needConfirmation: true, result: r }
+        }
       } catch {
-        // 降级清队列锁。
+        // 自研内部异常 → 降级清队列锁。
       }
     }
     unlockQueue(sessionId)

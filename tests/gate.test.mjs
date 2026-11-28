@@ -65,13 +65,26 @@ test('有 pauseGate → stopNextTurn 走自研真暂停（via pauseGate）', asy
   assert.equal(store.get('s1'), null)
 })
 
-test('有 pauseGate → resume 走自研真恢复（confirm + choice）', async (t) => {
+test('有 pauseGate → resume 走自研真恢复（confirm 由调用方给，缺省 false）', async (t) => {
   const store = tmpStore(t)
   const calls = []
   const pg = fakePauseGate({ resume: (id, opts) => { calls.push([id, opts]); return { kind: 'success' } } })
   const gate = createGate({ getCtx: () => fakeCtx({}), getSettings: () => CFG, store, pauseGate: pg })
+  // v4.6.0：不再隐式 confirm:true（与 /guard resume 一致）；choice 仍透传。
   await gate.resume('s1', { choice: 'skip' })
-  assert.deepEqual(calls[0], ['s1', { confirm: true, choice: 'skip' }])
+  assert.deepEqual(calls[0], ['s1', { confirm: false, choice: 'skip' }])
+  await gate.resume('s1', { confirm: true, choice: 'rerun' })
+  assert.deepEqual(calls[1], ['s1', { confirm: true, choice: 'rerun' }])
+})
+
+test('gate.resume：needConfirmation 时暂停保持、不返回 ok', async (t) => {
+  const store = tmpStore(t)
+  const pg = fakePauseGate({ resume: () => ({ kind: 'error', needConfirmation: true, text: '需要确认' }) })
+  const gate = createGate({ getCtx: () => fakeCtx({}), getSettings: () => CFG, store, pauseGate: pg })
+  const r = await gate.resume('s1')
+  assert.equal(r.ok, false)
+  assert.equal(r.needConfirmation, true)
+  assert.equal(r.via, 'pauseGate')
 })
 
 test('pauseGate.pause 返回 error（如 agent 不可用）→ fail-open 降级锁队列', async (t) => {

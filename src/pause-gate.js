@@ -93,8 +93,22 @@ export function enqueueFollowup(agent, message, ctx) {
  * `agent/pre-step`，此刻既不会产生 `assistant/message` 也不会产生 `tool/result`；
  * 而 safe+wait / safe+stop 都靠这两个事件落地暂停 → 两边互等，会话永久卡死。
  */
-export function createPauseGate({ ctx, pauseStore, pluginId = 'session-guard', makeFollowupMessage = createPluginUserMessage, stepGate, getScope }) {
+export function createPauseGate({ ctx, pauseStore, pluginId = 'session-guard', makeFollowupMessage = createPluginUserMessage, stepGate, getScope, onChange }) {
   const state = { inFlight: new Map(), pendingPause: new Map(), scopePromises: new Map() }
+
+  /**
+   * v4.6.0：暂停态变化通知（SSE 推送用）。
+   * 任何 `paused` 快照的落地/清除都要走这里，否则 client 只能靠 10s 轮询收敛。
+   * fail-open：回调抛错绝不影响暂停/恢复主链路。
+   */
+  function notifyChange(id) {
+    if (typeof onChange !== 'function') return
+    try {
+      onChange(String(id))
+    } catch (e) {
+      ctx?.logger?.warn?.('[session-guard] pause change notify failed: ' + String(e))
+    }
+  }
   const getAgent = (sessionId) => (ctx && typeof ctx.agents?.get === 'function' ? ctx.agents.get(sessionId) : undefined)
 
   /** 先解开 step 门（若存在），再走 turn 级逻辑；任何异常都不阻断暂停动作。 */
@@ -265,6 +279,7 @@ export function createPauseGate({ ctx, pauseStore, pluginId = 'session-guard', m
       updatedAt: Date.now(),
     }
     pauseStore.set(id, snapshot)
+    notifyChange(id)
     return snapshot
   }
 
@@ -297,6 +312,7 @@ export function createPauseGate({ ctx, pauseStore, pluginId = 'session-guard', m
 
   function clearPaused(id) {
     pauseStore.clear(id)
+    notifyChange(id)
   }
 
   // ── goal 暂停（防 goal-round driver 再排同会话轮次） ──────────────────

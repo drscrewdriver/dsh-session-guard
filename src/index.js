@@ -145,6 +145,42 @@ export function apply(ctx, config = {}) {
     }
   }
 
+  /**
+   * v4.6.0：pauseGate 真暂停/恢复/中断时立刻推送。
+   * 旧行为只有 step 门走 SSE，pauseGate 暂停只能靠 10s 轮询收敛
+   * （按钮点完要等一整轮才变字，体感像「没反应」）。
+   * 负载形状与 `/session-guard/state` 的 `paused` 同构，client 用同一投影函数消费。
+   */
+  function broadcastPause(sessionId) {
+    const id = String(sessionId)
+    let st
+    try {
+      st = pauseGate.state(id) || {}
+    } catch {
+      st = {}
+    }
+    let any
+    try {
+      any = bridge.state(id).pausedAny === true
+    } catch {
+      any = st.paused === true
+    }
+    for (const client of [...sseClients]) {
+      if (client.sessionId !== '' && client.sessionId !== id) continue
+      sseSend(client, {
+        type: 'pause',
+        sessionId: id,
+        state: {
+          paused: st.paused === true,
+          forced: st.forced === true,
+          interruptedTool: st.interruptedTool ?? null,
+          deferredTools: st.deferredTools ?? null,
+          any,
+        },
+      })
+    }
+  }
+
   // ── 自研会话门（脱离 dsh-task-control，真暂停）──
   // 状态持久化 + 引擎；经 gate.stopNextTurn/resume 主路径接入；/pause /resume /cancel 命令。
   // v0.2.0 追加 step 级门控（src/step-gate.js）：stepGate 与 pauseGate/wiring 互相需要，
@@ -205,7 +241,7 @@ export function apply(ctx, config = {}) {
     const c = readCfg()
     return { jobsSvc, subagentsSvc, cfg: c }
   }
-  const pauseGate = createPauseGate({ ctx, pauseStore, stepGate, getScope })
+  const pauseGate = createPauseGate({ ctx, pauseStore, stepGate, getScope, onChange: (id) => broadcastPause(id) })
   pauseGateRef = pauseGate
   const gate = createGate({ getCtx: () => ctx, getSettings: readCfg, store, pauseGate })
   // deferrals 在 createWiring 里才构造；先留引用，bridge 用 late-bound 读（构造期循环依赖）。
@@ -284,12 +320,14 @@ export function apply(ctx, config = {}) {
         const sid = String(invocation?.agent?.id ?? '')
         if (!sid) return { kind: 'error', text: 'no session for this command' }
         const tokens = tokensOf(invocation.rawInput)
+        // v4.6.0：恢复唯一入口（与 UI 按钮 / RPC 逐项一致）。
         // v0.2.0：step 门挂起时，「恢复」= 放行该 step 且本峰内不再拦（用户显式继续）。
-        bridge.stepResume(sid, { bypass: true, reason: 'command' })
-        return pauseGate.resume(sid, {
+        return bridge.resumeSession(sid, {
           confirm: tokens.includes('confirm'),
           choice: tokens.includes('skip') ? 'skip' : 'rerun',
-        })
+          reason: 'command',
+          by: 'command:resume',
+        }).pause
       },
     }))
     ctx.effect(() => commandCtx.commands.register({
@@ -352,11 +390,12 @@ export function apply(ctx, config = {}) {
           return pauseGate.pause(sid, opts)
         }
         if (sub === 'resume') {
-          bridge.stepResume(sid, { bypass: true, reason: 'command' })
-          return pauseGate.resume(sid, {
+          return bridge.resumeSession(sid, {
             confirm: tokens.includes('confirm'),
             choice: tokens.includes('skip') ? 'skip' : 'rerun',
-          })
+            reason: 'command',
+            by: 'command:guard',
+          }).pause
         }
         if (sub === 'cancel') {
           bridge.stepResume(sid, { bypass: false, reason: 'command' })
@@ -495,6 +534,23 @@ export function apply(ctx, config = {}) {
             const client = { sessionId, res }
             sseClients.add(client)
             sseSend(client, { type: 'step', sessionId, state: stepGate.state(sessionId) })
+            // v4.6.0：连上就先给一份 pause 快照，避免「已暂停」要等下一次变化才显示。
+            try {
+              const ps = pauseGate.state(sessionId) || {}
+              sseSend(client, {
+                type: 'pause',
+                sessionId,
+                state: {
+                  paused: ps.paused === true,
+                  forced: ps.forced === true,
+                  interruptedTool: ps.interruptedTool ?? null,
+                  deferredTools: ps.deferredTools ?? null,
+                  any: bridge.state(sessionId).pausedAny === true,
+                },
+              })
+            } catch {
+              /* 初始快照失败不影响后续推送 */
+            }
             const keepAlive = setInterval(() => {
               try {
                 res.write(': ping\n\n')
@@ -608,16 +664,25 @@ export function apply(ctx, config = {}) {
             if (!sessionId) return json(400, { ok: false, error: 'missing sessionId' })
             const action = String(parsed.action ?? '')
             if (action === 'stopNextTurn') return json(200, { ok: true, result: await bridge.stopNextTurn(sessionId, parsed) })
-            if (action === 'resume') return json(200, { ok: true, result: await bridge.resume(sessionId, parsed) })
-            if (action === 'lockQueue') return json(200, { ok: true, result: bridge.lockQueue(sessionId, parsed.reason) })
-            if (action === 'unlockQueue') return json(200, { ok: true, result: bridge.unlockQueue(sessionId) })
-            if (action === 'stepResume') {
+            // v4.6.0：`resume` / `stepResume` / `resumeForce` 三别名全部收敛到 resumeSession。
+            // - `resume`：`confirm` 由请求体给（**不再隐式 true**），缺省 false → 可能返回 needConfirmation。
+            //   返回合并形状 `{step, pause, needConfirmation, resumed}`。
+            // - `stepResume`：UI 按钮旧名，**保留旧返回形状**（`result` 即 step 结果，
+            //   含 `released`）一个版本，老客户端读 `result.released` 不会破。
+            // - `resumeForce`：**保留旧隐式 confirm:true 语义**一个 release 周期，
+            //   供未适配的老调用方（脚本/外部 UI）使用；rc.5 前删除。
+            if (action === 'resume' || action === 'stepResume' || action === 'resumeForce') {
+              const legacyStepShape = action === 'stepResume'
+              const merged = bridge.resumeSession(sessionId, {
+                confirm: action === 'resumeForce' ? true : parsed.confirm === true,
+                choice: parsed.choice === 'skip' ? 'skip' : 'rerun',
+                reason: typeof parsed.reason === 'string' && parsed.reason !== '' ? parsed.reason : 'rpc',
+                by: `rpc:${action}`,
+              })
               return json(200, {
                 ok: true,
-                result: bridge.stepResume(sessionId, {
-                  bypass: parsed.bypass !== false,
-                  reason: typeof parsed.reason === 'string' && parsed.reason !== '' ? parsed.reason : 'rpc',
-                }),
+                result: legacyStepShape ? merged.step : merged,
+                needConfirmation: merged.needConfirmation === true,
               })
             }
             if (action === 'stepPause') return json(200, { ok: true, result: bridge.stepPause(sessionId) })

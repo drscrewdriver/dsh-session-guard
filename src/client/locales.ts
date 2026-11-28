@@ -46,6 +46,19 @@ export const zh = {
   'status.paused_peak': '峰值暂停中',
   'status.peak_official': '高峰·拦官方',
   'status.peak_all': '高峰·全部暂停',
+  'pause.button.pause': '暂停会话',
+  'pause.button.resume': '继续会话',
+  'pause.title.idle': '暂停会话：在下一次 step 的模型请求前暂停（高峰 + 官方源时会自动暂停）',
+  'pause.title.manual': '手动暂停',
+  'pause.title.auto': '高峰自动暂停',
+  'pause.title.at': '已暂停（{why}，自 {at}）',
+  'pause.title.plain': '已暂停（{why}）',
+  'pause.title.hint': ' · 点击继续：放行当前 step，且本高峰内不再拦该会话',
+  'pause.confirm.text': '需要确认：上次暂停时有工具未执行完成。',
+  'pause.confirm.rerun': '重新执行',
+  'pause.confirm.skip': '跳过',
+  'pause.confirm.keep': '保持暂停',
+  'pause.confirm.aria': '恢复确认',
 } satisfies Record<string, string>
 
 /** English dictionary (keys mirror zh). */
@@ -91,6 +104,19 @@ export const en: Record<keyof typeof zh, string> = {
   'status.paused_peak': 'Peak paused',
   'status.peak_official': 'Peak · official only',
   'status.peak_all': 'Peak · all paused',
+  'pause.button.pause': 'Pause session',
+  'pause.button.resume': 'Resume session',
+  'pause.title.idle': "Pause the session: holds before the next step's model request (auto-pauses during peak + official sources)",
+  'pause.title.manual': 'manual pause',
+  'pause.title.auto': 'peak auto-pause',
+  'pause.title.at': 'Paused ({why}, since {at})',
+  'pause.title.plain': 'Paused ({why})',
+  'pause.title.hint': ' · Click to resume: release the current step and stop blocking this session for this peak window',
+  'pause.confirm.text': 'Confirmation needed: a tool was left unfinished when the session paused.',
+  'pause.confirm.rerun': 'Re-run',
+  'pause.confirm.skip': 'Skip',
+  'pause.confirm.keep': 'Stay paused',
+  'pause.confirm.aria': 'Resume confirmation',
 }
 
 /** Japanese dictionary (keys mirror zh). */
@@ -136,6 +162,19 @@ export const ja: Record<keyof typeof zh, string> = {
   'status.paused_peak': 'ピーク一時停止中',
   'status.peak_official': 'ピーク・公式のみ',
   'status.peak_all': 'ピーク・全停止',
+  'pause.button.pause': 'セッションを一時停止',
+  'pause.button.resume': 'セッションを再開',
+  'pause.title.idle': 'セッションを一時停止：次の step のモデルリクエスト前に停止します（ピーク時かつ公式ソースでは自動的に一時停止）',
+  'pause.title.manual': '手動一時停止',
+  'pause.title.auto': 'ピーク自動一時停止',
+  'pause.title.at': '一時停止中（{why}、{at} から）',
+  'pause.title.plain': '一時停止中（{why}）',
+  'pause.title.hint': ' · クリックで再開：現在の step を解放し、このピーク期間中はこのセッションを止めません',
+  'pause.confirm.text': '確認が必要です：一時停止時に未完了のツールがあります。',
+  'pause.confirm.rerun': '再実行',
+  'pause.confirm.skip': 'スキップ',
+  'pause.confirm.keep': '一時停止を維持',
+  'pause.confirm.aria': '再開の確認',
 }
 
 /** Korean dictionary (keys mirror zh). */
@@ -181,6 +220,19 @@ export const ko: Record<keyof typeof zh, string> = {
   'status.paused_peak': '피크 일시정지 중',
   'status.peak_official': '피크·공식만',
   'status.peak_all': '피크·전체 정지',
+  'pause.button.pause': '세션 일시중지',
+  'pause.button.resume': '세션 재개',
+  'pause.title.idle': '세션 일시중지: 다음 step의 모델 요청 전에 멈춥니다 (피크 시간 + 공식 소스에서는 자동 일시중지)',
+  'pause.title.manual': '수동 일시중지',
+  'pause.title.auto': '피크 자동 일시중지',
+  'pause.title.at': '일시중지됨 ({why}, {at}부터)',
+  'pause.title.plain': '일시중지됨 ({why})',
+  'pause.title.hint': ' · 클릭하여 재개: 현재 step을 풀고 이 피크 구간 동안 이 세션을 막지 않습니다',
+  'pause.confirm.text': '확인이 필요합니다: 일시중지 시 완료되지 않은 도구가 있습니다.',
+  'pause.confirm.rerun': '다시 실행',
+  'pause.confirm.skip': '건너뛰기',
+  'pause.confirm.keep': '일시중지 유지',
+  'pause.confirm.aria': '재개 확인',
 }
 
 /** French dictionary (keys mirror zh). */
@@ -226,6 +278,19 @@ export const fr: Record<keyof typeof zh, string> = {
   'status.paused_peak': 'Pause pic en cours',
   'status.peak_official': 'Pic · officiel uniquement',
   'status.peak_all': 'Pic · tout en pause',
+  'pause.button.pause': 'Mettre la session en pause',
+  'pause.button.resume': 'Reprendre la session',
+  'pause.title.idle': 'Mettre en pause : blocage avant la requête modèle du prochain step (mise en pause auto pendant les pics + sources officielles)',
+  'pause.title.manual': 'pause manuelle',
+  'pause.title.auto': 'pause auto de pic',
+  'pause.title.at': 'En pause ({why}, depuis {at})',
+  'pause.title.plain': 'En pause ({why})',
+  'pause.title.hint': ' · Cliquer pour reprendre : libère le step courant et cesse de bloquer cette session pour ce pic',
+  'pause.confirm.text': 'Confirmation requise : un outil était inachevé lors de la mise en pause.',
+  'pause.confirm.rerun': 'Réexécuter',
+  'pause.confirm.skip': 'Ignorer',
+  'pause.confirm.keep': 'Rester en pause',
+  'pause.confirm.aria': 'Confirmation de reprise',
 }
 
 /** German dictionary (keys mirror zh). */
@@ -271,6 +336,19 @@ export const de: Record<keyof typeof zh, string> = {
   'status.paused_peak': 'Spitzenzeit-Pause aktiv',
   'status.peak_official': 'Spitzenzeit · nur offizielle',
   'status.peak_all': 'Spitzenzeit · alle pausiert',
+  'pause.button.pause': 'Sitzung pausieren',
+  'pause.button.resume': 'Sitzung fortsetzen',
+  'pause.title.idle': 'Sitzung pausieren: hält vor der Modellanfrage des nächsten Steps an (Auto-Pause bei Spitzenlast + offiziellen Quellen)',
+  'pause.title.manual': 'manuelle Pause',
+  'pause.title.auto': 'automatische Spitzenlast-Pause',
+  'pause.title.at': 'Pausiert ({why}, seit {at})',
+  'pause.title.plain': 'Pausiert ({why})',
+  'pause.title.hint': ' · Klicken zum Fortsetzen: gibt den aktuellen Step frei und blockiert diese Sitzung für dieses Lastfenster nicht mehr',
+  'pause.confirm.text': 'Bestätigung erforderlich: Beim Pausieren war ein Tool unvollendet.',
+  'pause.confirm.rerun': 'Erneut ausführen',
+  'pause.confirm.skip': 'Überspringen',
+  'pause.confirm.keep': 'Pausiert bleiben',
+  'pause.confirm.aria': 'Fortsetzen bestätigen',
 }
 
 /** Italian dictionary (keys mirror zh). */
@@ -316,6 +394,19 @@ export const it: Record<keyof typeof zh, string> = {
   'status.paused_peak': 'Pausa di picco attiva',
   'status.peak_official': 'Picco · solo ufficiale',
   'status.peak_all': 'Picco · tutto in pausa',
+  'pause.button.pause': 'Metti in pausa la sessione',
+  'pause.button.resume': 'Riprendi la sessione',
+  'pause.title.idle': 'Metti in pausa: si blocca prima della richiesta al modello del prossimo step (pausa automatica durante i picchi + fonti ufficiali)',
+  'pause.title.manual': 'pausa manuale',
+  'pause.title.auto': 'pausa automatica da picco',
+  'pause.title.at': 'In pausa ({why}, dalle {at})',
+  'pause.title.plain': 'In pausa ({why})',
+  'pause.title.hint': ' · Clicca per riprendere: libera lo step corrente e smette di bloccare questa sessione per questo picco',
+  'pause.confirm.text': 'Conferma necessaria: al momento della pausa un tool era incompleto.',
+  'pause.confirm.rerun': 'Riesegui',
+  'pause.confirm.skip': 'Salta',
+  'pause.confirm.keep': 'Resta in pausa',
+  'pause.confirm.aria': 'Conferma ripresa',
 }
 
 /** Russian dictionary (keys mirror zh). */
@@ -361,6 +452,19 @@ export const ru: Record<keyof typeof zh, string> = {
   'status.paused_peak': 'Пиковая пауза активна',
   'status.peak_official': 'Пик · только официальные',
   'status.peak_all': 'Пик · все приостановлены',
+  'pause.button.pause': 'Приостановить сессию',
+  'pause.button.resume': 'Продолжить сессию',
+  'pause.title.idle': 'Приостановить сессию: остановка перед запросом к модели на следующем step (автопауза в часы пик + для официальных источников)',
+  'pause.title.manual': 'ручная пауза',
+  'pause.title.auto': 'автопауза в часы пик',
+  'pause.title.at': 'Приостановлено ({why}, с {at})',
+  'pause.title.plain': 'Приостановлено ({why})',
+  'pause.title.hint': ' · Нажмите, чтобы продолжить: освобождает текущий step и больше не блокирует эту сессию в это окно пик',
+  'pause.confirm.text': 'Требуется подтверждение: на момент паузы инструмент остался незавершённым.',
+  'pause.confirm.rerun': 'Выполнить заново',
+  'pause.confirm.skip': 'Пропустить',
+  'pause.confirm.keep': 'Оставить на паузе',
+  'pause.confirm.aria': 'Подтверждение продолжения',
 }
 
 /** Spanish dictionary (keys mirror zh). */
@@ -406,6 +510,19 @@ export const es: Record<keyof typeof zh, string> = {
   'status.paused_peak': 'Pausa por pico activa',
   'status.peak_official': 'Pico · solo oficial',
   'status.peak_all': 'Pico · todo pausado',
+  'pause.button.pause': 'Pausar sesión',
+  'pause.button.resume': 'Reanudar sesión',
+  'pause.title.idle': 'Pausar la sesión: se detiene antes de la petición al modelo del siguiente step (pausa automática en horas pico + fuentes oficiales)',
+  'pause.title.manual': 'pausa manual',
+  'pause.title.auto': 'pausa automática por pico',
+  'pause.title.at': 'En pausa ({why}, desde {at})',
+  'pause.title.plain': 'En pausa ({why})',
+  'pause.title.hint': ' · Haz clic para reanudar: libera el step actual y deja de bloquear esta sesión durante este pico',
+  'pause.confirm.text': 'Se requiere confirmación: una herramienta quedó sin terminar al pausar.',
+  'pause.confirm.rerun': 'Volver a ejecutar',
+  'pause.confirm.skip': 'Omitir',
+  'pause.confirm.keep': 'Seguir en pausa',
+  'pause.confirm.aria': 'Confirmación de reanudación',
 }
 
 /** Brazilian Portuguese dictionary (keys mirror zh). */
@@ -451,6 +568,19 @@ export const pt: Record<keyof typeof zh, string> = {
   'status.paused_peak': 'Pausa por pico ativa',
   'status.peak_official': 'Pico · só oficiais',
   'status.peak_all': 'Pico · todas pausadas',
+  'pause.button.pause': 'Pausar sessão',
+  'pause.button.resume': 'Retomar sessão',
+  'pause.title.idle': 'Pausar a sessão: para antes da requisição ao modelo do próximo step (pausa automática em horário de pico + fontes oficiais)',
+  'pause.title.manual': 'pausa manual',
+  'pause.title.auto': 'pausa automática de pico',
+  'pause.title.at': 'Pausada ({why}, desde {at})',
+  'pause.title.plain': 'Pausada ({why})',
+  'pause.title.hint': ' · Clique para retomar: libera o step atual e deixa de bloquear esta sessão neste pico',
+  'pause.confirm.text': 'Confirmação necessária: uma ferramenta ficou incompleta ao pausar.',
+  'pause.confirm.rerun': 'Executar novamente',
+  'pause.confirm.skip': 'Pular',
+  'pause.confirm.keep': 'Continuar pausada',
+  'pause.confirm.aria': 'Confirmação de retomada',
 }
 
 /** Dictionary key union. */

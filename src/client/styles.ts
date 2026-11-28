@@ -16,6 +16,12 @@ export const CLIENT_CSS = `
 .sg-status{display:inline-flex;align-items:center;height:24px;padding:0 8px;border:1px solid var(--dsw-alias-border-l3,rgba(0,0,0,.12));border-radius:6px;font-size:12px;line-height:1;color:var(--dsw-alias-label-secondary,#6b7280);white-space:nowrap;flex:none}
 .sg-status.sg-peak{border-color:var(--dsw-alias-state-warning-primary,#d97706);color:var(--dsw-alias-state-warning-primary,#d97706)}
 .sg-status.sg-weekend{border-color:var(--dsw-alias-state-success-primary,#30a46c);color:var(--dsw-alias-state-success-primary,#30a46c)}
+.sg-pause-wrap{display:inline-flex;align-items:center;gap:6px;flex:none}
+.sg-confirm{display:inline-flex;align-items:center;gap:4px;height:24px;flex:none}
+.sg-confirm-text{font-size:12px;line-height:1;color:var(--dsw-alias-state-warning-primary,#d97706);white-space:nowrap;max-width:32ch;overflow:hidden;text-overflow:ellipsis}
+.sg-confirm-btn{display:inline-flex;align-items:center;height:24px;padding:0 8px;border:1px solid var(--dsw-alias-border-l3,rgba(0,0,0,.12));border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary,#6b7280);font-size:12px;line-height:1;cursor:pointer;white-space:nowrap;flex:none}
+.sg-confirm-btn:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.04))}
+.sg-confirm-btn:disabled{opacity:.55;cursor:default}
 `
 
 /** 注入一次（幂等；无 document 时静默跳过）。 */

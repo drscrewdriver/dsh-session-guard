@@ -1,6 +1,6 @@
 {
   "name": "dsh-session-guard",
-  "version": "4.7.0-rc.4",
+  "version": "4.7.0",
   "publishConfig": {
     "registry": "https://registry.npmjs.org",
     "tag": "latest"
@@ -34,7 +34,6 @@
   },
   "files": [
     "src/",
-    "!src/types/",
     "lib/",
     "cordis.patch.yml",
     "dsh.plugin.json",

@@ -76,14 +76,14 @@
     ]
   },
   "dsh-session-guard": {
-    "cUi": 58,
+    "cUi": 54,
     "aPair": 6,
     "bLog": 0,
     "keys": {
-      "zh": 35,
-      "en": 35,
-      "ru": 35,
-      "es": 35
+      "zh": 54,
+      "en": 54,
+      "ru": 54,
+      "es": 54
     },
     "whitelist": [
       {

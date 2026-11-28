@@ -583,8 +583,26 @@ export const pt: Record<keyof typeof zh, string> = {
   'pause.confirm.aria': 'Confirmação de retomada',
 }
 
-/** Dictionary key union. */
+/**
+ * Dictionary key union（从 `zh` 的 `satisfies` 字面量推导）。
+ *
+ * 这是本插件 10 语字典的**键真源**：`en/ja/…` 全部声明为
+ * `Record<keyof typeof zh, string>`，因此任何语种漏一个键都是编译错误。
+ */
 export type SessionGuardKey = keyof typeof zh
 
 /** Combined dictionary map — all 10 languages, for one-call registration. */
-export const dictionaries: Record<string, Record<string, string>> = { zh, en, ja, ko, fr, de, it, ru, es, pt }
+export const dictionaries: Record<string, Record<SessionGuardKey, string>> = { zh, en, ja, ko, fr, de, it, ru, es, pt }
+
+/**
+ * 把本插件的字典键并进宿主的 locale 命名空间表。
+ *
+ * 为什么需要：slot 注册声明了 `locale: 'session-guard'`，宿主据此注入 `t`。
+ * 只有把键集 merge 进 `LocaleNamespaceMap`，框架给的 `t` 才是
+ * `TranslateNS<'session-guard'>`——**键写错在编译期就报**，而不是运行时静默回退。
+ */
+declare module '@deepseek-ai/dsh-client-ui-slots' {
+  interface LocaleNamespaceMap {
+    'session-guard': SessionGuardKey
+  }
+}

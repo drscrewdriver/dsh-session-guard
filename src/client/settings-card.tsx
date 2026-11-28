@@ -13,7 +13,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import type { JSX } from 'react'
 import type { SettingsScope } from './scope-face.ts'
-import { dictionaries } from './locales'
+import { dictionaries, type SessionGuardKey } from './locales'
 import { GuidePanel, GuideRestartButton, guideSteps, isGuideSkipped, type GuideLocale, type GuideStep } from './guide.tsx'
 import { mountStarRow } from './star-row-copy.ts'
 
@@ -28,7 +28,14 @@ function currentLocale(): string {
   const base = (doc || nav || 'en').toLowerCase().split('-')[0]
   return LOCALE_LANGS.includes(base) ? base : 'en'
 }
-function t(key: string): string {
+/**
+ * 设置卡本地取译文（不走 slot 注入的 `t`，因为卡可能在 `settings.section`
+ * 与 `plugins.bundle.config` 两个席位各挂一次，席位不保证都带 locale share）。
+ *
+ * 键类型用 `SessionGuardKey`：v4.7.0 收紧后写错键名是编译错误，
+ * 不再靠运行时 `?? key` 静默回退。
+ */
+function t(key: SessionGuardKey): string {
   const loc = currentLocale()
   return dictionaries[loc]?.[key] ?? dictionaries.en?.[key] ?? dictionaries.zh?.[key] ?? key
 }

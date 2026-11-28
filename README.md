@@ -197,8 +197,10 @@ dsh plugin --profile web add dsh-session-guard@dsh-0.1.2
 输入区右侧的「暂停会话」按钮（slot `conversation.input.right`，id `session-guard-pause`，order 20，排在 input-traffic「❄ 冻结追加」左侧）：
 
 - 未暂停 → 「暂停会话」，**可点**：点击调 `stepPause`，在**下一次 step 的模型请求之前**暂停该会话（不打断当前 step；step 1 也拦，不受峰谷 / provider 限制）；
-- 已暂停 → 「继续会话」，点击调 `stepResume`：放行当前 step，且本高峰内不再拦该会话；
-- **事件推送**：`GET /session-guard/events?session=<id>`（SSE）在 step 门状态变化时**即时**推送——高峰期自动拉门后按钮立刻变「继续会话」，无需等轮询；另每 10 秒轮询 `/session-guard/state` 兜底（SSE 不可用 / 断线时仍能收敛）；
+- 已暂停 → 「继续会话」，点击调 `resume`（v4.6.0 起的**唯一恢复入口** `bridge.resumeSession`，与 `/guard resume`、RPC 逐项一致）：放行当前 step + 结算请求级 hold + 从暂停点续跑，且本高峰内不再拦该会话；
+- **确认面**：force 暂停时若有工具被中断（或 safe 暂停时有工具未及执行），点击「继续会话」会就地展开三选一——**重新执行 / 跳过 / 保持暂停**。绝不隐式确认：重新执行可能已部分执行的工具，必须是一次明示选择；选「保持暂停」则暂停快照原样保留；
+- **暂停来源全覆盖**：按钮认 `step` 门 / 手动请求 / 请求级 hold / **turn 级真暂停**四种来源（任一成立即显示「继续会话」）；
+- **事件推送**：`GET /session-guard/events?session=<id>`（SSE）在 step 门**与** pauseGate 暂停态变化时**即时**推送——高峰期自动拉门 / 真暂停落地后按钮立刻变「继续会话」，无需等轮询；另每 10 秒轮询 `/session-guard/state` 兜底（SSE 不可用 / 断线时仍能收敛）；
 - 样式与同一行的 input-traffic 按钮对齐（24px 高 / 6px 圆角 / 12px 字号 / 同一套 CSS 令牌），悬停与暂停态都有对应视觉反馈。
 
 ### 会话锁定（冻结）

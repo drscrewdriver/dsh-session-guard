@@ -162,7 +162,7 @@ Hooks the `agent/pre-step` waterfall and holds the turn **before the next step's
 
 - **Hold conditions** (all required): `enabled` + `stepLevelPause` + `step > 1` + peak (Beijing time, not weekend) + official target provider (`providerGuard`; all providers when off) + the session is not request-held + not manually bypassed this peak window;
 - **Why `step > 1`**: the first step of a turn is covered by the request-level guard, so the two gates never overlap;
-- **Release paths**: ① the "⏸ paused (resume)" button / `POST /session-guard/rpc {action:'stepResume'}` / `/resume` → lets the current step through and **stops gating this session for the rest of the peak window**; ② off-peak → release all, the turn continues in place (**no followup needed**); ③ freeze button / `/pause` / `/cancel` → release the gate and move to a turn-level pause; ④ `signal` abort → release;
+- **Release paths**: ① the "⏸ paused (resume)" button / `POST /session-guard/rpc {action:'resume'}` / `/guard resume` → all funnel into `bridge.resumeSession`: lets the current step through, settles the request-level hold, resumes the turn, and **stops gating this session for the rest of the peak window**; ② off-peak → release all, the turn continues in place (**no followup needed**); ③ freeze button / `/pause` / `/cancel` → release the gate and move to a turn-level pause; ④ `signal` abort → release;
 - **Timeout escalation**: holding longer than `stepGateTimeoutMs` (default 5 min) releases the gate and **escalates to a turn-level force pause**, resumed off-peak (no deadlock, no token drip);
 - **State**: `GET /session-guard/state?session=<id>` returns `paused: { step, turn }` and `stepGate: { held, since, bypass }`; the service port's `paused` **stays boolean** for compatibility, with `pausedStep` for the step gate;
 - **Not persisted**: the hold is an in-process promise; a restart drops it (no ghost state).
@@ -172,8 +172,10 @@ Hooks the `agent/pre-step` waterfall and holds the turn **before the next step's
 The "Pause session" button in the composer's right row (slot `conversation.input.right`, id `session-guard-pause`, order 20, left of input-traffic's "❄ Freeze & append"):
 
 - not paused → "Pause session", **clickable**: calls `stepPause` and pauses the session **before the next step's model request** (the current step is not interrupted; step 1 is held too, regardless of peak/provider);
-- paused → "Resume session", calls `stepResume`: lets the current step through and stops gating this session for the rest of the peak window;
-- **push updates**: `GET /session-guard/events?session=<id>` (SSE) pushes step-gate state changes **immediately** — when peak auto-holds, the button flips to "Resume session" without waiting for a poll; a 10s `/session-guard/state` poll remains as a fallback (SSE down → still converges);
+- paused → "Resume session", calls `resume` (the **single resume entry** `bridge.resumeSession` since v4.6.0, item-for-item identical to `/guard resume` and the RPC): releases the current step, settles the request-level hold, and continues from the pause point — and stops gating this session for the rest of the peak window;
+- **confirmation surface**: if a force pause interrupted a tool (or a safe pause left tools unexecuted), clicking "Resume session" expands an inline three-way choice — **Re-run / Skip / Stay paused**. Never implicit: re-running a possibly half-executed tool must be an explicit choice; "Stay paused" keeps the pause snapshot intact;
+- **all pause sources covered**: the button recognises all four sources — step gate / manual request / request-level hold / **turn-level real pause** (any one true → "Resume session");
+- **push updates**: `GET /session-guard/events?session=<id>` (SSE) pushes step-gate **and** pauseGate state changes **immediately** — after a peak auto-hold or a real pause lands, the button flips without waiting for a poll; a 10s `/session-guard/state` poll remains as a fallback (SSE down → still converges);
 - styled to match input-traffic's button in the same row (24px height / 6px radius / 12px font / same CSS tokens), with hover and paused states.
 
 ### Session locking (freeze)

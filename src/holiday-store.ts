@@ -19,24 +19,58 @@ import { dirname, join } from 'node:path'
 import { storeRoot } from './store.js'
 import { wallClock, BILLING_TIMEZONE } from './time.js'
 import { BUILTIN_TABLES, buildMap, fingerprint, parseHolidayCn } from './holidays.js'
+import type { BuiltinHolidayYear, HolidayDay } from './holidays.js'
 
 /** 单轮远端抓取超时（ms）。 */
 const FETCH_TIMEOUT_MS = 10_000
 /** 已到手年份表的复核间隔：24h。 */
 const REFRESH_MS = 24 * 3600 * 1000
 
+/** 表来源（诊断/日志用）。 */
+export type HolidaySource = 'builtin' | 'cache' | 'live'
+
+/** 单年表的内存记录。 */
+interface TableRecord {
+  days: HolidayDay[]
+  sha: string
+  source: HolidaySource
+  fetchedAt: number | null
+  checkedAt: number | null
+}
+
+/** 存储依赖注入面（root / fetchImpl / now 供单测）。 */
+export interface HolidayStoreDeps {
+  logger?: { warn?: (msg: string) => void; info?: (msg: string) => void }
+  fetchImpl?: ((url: string, init?: { signal?: unknown }) => Promise<FetchResponse>) | null
+  now?: () => number
+  builtinTables?: readonly BuiltinHolidayYear[]
+  root?: string
+}
+
+/** 存储面。 */
+export interface HolidayStore {
+  /** 启动装载（同步）：内置 + 缓存 + 指纹校验。 */
+  loadAll(): void
+  /** 按年自动抓取核对：缺表的年份立即抓；已有表超 24h 复核。 */
+  ensureFresh(opts?: { autoFetch?: boolean }): Promise<void>
+  /** 合并所有已装载年份的查表 Map。 */
+  map(): Map<string, boolean>
+  /** 诊断输出（/session-guard/status 透出用）。 */
+  info(): { year: number; source: HolidaySource; fingerprint: string; fetchedAt: number | null; checkedAt: number | null; entries: number }[]
+}
+
 /** 缓存根目录（独立于 pause / 队列锁子目录）。 */
-export function holidaysRoot() {
+export function holidaysRoot(): string {
   return process.env.DSH_SESSION_GUARD_HOLIDAY_DIR || join(storeRoot(), 'holidays')
 }
 
 /** 某年缓存文件路径。 */
-export function holidayFilePath(year, root = holidaysRoot()) {
+export function holidayFilePath(year: number, root: string = holidaysRoot()): string {
   return join(root, `${Number(year)}.json`)
 }
 
 /** 远端候选源：jsDelivr 主源（国内可达性好），GitHub raw 备源。 */
-export function holidayUrls(year) {
+export function holidayUrls(year: number): string[] {
   const y = Number(year)
   return [
     `https://cdn.jsdelivr.net/gh/NateScarlet/holiday-cn@master/${y}.json`,
@@ -55,31 +89,31 @@ export function holidayUrls(year) {
  *   info: () => object[],
  * }}
  */
-export function createHolidayStore(deps = {}) {
+export function createHolidayStore(deps: HolidayStoreDeps = {}): HolidayStore {
   const logger = deps.logger
   const fetchImpl = deps.fetchImpl ?? globalThis.fetch
   const now = deps.now ?? (() => Date.now())
   const builtin = deps.builtinTables ?? BUILTIN_TABLES
   const root = deps.root ?? holidaysRoot()
 
-  /** @type {Map<number, {days: {date:string,isOffDay:boolean}[], sha:string, source:'builtin'|'cache'|'live', fetchedAt:number|null, checkedAt:number|null}>} */
-  const tables = new Map()
+  const tables = new Map<number, TableRecord>()
   /** map() 的惰性合并缓存：任何表更新时置 null。 */
-  let merged = null
+  let merged: Map<string, boolean> | null = null
 
-  const warn = (msg, e) => {
+  const warn = (msg: string, e?: unknown) => {
     const line = `[session-guard] ${msg}`
-    if (logger?.warn) logger.warn(e ? `${line}: ${String(e && e.message || e)}` : line)
-    else console.warn(e ? `${line}: ${String(e && e.message || e)}` : line)
+    const detail = e ? `${line}: ${String((e as Error)?.message || e)}` : line
+    if (logger?.warn) logger.warn(detail)
+    else console.warn(detail)
   }
 
-  function putTable(year, days, source, fetchedAt) {
+  function putTable(year: number, days: HolidayDay[], source: HolidaySource, fetchedAt: number | null): void {
     tables.set(year, { days, sha: fingerprint(days), source, fetchedAt, checkedAt: now() })
     merged = null
   }
 
   /** 装载单年：内置打底，缓存指纹校验通过则覆盖内置。 */
-  function loadYear(year) {
+  function loadYear(year: number): void {
     const seed = builtin.find((t) => t.year === year)
     if (seed) putTable(year, seed.days.slice(), 'builtin', null)
     let cached
@@ -107,14 +141,14 @@ export function createHolidayStore(deps = {}) {
   }
 
   /** 相关年份：北京当年 +（11/12 月）次年——国务院一般年底公布来年安排。 */
-  function relevantYears() {
+  function relevantYears(): number[] {
     const wc = wallClock(BILLING_TIMEZONE, new Date(now()))
     const years = [wc.year]
     if (wc.month >= 11) years.push(wc.year + 1)
     return years
   }
 
-  async function fetchYear(year) {
+  async function fetchYear(year: number): Promise<boolean> {
     if (typeof fetchImpl !== 'function') return false
     for (const url of holidayUrls(year)) {
       try {
@@ -159,7 +193,7 @@ export function createHolidayStore(deps = {}) {
      * 按年自动抓取核对：缺表的年份立即抓；已有表超 24h 复核。
      * autoFetch=false（设置关）时只补缺年（缓存/内置仍生效），不发请求。
      */
-    async ensureFresh(opts = {}) {
+    async ensureFresh(opts: { autoFetch?: boolean } = {}): Promise<void> {
       const autoFetch = opts.autoFetch !== false
       for (const year of relevantYears()) {
         const cur = tables.get(year)
@@ -171,9 +205,9 @@ export function createHolidayStore(deps = {}) {
     },
 
     /** 合并所有已装载年份的查表 Map（'YYYY-MM-DD' → 是否放假日）。 */
-    map() {
-      if (merged) return merged
-      const days = []
+    map(): Map<string, boolean> {
+      if (merged !== null) return merged
+      const days: HolidayDay[] = []
       for (const t of tables.values()) days.push(...t.days)
       merged = buildMap(days)
       return merged

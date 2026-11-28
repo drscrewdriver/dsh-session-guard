@@ -17,6 +17,36 @@
  */
 import { isRestDay, ymdOf } from './holidays.js'
 
+/** 墙钟分量（某时区的年月日 + 星期 + 当日分钟数）。 */
+export interface WallClock {
+  year: number
+  /** 1-12 */
+  month: number
+  /** 1-31 */
+  day: number
+  /** 0=周日 … 6=周六 */
+  weekday: number
+  /** 当日分钟数（0-1439） */
+  minutes: number
+}
+
+/** 高峰窗口（"HH:mm" 串，左闭右开）。 */
+export interface PeakWindow {
+  start: string
+  end: string
+}
+
+/** 时间判定需要的配置面（settings 的投影子集）。 */
+export interface TimeSettings {
+  enabled?: boolean
+  weekendMode?: boolean
+  timezone: string
+  peakWindows?: PeakWindow[]
+  /** 修正表：'YYYY-MM-DD' → 是否放假日（holidayMode 关闭时不挂）。 */
+  holidayMap?: Map<string, boolean> | null
+  [k: string]: unknown
+}
+
 /**
  * DeepSeek 峰谷计费基准时区（固定北京时间 UTC+8）。
  * 峰谷窗口判定必须用此时区，不受用户 timezone 配置影响。
@@ -24,7 +54,7 @@ import { isRestDay, ymdOf } from './holidays.js'
 export const BILLING_TIMEZONE = 'Asia/Shanghai'
 
 /** 解析 "HH:mm" → 当日分钟数，非法返回 null。 */
-export function parseHHMM(s) {
+export function parseHHMM(s: unknown): number | null {
   const m = /^(\d{1,2}):(\d{2})$/.exec(String(s).trim())
   if (!m) return null
   const h = Number(m[1])
@@ -34,7 +64,7 @@ export function parseHHMM(s) {
 }
 
 /** 闭开区间 [s, e)，跨午夜安全（s > e 时视为跨天环绕）。 */
-export function inWindow(t, s, e) {
+export function inWindow(t: number, s: number, e: number): boolean {
   if (s === e) return false
   return s < e ? t >= s && t < e : t >= s || t < e
 }
@@ -46,7 +76,7 @@ export function inWindow(t, s, e) {
  * @returns {{year:number,month:number,day:number,weekday:number,minutes:number}}
  *          weekday: 0=周日 ... 6=周六（与 getUTCDay 同约定，但基于配置时区的日期）
  */
-export function wallClock(tz, date) {
+export function wallClock(tz: string, date: Date): WallClock {
   const f = new Intl.DateTimeFormat('en-US', {
     timeZone: tz,
     hour12: false,
@@ -56,7 +86,7 @@ export function wallClock(tz, date) {
     hour: '2-digit',
     minute: '2-digit',
   })
-  const parts = {}
+  const parts: Record<string, string> = {}
   for (const p of f.formatToParts(date)) parts[p.type] = p.value
   const year = Number(parts.year)
   const month = Number(parts.month)
@@ -68,7 +98,7 @@ export function wallClock(tz, date) {
 }
 
 /** 周末（0=周日, 6=周六）。 */
-export function isWeekend(weekday) {
+export function isWeekend(weekday: number): boolean {
   return weekday === 0 || weekday === 6
 }
 
@@ -80,13 +110,13 @@ export function isWeekend(weekday) {
  * @param {{year:number,month:number,day:number,weekday:number}} wc wallClock 分量（用户时区）
  * @returns {boolean}
  */
-export function isRestForSettings(settings, wc) {
+export function isRestForSettings(settings: TimeSettings, wc: WallClock): boolean {
   return isRestDay(settings.holidayMap, ymdOf(wc), wc.weekday)
 }
 
 /** 某墙钟分钟是否处于任一高峰窗口内。 */
-export function isInPeak(wc, windows) {
-  return windows.some((w) => {
+export function isInPeak(wc: WallClock, windows: PeakWindow[]): boolean {
+  return windows.some((w: PeakWindow) => {
     const s = parseHHMM(w && w.start)
     const e = parseHHMM(w && w.end)
     if (s === null || e === null) return false
@@ -106,7 +136,7 @@ export function isInPeak(wc, windows) {
  * @returns {{pause:boolean, reason:string}}
  *          reason: 'disabled' | 'weekend'（休息日，含法定假） | 'peak' | 'off-peak'
  */
-export function shouldPause(settings, date) {
+export function shouldPause(settings: TimeSettings | null | undefined, date: Date): { pause: boolean; reason: string } {
   if (!settings || settings.enabled !== true) return { pause: false, reason: 'disabled' }
   // 周末/休息日判定：用用户配置时区（用户本地的周末）
   const wcUser = wallClock(settings.timezone, date)
@@ -130,7 +160,7 @@ export function shouldPause(settings, date) {
  * @param {number} day
  * @returns {number} epoch 毫秒
  */
-export function localMidnight(tz, year, month, day) {
+export function localMidnight(tz: string, year: number, month: number, day: number): number {
   const target = Date.UTC(year, month - 1, day)
   let guess = target
   for (let i = 0; i < 2; i++) {
@@ -151,7 +181,7 @@ export function localMidnight(tz, year, month, day) {
  * @param {Date} date 已知处于高峰
  * @returns {number|null}
  */
-function nextOffPeakInstant(settings, date) {
+function nextOffPeakInstant(settings: TimeSettings, date: Date): number | null {
   const t0 = date.getTime()
   // 分钟对齐：秒/毫秒在墙钟分钟偏移下与时区无关（所有 IANA 偏移均为整分钟）
   const minuteStart = t0 - (date.getUTCSeconds() * 1000 + date.getUTCMilliseconds())
@@ -182,7 +212,7 @@ function nextOffPeakInstant(settings, date) {
       break
     }
   }
-  let best = null
+  let best: number | null = null
   for (const c of candidates) {
     if (!Number.isFinite(c) || c <= t0) continue
     if (best === null || c < best) best = c
@@ -201,7 +231,7 @@ function nextOffPeakInstant(settings, date) {
  * @param {Date} [date]
  * @returns {number} 毫秒（>= 0）
  */
-export function msUntilOffPeak(settings, date = new Date()) {
+export function msUntilOffPeak(settings: TimeSettings, date: Date = new Date()): number {
   if (!settings || settings.enabled !== true) return 0
   const t0 = date.getTime()
   let probe = date

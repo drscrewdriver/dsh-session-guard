@@ -88,7 +88,7 @@
     "typecheck": "tsc -p tsconfig.host.json --noEmit && tsc -p tsconfig.client.json",
     "pretest": "pnpm run build:host",
     "prepack": "pnpm run build",
-    "lint": "eslint src tests",
+    "lint": "eslint src tests --ext .ts,.tsx,.js,.mjs",
     "test": "node --test \"tests/*.test.mjs\""
   },
   "engines": {

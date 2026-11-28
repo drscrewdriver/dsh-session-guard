@@ -19,30 +19,42 @@
  * 环境下直接单测（见 `tests/tool-call-id.test.mjs`）。
  */
 
+/** 记录里可能承载 id 的三种位置（读侧统一按 unknown 收，再逐个收窄）。 */
+interface IdBearingMessage {
+  toolCallId?: unknown
+  content?: unknown
+  source?: { callId?: unknown } | undefined
+}
+
 /**
  * 读一条 `tool/result` 记录（`event.data.message`）的调用 id。
- * @param {unknown} message - `event.data.message`（可能缺失或非对象）
- * @returns {string|undefined} 调用 id；各形态都缺时返回 undefined
+ * @param message `event.data.message`（可能缺失或非对象）
+ * @returns 调用 id；各形态都缺时返回 undefined
  */
-export function readToolResultCallId(message) {
+export function readToolResultCallId(message: unknown): string | undefined {
   if (message === null || typeof message !== 'object') return undefined
+  const m = message as IdBearingMessage
   // v4 native：一等 tool-role 消息，id 在顶层。
-  if (typeof message.toolCallId === 'string') return message.toolCallId
-  const content = Array.isArray(message.content) ? message.content : []
+  if (typeof m.toolCallId === 'string') return m.toolCallId
+  const content: unknown[] = Array.isArray(m.content) ? m.content : []
   for (const block of content) {
-    if (block?.type === 'tool-result' && typeof block.toolCallId === 'string') return block.toolCallId
+    if (block !== null && typeof block === 'object') {
+      const b = block as { type?: unknown; toolCallId?: unknown }
+      if (b.type === 'tool-result' && typeof b.toolCallId === 'string') return b.toolCallId
+    }
   }
-  const legacy = message.source?.callId
+  const legacy = m.source?.callId
   return typeof legacy === 'string' ? legacy : undefined
 }
 
 /**
  * 读一个 `user/message` 内容块（`tool-result` 形态）的调用 id。
- * @param {unknown} block - 内容块
- * @returns {string|undefined} 调用 id；非 `tool-result` 或 id 非字符串时 undefined
+ * @param block 内容块
+ * @returns 调用 id；非 `tool-result` 或 id 非字符串时 undefined
  */
-export function readToolResultBlockId(block) {
+export function readToolResultBlockId(block: unknown): string | undefined {
   if (block === null || typeof block !== 'object') return undefined
-  if (block.type !== 'tool-result') return undefined
-  return typeof block.toolCallId === 'string' ? block.toolCallId : undefined
+  const b = block as { type?: unknown; toolCallId?: unknown }
+  if (b.type !== 'tool-result') return undefined
+  return typeof b.toolCallId === 'string' ? b.toolCallId : undefined
 }

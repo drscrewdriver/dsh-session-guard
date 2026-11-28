@@ -16,13 +16,38 @@
 import { createHash } from 'node:crypto'
 
 /** 'YYYY-MM-DD' 严格形态（月/日补零），也是 Map 键与指纹序列化的唯一形态。 */
+/** 修正表条目（holiday-cn 归一化后形状）。 */
+export interface HolidayDay {
+  /** 补零 'YYYY-MM-DD' */
+  date: string
+  /** true = 放假；false = 调休补班（周末上班） */
+  isOffDay: boolean
+}
+
+/** 全年修正表。 */
+export interface HolidayYear {
+  year: number
+  days: HolidayDay[]
+}
+
+/**
+ * 内置快照的形状：除 year/days 外还带 `paper`（国务院公告链接，诊断用）。
+ * `days` 是 `Object.freeze` 的只读数组，故用 `readonly`——消费者只读不改
+ * （`putTable` 拿 `slice()` 复制后才写）。
+ */
+export interface BuiltinHolidayYear {
+  year: number
+  paper: string
+  days: readonly HolidayDay[]
+}
+
 const DATE_RE = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/
 
 /**
  * 2026 年国务院放假安排（公告 content_7047091，经 holiday-cn 机读）。
  * 只保留判定需要的 date / isOffDay 两键；name 仅注释性内嵌于分组注释。
  */
-export const BUILTIN_2026 = Object.freeze({
+export const BUILTIN_2026: BuiltinHolidayYear = Object.freeze({
   year: 2026,
   paper: 'https://www.gov.cn/zhengce/zhengceku/202511/content_7047091.htm',
   days: Object.freeze([
@@ -80,7 +105,7 @@ export const BUILTIN_2026 = Object.freeze({
  * 快照指纹 sha256:8f999d47…9780331af，取表时点 2026-11）。
  * 同样只保留 date / isOffDay。
  */
-export const BUILTIN_2027 = Object.freeze({
+export const BUILTIN_2027: BuiltinHolidayYear = Object.freeze({
   year: 2027,
   paper: 'https://www.gov.cn/zhengce/zhengceku/202611/content_7085102.htm',
   days: Object.freeze([
@@ -129,7 +154,7 @@ export const BUILTIN_2027 = Object.freeze({
 })
 
 /** 内置快照数组（新定稿年份在此追加）。 */
-export const BUILTIN_TABLES = Object.freeze([BUILTIN_2026, BUILTIN_2027])
+export const BUILTIN_TABLES: readonly BuiltinHolidayYear[] = Object.freeze([BUILTIN_2026, BUILTIN_2027])
 
 /**
  * 校验并归一化 holiday-cn `days` 数组。
@@ -139,9 +164,9 @@ export const BUILTIN_TABLES = Object.freeze([BUILTIN_2026, BUILTIN_2027])
  * @returns {{date:string, isOffDay:boolean}[]} 归一化条目（新数组）
  * @throws {Error} 非数组 / 空条目 / 形态非法
  */
-export function normalizeDays(raw) {
+export function normalizeDays(raw: unknown): HolidayDay[] {
   if (!Array.isArray(raw)) throw new Error('holiday days: not an array')
-  const byDate = new Map()
+  const byDate = new Map<string, HolidayDay>()
   for (const item of raw) {
     const date = item && typeof item === 'object' ? item.date : undefined
     if (typeof date !== 'string' || !DATE_RE.test(date)) {
@@ -161,11 +186,12 @@ export function normalizeDays(raw) {
  * @returns {{year:number, days:{date:string, isOffDay:boolean}[]}}
  * @throws {Error} 形态不合 schema（year 与条目日期必须一致）
  */
-export function parseHolidayCn(json) {
+export function parseHolidayCn(json: unknown): HolidayYear {
   if (json === null || typeof json !== 'object') throw new Error('holiday json: not an object')
-  const year = Number(json.year)
+  const raw = json as { year?: unknown; days?: unknown }
+  const year = Number(raw.year)
   if (!Number.isInteger(year) || year < 2000 || year > 2100) throw new Error('holiday json: bad year')
-  const days = normalizeDays(json.days)
+  const days = normalizeDays(raw.days)
   for (const d of days) {
     if (Number(d.date.slice(0, 4)) !== year) throw new Error(`holiday json: day ${d.date} outside ${year}`)
   }
@@ -179,7 +205,7 @@ export function parseHolidayCn(json) {
  * @param {{date:string, isOffDay:boolean}[]} days normalizeDays / parseHolidayCn 产物
  * @returns {string} 'sha256:<hex>'
  */
-export function fingerprint(days) {
+export function fingerprint(days: HolidayDay[]): string {
   const canon = days.map((d) => `${d.date}=${d.isOffDay ? 1 : 0}`).join(';')
   return `sha256:${createHash('sha256').update(canon).digest('hex')}`
 }
@@ -189,14 +215,14 @@ export function fingerprint(days) {
  * @param {{date:string, isOffDay:boolean}[]} days
  * @returns {Map<string, boolean>}
  */
-export function buildMap(days) {
-  const m = new Map()
+export function buildMap(days: HolidayDay[]): Map<string, boolean> {
+  const m = new Map<string, boolean>()
   for (const d of days) m.set(d.date, d.isOffDay)
   return m
 }
 
 /** wallClock 分量 → 补零 'YYYY-MM-DD'。 */
-export function ymdOf(wc) {
+export function ymdOf(wc: { year: number; month: number; day: number }): string {
   return `${wc.year}-${String(wc.month).padStart(2, '0')}-${String(wc.day).padStart(2, '0')}`
 }
 
@@ -209,7 +235,7 @@ export function ymdOf(wc) {
  * @param {number} weekday 该日期在用户时区的星期（0-6，同 wallClock 约定）
  * @returns {boolean}
  */
-export function isRestDay(map, ymd, weekday) {
+export function isRestDay(map: Map<string, boolean> | null | undefined, ymd: string, weekday: number): boolean {
   if (map instanceof Map && map.has(ymd)) return map.get(ymd) === true
   return weekday === 0 || weekday === 6
 }

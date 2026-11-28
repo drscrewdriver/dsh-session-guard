@@ -13,8 +13,41 @@
 /** 未知目标哨兵（保守：高峰时按「可能是官方」处理）。 */
 export const UNKNOWN = 'unknown'
 
+/** 会话最近一次真实目标。 */
+export interface Target {
+  provider: string
+  model: string
+}
+
+/** 目标记录（带时间戳）。 */
+export interface TargetRecord extends Target {
+  at: number
+}
+
+/** 会话事件的最小读面（只认 request/header 与 model/selection）。 */
+interface TargetEvent {
+  type?: unknown
+  data?: {
+    header?: { config?: { provider?: unknown; model?: unknown } }
+    provider?: unknown
+    model?: unknown
+  }
+}
+
+/** 目标表面。 */
+export interface Targets {
+  /** 用一条会话事件更新目标；返回写入的目标（不关心的事件返回 null）。 */
+  update(sessionId: string, event: unknown, at?: number): TargetRecord | null
+  get(sessionId: string): TargetRecord | null
+  /** provider 值（没有记录 → unknown，保守处理）。 */
+  providerOf(sessionId: string): string
+  clear(sessionId: string): boolean
+  entries(): [string, TargetRecord][]
+  size(): number
+}
+
 /** 规范化一个 provider/model 对。 */
-function shape(provider, model) {
+function shape(provider: unknown, model: unknown): Target {
   const p = typeof provider === 'string' && provider !== '' ? provider : UNKNOWN
   const m = typeof model === 'string' && model !== '' ? model : UNKNOWN
   return { provider: p, model: m }
@@ -25,46 +58,47 @@ function shape(provider, model) {
  * @param {object} event 会话事件
  * @returns {{provider:string, model:string}|null} 不关心的类型返回 null
  */
-export function readTarget(event) {
-  const type = event && event.type
+export function readTarget(event: unknown): Target | null {
+  if (event === null || typeof event !== 'object') return null
+  const ev = event as TargetEvent
+  const type = ev.type
   if (type === 'request/header') {
-    const config = event.data && event.data.header && event.data.header.config
-    return shape(config && config.provider, config && config.model)
+    const config = ev.data?.header?.config
+    return shape(config?.provider, config?.model)
   }
   if (type === 'model/selection') {
-    const sel = event.data
-    return shape(sel && sel.provider, sel && sel.model)
+    const sel = ev.data
+    return shape(sel?.provider, sel?.model)
   }
   return null
 }
 
 /** 目标表：`sessionId → {provider, model, at}`。 */
-export function createTargets() {
-  /** @type {Map<string, {provider:string, model:string, at:number}>} */
-  const map = new Map()
+export function createTargets(): Targets {
+  const map = new Map<string, TargetRecord>()
   return {
     /** 用一条会话事件更新目标；返回写入的目标（不关心的事件返回 null）。 */
-    update(sessionId, event, at = Date.now()) {
+    update(sessionId: string, event: unknown, at: number = Date.now()): TargetRecord | null {
       const key = String(sessionId ?? '')
       if (key === '') return null
       const t = readTarget(event)
       if (t === null) return null
-      const rec = { ...t, at }
+      const rec: TargetRecord = { ...t, at }
       map.set(key, rec)
       return rec
     },
-    get(sessionId) {
+    get(sessionId: string): TargetRecord | null {
       return map.get(String(sessionId ?? '')) ?? null
     },
     /** provider 值（没有记录 → unknown，保守处理）。 */
-    providerOf(sessionId) {
+    providerOf(sessionId: string): string {
       const rec = map.get(String(sessionId ?? ''))
       return rec ? rec.provider : UNKNOWN
     },
-    clear(sessionId) {
+    clear(sessionId: string): boolean {
       return map.delete(String(sessionId ?? ''))
     },
-    entries: () => [...map.entries()],
-    size: () => map.size,
+    entries: (): [string, TargetRecord][] => [...map.entries()],
+    size: (): number => map.size,
   }
 }

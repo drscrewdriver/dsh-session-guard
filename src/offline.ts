@@ -17,6 +17,47 @@ import { networkInterfaces } from 'node:os'
 import { lookup as dnsLookup } from 'node:dns'
 
 /** 网络类失败码（只有这些值得等网回来；5xx / 429 是服务器信号，不是「连不上」）。 */
+/** 失败形状（只读判定相关的两个字段）。 */
+export interface FailureShape {
+  code?: unknown
+  status?: unknown
+}
+
+/** 探测依赖注入面（测试可替换网络探测）。 */
+export interface ProbeOptions {
+  lookup?: (
+    hostname: string,
+    opts: { all?: boolean },
+    cb: (err: Error | null, address?: string, family?: number) => void,
+  ) => unknown
+  interfaces?: (() => Record<string, { internal: boolean; address: string }[] | undefined>) | Record<string, { internal: boolean; address: string }[] | undefined>
+  timeoutMs?: number
+  env?: Record<string, string | undefined>
+}
+
+/** 挂起等待器依赖。 */
+export interface OfflineWaiterDeps {
+  probe?: () => Promise<boolean>
+  everyMs?: number
+  onHold?: () => void
+  onResume?: () => void
+}
+
+/** 挂起等待器面。 */
+export interface OfflineWaiter {
+  /** 进入挂起；返回 `'online'`（网回来）或 `'cancelled'`（被取消）。 */
+  wait(): Promise<string>
+  cancel(): void
+  isPending(): boolean
+  dispose(): void
+}
+
+interface PendingHold {
+  resolve: (v: string) => void
+  promise: Promise<string>
+  timer: unknown
+}
+
 export const NETWORK_CLASS_CODES = Object.freeze(new Set([
   'TRANSPORT', 'TIMEOUT', 'DNS', 'CONNECTION',
   'ECONNREFUSED', 'ECONNRESET', 'ENOTFOUND', 'EAI_AGAIN', 'ETIMEDOUT', 'ENETUNREACH', 'EHOSTUNREACH',
@@ -25,20 +66,20 @@ export const NETWORK_CLASS_CODES = Object.freeze(new Set([
 /** 这次失败是否属于「网络类」——决定它有没有资格进入断网挂起。
  * 只管 `TRANSPORT`/`TIMEOUT`/`DNS`/`CONNECTION`（及等价 errno）；带 HTTP 状态码的
  * 失败（5xx / 429 / 4xx）说明请求已经出去并拿到了回应，一律 false。 */
-export function isNetworkClassFailure({ code, status } = {}) {
+export function isNetworkClassFailure({ code, status }: FailureShape = {}): boolean {
   if (typeof status === 'number' && status !== 408) return false
   const key = typeof code === 'string' ? code.toUpperCase() : ''
   return NETWORK_CLASS_CODES.has(key)
 }
 
 /** 是否配置了代理：代理专用网络里 DNS 可能不直连，此时只查网卡。 */
-function hasProxyEnv(env) {
+function hasProxyEnv(env: Record<string, string | undefined> | undefined): boolean {
   return Boolean(env && (env.HTTP_PROXY || env.HTTPS_PROXY || env.ALL_PROXY
     || env.http_proxy || env.https_proxy || env.all_proxy))
 }
 
 /** 有非回环网卡即视为「有本地链路」。 */
-function hasRoutableInterface(interfaces) {
+function hasRoutableInterface(interfaces: ProbeOptions['interfaces']): boolean {
   const table = typeof interfaces === 'function' ? interfaces() : interfaces
   if (!table || typeof table !== 'object') return true
   for (const addrs of Object.values(table)) {
@@ -59,7 +100,7 @@ const PROBE_DNS_DEFAULT_MS = 2000
  * @param {{lookup?:Function, interfaces?:Function|object, timeoutMs?:number, env?:object}} [opts]
  * @returns {Promise<boolean>}
  */
-export async function probeOnline(opts = {}) {
+export async function probeOnline(opts: ProbeOptions = {}): Promise<boolean> {
   const env = opts.env ?? (typeof process !== 'undefined' ? process.env : {})
   const timeoutMs = opts.timeoutMs ?? PROBE_DNS_DEFAULT_MS
   try {
@@ -68,9 +109,9 @@ export async function probeOnline(opts = {}) {
     if (hasProxyEnv(env)) return true
     const lookup = opts.lookup ?? dnsLookup
     if (typeof lookup !== 'function') return true
-    const verdict = await new Promise((resolve) => {
+    const verdict = await new Promise<boolean>((resolve) => {
       let settled = false
-      const done = (value) => {
+      const done = (value: boolean) => {
         if (settled) return
         settled = true
         clearTimeout(timer)
@@ -79,7 +120,10 @@ export async function probeOnline(opts = {}) {
       const timer = setTimeout(() => done(true), timeoutMs)
       try {
         const out = lookup(PROBE_DNS_HOSTNAME, { all: false }, (err) => done(!err))
-        if (out && typeof out.then === 'function') out.then((v) => done(Boolean(v)), () => done(true))
+        const thenable = out as { then?: unknown } | null | undefined
+        if (thenable && typeof thenable.then === 'function') {
+          ;(thenable as Promise<unknown>).then((v) => done(Boolean(v)), () => done(true))
+        }
       } catch {
         done(true)
       }
@@ -97,10 +141,10 @@ export async function probeOnline(opts = {}) {
  * @param {{probe?:()=>Promise<boolean>, everyMs?:number, onHold?:()=>void, onResume?:()=>void}} deps
  * @returns {{wait:()=>Promise<string>, cancel:()=>void, isPending:()=>boolean, dispose:()=>void}}
  */
-export function createOfflineWaiter({ probe, everyMs = 15000, onHold, onResume } = {}) {
+export function createOfflineWaiter({ probe, everyMs = 15000, onHold, onResume }: OfflineWaiterDeps = {}): OfflineWaiter {
   const isOnline = typeof probe === 'function' ? probe : () => probeOnline()
   const period = Number(everyMs) > 0 ? Number(everyMs) : 15000
-  let pending = null
+  let pending: PendingHold | null = null
 
   function tick() {
     Promise.resolve()
@@ -125,8 +169,8 @@ export function createOfflineWaiter({ probe, everyMs = 15000, onHold, onResume }
     /** 进入挂起；返回 `'online'`（网回来）或 `'cancelled'`（被取消）。 */
     wait() {
       if (pending) return pending.promise
-      let resolve = null
-      const promise = new Promise((r) => {
+      let resolve!: (v: string) => void
+      const promise = new Promise<string>((r) => {
         resolve = r
       })
       pending = { resolve, promise, timer: null }

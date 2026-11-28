@@ -50,11 +50,16 @@ declare module 'node:os' {
 }
 
 declare module 'node:dns' {
-  /** 只用到 lookup 的 err 首参回调形态（离线判定）。 */
+  /**
+   * 只用到 lookup（离线判定）。两种调用形态都要认：
+   * `lookup(host, cb)` 与 `lookup(host, { all:false }, cb)`；返回值在部分实现上是
+   * promise（`dns.promises` 同签名），故声明为 `unknown`，调用侧按 thenable 判。
+   */
   export function lookup(
     hostname: string,
-    cb: (err: Error | null, address?: string, family?: number) => void,
-  ): void
+    optsOrCb: { all?: boolean } | ((err: Error | null, address?: string, family?: number) => void),
+    cb?: (err: Error | null, address?: string, family?: number) => void,
+  ): unknown
 }
 
 /** `Buffer` 全局（本插件只用 concat/from/isBuffer/toString）。 */
@@ -68,6 +73,26 @@ declare const Buffer: {
 declare const process: {
   env: Record<string, string | undefined>
   cwd(): string
+}
+
+/** `AbortSignal.timeout(ms)`（Node 17.3+ / 浏览器均提供；本插件只做 fetch 超时）。 */
+declare const AbortSignal: {
+  timeout(ms: number): unknown
+}
+
+/** 定时器全局（Node 提供；返回句柄按 unknown 收，clearTimeout 只要求可传入）。 */
+declare function setTimeout(fn: () => void, ms: number): unknown
+declare function clearTimeout(handle: unknown): void
+declare function setInterval(fn: () => void, ms: number): unknown
+declare function clearInterval(handle: unknown): void
+
+/** `console` 全局（宿主日志兜底；与 eslint 的 readonly 声明一致）。 */
+declare const console: {
+  log(...args: unknown[]): void
+  warn(...args: unknown[]): void
+  error(...args: unknown[]): void
+  info(...args: unknown[]): void
+  debug(...args: unknown[]): void
 }
 
 /** `globalThis.fetch` 在 Node 18+ 存在；本插件只透传它做 holiday 抓取。 */

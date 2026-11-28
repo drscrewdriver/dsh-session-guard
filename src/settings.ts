@@ -16,8 +16,68 @@ import { DEFAULT_RETRY } from './retry.js'
 /** 设置命名空间（设置 → 插件 → session-guard）。 */
 export const NS = 'session-guard'
 
+/** 高峰窗口（"HH:mm"，左闭右开）。 */
+export interface PeakWindowConfig {
+  start: string
+  end: string
+}
+
+/** 拦截方式：hold（挂起不报错）/ error（抛错 + 记延后队列）。 */
+export type DeferredMode = 'hold' | 'error'
+
+/** 暂停模式（透传 pauseGate）。 */
+export type PauseMode = 'safe' | 'force'
+
+/** 暂停原因（透传 pauseGate）。 */
+export type PauseReason = 'wait' | 'stop'
+
+/**
+ * 插件配置（**从 DEFAULT_SETTINGS 推导，不手写重复类型**）。
+ *
+ * 口径（tasks.md task_3.3）：schemastery 的 `SettingsSchema` 是运行期真源，
+ * 这里用 `typeof DEFAULT_SETTINGS` 拿到同形状的静态类型——两处不会漂移，
+ * 因为 DEFAULT_SETTINGS 的每个字段都在 schema 里有对应的 `.default(...)`。
+ * 三个枚举字段用字面量联合收窄（schema 里是 `z.union([z.const(...)])`）。
+ */
+export type GuardConfig = {
+  enabled: boolean
+  offPeakAutoResume: boolean
+  weekendMode: boolean
+  holidayMode: boolean
+  holidayAutoFetch: boolean
+  timezone: string
+  peakWindows: PeakWindowConfig[]
+  pauseMode: PauseMode
+  pauseReason: PauseReason
+  stepLevelPause: boolean
+  stepGateTimeoutMs: number
+  queueFallback: boolean
+  retryEnabled: boolean
+  retryText: string
+  retryGraceMs: number
+  retryCooldownMs: number
+  retryBackoffFactor: number
+  retryBackoffMaxMs: number
+  retryMaxConsecutive: number
+  retryPauseWhenOffline: boolean
+  retryOfflineCheckMs: number
+  providerGuard: boolean
+  officialProviders: string[]
+  officialBaseURLs: string[]
+  deferredResume: boolean
+  deferredResumeText: string
+  deferredMode: DeferredMode
+  deferredMaxHoldMs: number
+  guardSubagents: boolean
+  pauseStopsJobs: boolean
+  pauseStopsChildren: boolean
+  pauseScopeDrainMs: number
+  /** holidayMode 开启时由 readCfg 挂上的修正表（不在 schema 里）。 */
+  holidayMap?: Map<string, boolean>
+}
+
 /** 默认配置（核心逻辑依赖；设置服务不可用时即用此值）。 */
-export const DEFAULT_SETTINGS = Object.freeze({
+export const DEFAULT_SETTINGS: Readonly<GuardConfig> = Object.freeze({
   enabled: true, // 高峰自动处理开关（简单开关）
   offPeakAutoResume: true, // 低谷自动恢复开关：低峰时段自动恢复被高峰暂停的会话
   weekendMode: true, // 周末模式开关：识别周末/休息日，无视峰谷（简单开关）
